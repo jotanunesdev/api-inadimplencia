@@ -87,7 +87,13 @@ function readParamsXml(dataset) {
   }
 
   const record =
-    values.find((row) => row && (row.RESULTADO || row.resultado)) ?? values[0];
+    values.find((row) => {
+      const xmlValue = row?.RESULTADO ?? row?.resultado ?? '';
+      return String(xmlValue).includes('RptParameterReportPar');
+    }) ??
+    values.find((row) => row && (row.RESULTADO || row.resultado)) ??
+    values[0];
+
   const xml = record?.RESULTADO ?? record?.resultado ?? '';
   if (!xml) {
     throw new Error('Parametros do relatorio nao encontrados.');
