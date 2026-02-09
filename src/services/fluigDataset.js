@@ -1,4 +1,5 @@
 const DEFAULT_CONSTRAINT_TYPE = 1;
+const fetchApi = global.fetch || require('node-fetch');
 
 function resolveFluigUrl() {
   const url = process.env.FLUIG_URL;
@@ -46,7 +47,7 @@ async function fetchDataset(name, options = {}) {
     headers.Authorization = authHeader;
   }
 
-  const response = await fetch(url, {
+  const response = await fetchApi(url, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
