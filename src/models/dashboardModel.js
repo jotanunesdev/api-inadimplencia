@@ -1,6 +1,8 @@
 const { getPool, sql } = require('../config/db');
 
 const TABLE_FAT = 'DW.fat_analise_inadimplencia';
+const COL_SALDO = 'VALOR_TOTAL';
+const COL_INADIMPLENTE = 'VALOR_INADIMPLENTE';
 const TABLE_OC = 'dbo.OCORRENCIAS';
 const TABLE_USU = 'dbo.USUARIO';
 const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
@@ -11,11 +13,11 @@ async function kpis() {
     `SELECT
         COUNT(*) AS TOTAL_VENDAS,
         COUNT(DISTINCT CPF_CNPJ) AS TOTAL_CLIENTES,
-        SUM(CAST(SALDO AS float)) AS TOTAL_SALDO,
-        SUM(CAST(VALOR_SOMENTE_INADIMPLENTE AS float)) AS TOTAL_INADIMPLENTE,
+        SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO,
+        SUM(CAST(${COL_INADIMPLENTE} AS float)) AS TOTAL_INADIMPLENTE,
         CAST(
-          CASE WHEN SUM(CAST(SALDO AS float)) = 0 THEN 0
-          ELSE (100.0 * SUM(CAST(VALOR_SOMENTE_INADIMPLENTE AS float)) / SUM(CAST(SALDO AS float)))
+          CASE WHEN SUM(CAST(${COL_SALDO} AS float)) = 0 THEN 0
+          ELSE (100.0 * SUM(CAST(${COL_INADIMPLENTE} AS float)) / SUM(CAST(${COL_SALDO} AS float)))
           END AS decimal(10,2)
         ) AS PERC_INADIMPLENTE
      FROM ${TABLE_FAT}`
@@ -46,8 +48,8 @@ async function inadimplenciaPorEmpreendimento() {
     `SELECT
         COALESCE(EMPREENDIMENTO, 'Nao informado') AS EMPREENDIMENTO,
         COUNT(*) AS TOTAL_VENDAS,
-        SUM(CAST(SALDO AS float)) AS TOTAL_SALDO,
-        SUM(CAST(VALOR_SOMENTE_INADIMPLENTE AS float)) AS TOTAL_INADIMPLENTE
+        SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO,
+        SUM(CAST(${COL_INADIMPLENTE} AS float)) AS TOTAL_INADIMPLENTE
      FROM ${TABLE_FAT}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado')
      ORDER BY TOTAL_SALDO DESC`
@@ -300,8 +302,8 @@ async function parcelasDetalhes(qtdParcelas, isNull, limit) {
         BLOCO,
         UNIDADE,
         SCORE,
-        CAST(SALDO AS float) AS SALDO,
-        CAST(VALOR_SOMENTE_INADIMPLENTE AS float) AS VALOR_SOMENTE_INADIMPLENTE,
+        CAST(${COL_SALDO} AS float) AS SALDO,
+        CAST(${COL_INADIMPLENTE} AS float) AS VALOR_SOMENTE_INADIMPLENTE,
         QTD_PARCELAS_INADIMPLENTES,
         VENCIMENTO_MAIS_ANTIGO,
         STATUS_REPASSE,
@@ -309,7 +311,7 @@ async function parcelasDetalhes(qtdParcelas, isNull, limit) {
         SUGESTAO
      FROM ${TABLE_FAT}
      WHERE ${whereClause}
-     ORDER BY CAST(SALDO AS float) DESC`
+     ORDER BY CAST(${COL_SALDO} AS float) DESC`
   );
 
   return result.recordset;
@@ -320,7 +322,7 @@ async function scoreSaldo() {
   const result = await pool.request().query(
     `SELECT
         SCORE,
-        AVG(CAST(SALDO AS float)) AS MEDIA_SALDO,
+        AVG(CAST(${COL_SALDO} AS float)) AS MEDIA_SALDO,
         COUNT(*) AS TOTAL
      FROM ${TABLE_FAT}
      WHERE SCORE IS NOT NULL
@@ -348,8 +350,8 @@ async function scoreSaldoDetalhes(score, limit) {
           BLOCO,
           UNIDADE,
           SCORE,
-          CAST(SALDO AS float) AS SALDO,
-          CAST(VALOR_SOMENTE_INADIMPLENTE AS float) AS VALOR_SOMENTE_INADIMPLENTE,
+          CAST(${COL_SALDO} AS float) AS SALDO,
+          CAST(${COL_INADIMPLENTE} AS float) AS VALOR_SOMENTE_INADIMPLENTE,
           QTD_PARCELAS_INADIMPLENTES,
           VENCIMENTO_MAIS_ANTIGO,
           STATUS_REPASSE,
@@ -357,7 +359,7 @@ async function scoreSaldoDetalhes(score, limit) {
           SUGESTAO
        FROM ${TABLE_FAT}
        WHERE SCORE = @score
-       ORDER BY CAST(SALDO AS float) DESC`
+       ORDER BY CAST(${COL_SALDO} AS float) DESC`
     );
 
   return result.recordset;
@@ -368,7 +370,7 @@ async function saldoPorMesVencimento() {
   const result = await pool.request().query(
     `SELECT
         DATEFROMPARTS(YEAR(VENCIMENTO_MAIS_ANTIGO), MONTH(VENCIMENTO_MAIS_ANTIGO), 1) AS MES,
-        SUM(CAST(SALDO AS float)) AS TOTAL_SALDO
+        SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO
      FROM ${TABLE_FAT}
      WHERE VENCIMENTO_MAIS_ANTIGO IS NOT NULL
      GROUP BY YEAR(VENCIMENTO_MAIS_ANTIGO), MONTH(VENCIMENTO_MAIS_ANTIGO)
@@ -387,8 +389,8 @@ async function perfilRiscoEmpreendimento() {
         COUNT(DISTINCT CPF_CNPJ) AS TOTAL_CLIENTES,
         AVG(CAST(SCORE AS float)) AS MEDIA_SCORE,
         AVG(CAST(QTD_PARCELAS_INADIMPLENTES AS float)) AS MEDIA_PARCELAS,
-        SUM(CAST(SALDO AS float)) AS TOTAL_SALDO,
-        SUM(CAST(VALOR_SOMENTE_INADIMPLENTE AS float)) AS TOTAL_INADIMPLENTE
+        SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO,
+        SUM(CAST(${COL_INADIMPLENTE} AS float)) AS TOTAL_INADIMPLENTE
      FROM ${TABLE_FAT}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado')
      ORDER BY EMPREENDIMENTO`
@@ -453,8 +455,8 @@ async function agingDetalhes(faixa, limit) {
           UNIDADE,
           VENCIMENTO_MAIS_ANTIGO,
           DATEDIFF(day, VENCIMENTO_MAIS_ANTIGO, GETDATE()) AS DIAS_ATRASO,
-          CAST(SALDO AS float) AS SALDO,
-          CAST(VALOR_SOMENTE_INADIMPLENTE AS float) AS VALOR_SOMENTE_INADIMPLENTE
+          CAST(${COL_SALDO} AS float) AS SALDO,
+          CAST(${COL_INADIMPLENTE} AS float) AS VALOR_SOMENTE_INADIMPLENTE
        FROM ${TABLE_FAT}
        WHERE ${whereClause}
        ORDER BY DIAS_ATRASO DESC, VENCIMENTO_MAIS_ANTIGO ASC`
