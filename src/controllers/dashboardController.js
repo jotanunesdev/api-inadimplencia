@@ -264,7 +264,7 @@ async function getAtendentesProximaAcao(req, res, next) {
 async function getAgingDetalhes(req, res, next) {
   try {
     const faixa = String(req.query.faixa || '').trim();
-    const allowed = ['0-30', '31-60', '61-90', '90+', 'Sem data'];
+    const allowed = ['0-30', '31-90', '91-180', '180+'];
 
     if (!faixa || !allowed.includes(faixa)) {
       return res.status(400).json({ error: 'Faixa de aging invalida.' });

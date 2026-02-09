@@ -8,6 +8,7 @@ const responsavelRoutes = require('./routes/responsavelRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const kanbanStatusRoutes = require('./routes/kanbanStatusRoutes');
 const atendimentosRoutes = require('./routes/atendimentosRoutes');
+const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 
 const app = express();
@@ -27,6 +28,7 @@ app.use('/responsaveis', responsavelRoutes);
 app.use('/dashboard', dashboardRoutes);
 app.use('/kanban-status', kanbanStatusRoutes);
 app.use('/atendimentos', atendimentosRoutes);
+app.use('/relatorios', relatoriosRoutes);
 
 app.use(errorHandler);
 
