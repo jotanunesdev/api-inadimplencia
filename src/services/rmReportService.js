@@ -79,6 +79,31 @@ function buildReportNotFoundError(attempts) {
   return new Error(`Relatorio nao localizado. Tentativas: ${details}`);
 }
 
+function logDebug(message, payload) {
+  if (String(process.env.RM_DEBUG || '').toLowerCase() !== 'true') {
+    return;
+  }
+  if (payload === undefined) {
+    console.log(`[rmReportService] ${message}`);
+    return;
+  }
+  console.log(`[rmReportService] ${message}`, payload);
+}
+
+function extractParamValues(xml) {
+  const values = {};
+  String(xml ?? '')
+    .replace(/<RptParameterReportPar>([\s\S]*?)<\/RptParameterReportPar>/gi, (block) => {
+      const nameMatch = block.match(/<ParamName>([\s\S]*?)<\/ParamName>/i);
+      const valueMatch = block.match(/<Value[^>]*>([\s\S]*?)<\/Value>/i);
+      if (nameMatch) {
+        values[nameMatch[1]] = valueMatch ? valueMatch[1] : '';
+      }
+      return block;
+    });
+  return values;
+}
+
 function normalizeXml(xml) {
   const replacements = [
     ['arrayofrptparameterreportpar', 'ArrayOfRptParameterReportPar'],
@@ -134,7 +159,10 @@ function applyParamValues(xml, codColigada, numVenda) {
       if (!value) {
         return block;
       }
-      return block.replace(/<Value>[\s\S]*?<\/Value>/i, `<Value>${value}</Value>`);
+      return block.replace(
+        /<Value([^>]*)>[\s\S]*?<\/Value>/i,
+        (_match, attrs) => `<Value${attrs}>${value}</Value>`,
+      );
     },
   );
 }
@@ -216,7 +244,16 @@ async function fetchFichaFinanceiraUrl({ numVenda, codColigada, reportId, report
   }
 
   const paramsXml = paramsResult.xml;
+  logDebug('Parametros resolved', {
+    reportId: resolvedReportId,
+    reportColigada: resolvedReportColigada,
+    paramColigada: resolvedParamColigada,
+    numVenda,
+  });
+
+  logDebug('Parametros XML values', extractParamValues(paramsXml));
   const resolvedXml = applyParamValues(paramsXml, resolvedParamColigada, numVenda);
+  logDebug('Parametros XML values after apply', extractParamValues(resolvedXml));
 
   const constraints = [
     buildConstraint('OPC', 6),
