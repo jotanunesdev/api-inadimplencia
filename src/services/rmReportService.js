@@ -60,6 +60,25 @@ function isReportNotFound(error) {
   return message.toLowerCase().includes('relat') && message.toLowerCase().includes('nao localizado');
 }
 
+async function tryFetchParamsXml(reportColigada, reportId) {
+  try {
+    const dataset = await fetchDataset('ds_paramsRel', {
+      fields: [String(reportColigada), String(reportId)],
+    });
+    const xml = readParamsXml(dataset);
+    return { xml, reportColigada, reportId, error: null };
+  } catch (error) {
+    return { xml: null, reportColigada, reportId, error };
+  }
+}
+
+function buildReportNotFoundError(attempts) {
+  const details = attempts
+    .map((attempt) => `coligada=${attempt.reportColigada}, id=${attempt.reportId}`)
+    .join(' | ');
+  return new Error(`Relatorio nao localizado. Tentativas: ${details}`);
+}
+
 function normalizeXml(xml) {
   const replacements = [
     ['arrayofrptparameterreportpar', 'ArrayOfRptParameterReportPar'],
@@ -166,30 +185,37 @@ async function fetchFichaFinanceiraUrl({ numVenda, codColigada, reportId, report
   let resolvedReportColigada = reportColigada ?? DEFAULT_REPORT_COLIGADA;
   const resolvedParamColigada = codColigada ?? DEFAULT_PARAM_COLIGADA;
 
-  let paramsDataset;
-  try {
-    paramsDataset = await fetchDataset('ds_paramsRel', {
-      fields: [String(resolvedReportColigada), String(resolvedReportId)],
-    });
-  } catch (error) {
-    if (!isReportNotFound(error)) {
-      throw error;
-    }
+  const attempts = [];
+  let paramsResult = await tryFetchParamsXml(resolvedReportColigada, resolvedReportId);
+  attempts.push(paramsResult);
 
+  if (!paramsResult.xml && isReportNotFound(paramsResult.error)) {
     const meta = await resolveReportMeta();
-    if (!meta) {
-      throw error;
+    if (meta) {
+      resolvedReportId = meta.reportId;
+      resolvedReportColigada = meta.reportColigada;
+      paramsResult = await tryFetchParamsXml(resolvedReportColigada, resolvedReportId);
+      attempts.push(paramsResult);
     }
-
-    resolvedReportId = meta.reportId;
-    resolvedReportColigada = meta.reportColigada;
-
-    paramsDataset = await fetchDataset('ds_paramsRel', {
-      fields: [String(resolvedReportColigada), String(resolvedReportId)],
-    });
   }
 
-  const paramsXml = readParamsXml(paramsDataset);
+  if (!paramsResult.xml && isReportNotFound(paramsResult.error)) {
+    const alternateColigada = resolvedReportColigada === 0 ? 1 : 0;
+    paramsResult = await tryFetchParamsXml(alternateColigada, resolvedReportId);
+    attempts.push(paramsResult);
+    if (paramsResult.xml) {
+      resolvedReportColigada = alternateColigada;
+    }
+  }
+
+  if (!paramsResult.xml) {
+    if (paramsResult.error && !isReportNotFound(paramsResult.error)) {
+      throw paramsResult.error;
+    }
+    throw buildReportNotFoundError(attempts);
+  }
+
+  const paramsXml = paramsResult.xml;
   const resolvedXml = applyParamValues(paramsXml, resolvedParamColigada, numVenda);
 
   const constraints = [
