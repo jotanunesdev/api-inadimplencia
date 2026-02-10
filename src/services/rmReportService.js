@@ -1,8 +1,64 @@
 const { fetchDataset, buildConstraint } = require('./fluigDataset');
 
 const DEFAULT_REPORT_ID = Number(process.env.RM_REPORT_ID ?? 21968);
+const DEFAULT_REPORT_CODE = String(process.env.RM_REPORT_CODE ?? 21968);
+const DEFAULT_REPORT_NAME = String(process.env.RM_REPORT_NAME ?? 'Ficha Financeira');
 const DEFAULT_REPORT_COLIGADA = Number(process.env.RM_REPORT_COLIGADA ?? process.env.RM_COLIGADA ?? 1);
 const DEFAULT_PARAM_COLIGADA = Number(process.env.RM_PARAM_COLIGADA ?? process.env.RM_COLIGADA ?? 1);
+
+function normalizeReportName(value) {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase();
+}
+
+function parseReportEntry(entry) {
+  const parts = String(entry ?? '')
+    .split('|')
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  if (parts.length < 5) {
+    return null;
+  }
+
+  return {
+    reportColigada: Number(parts[0]),
+    codSistema: parts[1],
+    sistema: parts[2],
+    reportId: Number(parts[3]),
+    reportCode: parts[4],
+    descricao: parts.slice(5).join(' | ') || '',
+  };
+}
+
+async function resolveReportMeta() {
+  const dataset = await fetchDataset('ds_paiFilho_controleDeAcessoRMreportsFluig');
+  const rows = dataset?.values ?? [];
+  const entries = rows.flatMap((row) => String(row?.table_relatorio ?? '').split('\u0018'));
+
+  const parsed = entries
+    .map(parseReportEntry)
+    .filter(Boolean);
+
+  const normalizedName = normalizeReportName(DEFAULT_REPORT_NAME);
+
+  let match = null;
+  if (DEFAULT_REPORT_CODE) {
+    match = parsed.find((item) => String(item.reportCode) === DEFAULT_REPORT_CODE) ?? null;
+  }
+
+  if (!match && normalizedName) {
+    match = parsed.find((item) => normalizeReportName(item.descricao).includes(normalizedName)) ?? null;
+  }
+
+  return match;
+}
+
+function isReportNotFound(error) {
+  const message = String(error?.message ?? error ?? '');
+  return message.toLowerCase().includes('relat') && message.toLowerCase().includes('nao localizado');
+}
 
 function normalizeXml(xml) {
   const replacements = [
@@ -106,13 +162,32 @@ async function fetchFichaFinanceiraUrl({ numVenda, codColigada, reportId, report
     throw new Error('NUM_VENDA e obrigatorio.');
   }
 
-  const resolvedReportId = reportId ?? DEFAULT_REPORT_ID;
-  const resolvedReportColigada = reportColigada ?? DEFAULT_REPORT_COLIGADA;
+  let resolvedReportId = reportId ?? DEFAULT_REPORT_ID;
+  let resolvedReportColigada = reportColigada ?? DEFAULT_REPORT_COLIGADA;
   const resolvedParamColigada = codColigada ?? DEFAULT_PARAM_COLIGADA;
 
-  const paramsDataset = await fetchDataset('ds_paramsRel', {
-    fields: [String(resolvedReportColigada), String(resolvedReportId)],
-  });
+  let paramsDataset;
+  try {
+    paramsDataset = await fetchDataset('ds_paramsRel', {
+      fields: [String(resolvedReportColigada), String(resolvedReportId)],
+    });
+  } catch (error) {
+    if (!isReportNotFound(error)) {
+      throw error;
+    }
+
+    const meta = await resolveReportMeta();
+    if (!meta) {
+      throw error;
+    }
+
+    resolvedReportId = meta.reportId;
+    resolvedReportColigada = meta.reportColigada;
+
+    paramsDataset = await fetchDataset('ds_paramsRel', {
+      fields: [String(resolvedReportColigada), String(resolvedReportId)],
+    });
+  }
 
   const paramsXml = readParamsXml(paramsDataset);
   const resolvedXml = applyParamValues(paramsXml, resolvedParamColigada, numVenda);
