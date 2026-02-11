@@ -7,6 +7,16 @@ const TABLE_OC = 'dbo.OCORRENCIAS';
 const TABLE_USU = 'dbo.USUARIO';
 const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
 
+const LATEST_ACAO_APPLY = `
+  OUTER APPLY (
+    SELECT TOP 1 o.PROXIMA_ACAO
+    FROM ${TABLE_OC} o
+    WHERE o.NUM_VENDA_FK = f.NUM_VENDA
+      AND o.PROXIMA_ACAO IS NOT NULL
+    ORDER BY o.DT_OCORRENCIA DESC, o.HORA_OCORRENCIA DESC, o.PROXIMA_ACAO DESC
+  ) AS ultima_acao
+`;
+
 async function kpis() {
   const pool = await getPool();
   const result = await pool.request().query(
@@ -207,11 +217,12 @@ async function proximasAcoesPorDia() {
   const pool = await getPool();
   const result = await pool.request().query(
     `SELECT
-        CONVERT(date, PROXIMA_ACAO) AS DATA,
+        CONVERT(date, ultima_acao.PROXIMA_ACAO) AS DATA,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
-     WHERE PROXIMA_ACAO IS NOT NULL
-     GROUP BY CONVERT(date, PROXIMA_ACAO)
+     FROM ${TABLE_FAT} f
+     ${LATEST_ACAO_APPLY}
+     WHERE ultima_acao.PROXIMA_ACAO IS NOT NULL
+     GROUP BY CONVERT(date, ultima_acao.PROXIMA_ACAO)
      ORDER BY DATA`
   );
 
@@ -223,14 +234,15 @@ async function acoesDefinidas() {
   const result = await pool.request().query(
     `SELECT
         COUNT(*) AS TOTAL_VENDAS,
-        SUM(CASE WHEN PROXIMA_ACAO IS NOT NULL THEN 1 ELSE 0 END) AS COM_ACAO,
-        SUM(CASE WHEN PROXIMA_ACAO IS NULL THEN 1 ELSE 0 END) AS SEM_ACAO,
+        SUM(CASE WHEN ultima_acao.PROXIMA_ACAO IS NOT NULL THEN 1 ELSE 0 END) AS COM_ACAO,
+        SUM(CASE WHEN ultima_acao.PROXIMA_ACAO IS NULL THEN 1 ELSE 0 END) AS SEM_ACAO,
         CAST(
           CASE WHEN COUNT(*) = 0 THEN 0
-          ELSE (100.0 * SUM(CASE WHEN PROXIMA_ACAO IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*))
+          ELSE (100.0 * SUM(CASE WHEN ultima_acao.PROXIMA_ACAO IS NOT NULL THEN 1 ELSE 0 END) / COUNT(*))
           END AS decimal(10,2)
         ) AS PERC_COM_ACAO
-     FROM ${TABLE_FAT}`
+     FROM ${TABLE_FAT} f
+     ${LATEST_ACAO_APPLY}`
   );
 
   return result.recordset[0];
@@ -307,9 +319,10 @@ async function parcelasDetalhes(qtdParcelas, isNull, limit) {
         QTD_PARCELAS_INADIMPLENTES,
         VENCIMENTO_MAIS_ANTIGO,
         STATUS_REPASSE,
-        PROXIMA_ACAO,
+        ultima_acao.PROXIMA_ACAO AS PROXIMA_ACAO,
         SUGESTAO
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     ${LATEST_ACAO_APPLY}
      WHERE ${whereClause}
      ORDER BY CAST(${COL_SALDO} AS float) DESC`
   );
@@ -355,9 +368,10 @@ async function scoreSaldoDetalhes(score, limit) {
           QTD_PARCELAS_INADIMPLENTES,
           VENCIMENTO_MAIS_ANTIGO,
           STATUS_REPASSE,
-          PROXIMA_ACAO,
+          ultima_acao.PROXIMA_ACAO AS PROXIMA_ACAO,
           SUGESTAO
-       FROM ${TABLE_FAT}
+       FROM ${TABLE_FAT} f
+       ${LATEST_ACAO_APPLY}
        WHERE SCORE = @score
        ORDER BY CAST(${COL_SALDO} AS float) DESC`
     );
