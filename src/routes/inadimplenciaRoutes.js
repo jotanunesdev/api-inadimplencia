@@ -4,6 +4,7 @@ const controller = require('../controllers/inadimplenciaController');
 const router = express.Router();
 
 router.get('/', controller.getAll);
+router.get('/responsavel/:nome', controller.getByResponsavel);
 router.get('/cpf/:cpf', controller.getByCpf);
 router.get('/num-venda/:numVenda', controller.getByNumVenda);
 

@@ -2,6 +2,8 @@ const { getPool, sql } = require('../config/db');
 
 const TABLE = 'DW.fat_analise_inadimplencia_v2';
 const TABLE_OC = 'dbo.OCORRENCIAS';
+const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
+const TABLE_USUARIO = 'dbo.USUARIO';
 const COL_SALDO = 'VALOR_TOTAL';
 const COL_INADIMPLENTE = 'VALOR_INADIMPLENTE';
 const SELECT_FIELDS = [
@@ -105,8 +107,29 @@ async function findByNumVenda(numVendaInput) {
   return result.recordset;
 }
 
+async function findByResponsavel(nomeUsuario) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('nomeUsuario', sql.VarChar, nomeUsuario)
+    .query(
+      `SELECT ${SELECT_FIELDS},
+              vr.NOME_USUARIO_FK AS RESPONSAVEL,
+              vr.NOME_USUARIO_FK AS NOME_USUARIO_FK,
+              u.COR_HEX AS RESPONSAVEL_COR_HEX
+       FROM ${TABLE} f
+       INNER JOIN ${TABLE_RESP} vr ON vr.NUM_VENDA_FK = f.NUM_VENDA
+       LEFT JOIN ${TABLE_USUARIO} u ON u.NOME = vr.NOME_USUARIO_FK
+       ${LATEST_ACAO_APPLY}
+       WHERE vr.NOME_USUARIO_FK = @nomeUsuario`
+    );
+
+  return result.recordset;
+}
+
 module.exports = {
   findAll,
   findByCpf,
   findByNumVenda,
+  findByResponsavel,
 };

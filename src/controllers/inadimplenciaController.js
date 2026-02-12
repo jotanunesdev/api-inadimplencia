@@ -37,8 +37,23 @@ async function getByNumVenda(req, res, next) {
   }
 }
 
+async function getByResponsavel(req, res, next) {
+  try {
+    const { nome } = req.params;
+    if (!nome || typeof nome !== 'string') {
+      return res.status(400).json({ error: 'NOME_USUARIO_FK e obrigatorio.' });
+    }
+
+    const data = await model.findByResponsavel(nome.trim());
+    res.json({ data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   getAll,
   getByCpf,
   getByNumVenda,
+  getByResponsavel,
 };
