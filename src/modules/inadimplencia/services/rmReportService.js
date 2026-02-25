@@ -1,10 +1,11 @@
 const { fetchDataset, buildConstraint } = require('./fluigDataset');
+const { env } = require('../config/env');
 
-const DEFAULT_REPORT_ID = Number(process.env.RM_REPORT_ID ?? 21968);
-const DEFAULT_REPORT_CODE = String(process.env.RM_REPORT_CODE ?? 21968);
-const DEFAULT_REPORT_NAME = String(process.env.RM_REPORT_NAME ?? 'Ficha Financeira');
-const DEFAULT_REPORT_COLIGADA = Number(process.env.RM_REPORT_COLIGADA ?? process.env.RM_COLIGADA ?? 1);
-const DEFAULT_PARAM_COLIGADA = Number(process.env.RM_PARAM_COLIGADA ?? process.env.RM_COLIGADA ?? 1);
+const DEFAULT_REPORT_ID = Number(env.RM_REPORT_ID ?? 21968);
+const DEFAULT_REPORT_CODE = String(env.RM_REPORT_CODE ?? 21968);
+const DEFAULT_REPORT_NAME = String(env.RM_REPORT_NAME ?? 'Ficha Financeira');
+const DEFAULT_REPORT_COLIGADA = Number(env.RM_REPORT_COLIGADA ?? env.RM_COLIGADA ?? 1);
+const DEFAULT_PARAM_COLIGADA = Number(env.RM_PARAM_COLIGADA ?? env.RM_COLIGADA ?? 1);
 
 function normalizeReportName(value) {
   return String(value ?? '')
@@ -80,7 +81,7 @@ function buildReportNotFoundError(attempts) {
 }
 
 function logDebug(message, payload) {
-  if (String(process.env.RM_DEBUG || '').toLowerCase() !== 'true') {
+  if (String(env.RM_DEBUG || '').toLowerCase() !== 'true') {
     return;
   }
   if (payload === undefined) {

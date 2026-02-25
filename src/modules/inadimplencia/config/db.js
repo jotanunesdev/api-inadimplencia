@@ -1,4 +1,5 @@
 const sql = require('mssql');
+const { env } = require('./env');
 
 let poolPromise;
 
@@ -11,7 +12,7 @@ function buildConfig() {
     DB_PORT,
     DB_ENCRYPT,
     DB_TRUST_CERT,
-  } = process.env;
+  } = env;
 
   if (!DB_USER || !DB_PASSWORD || !DB_SERVER || !DB_DATABASE) {
     throw new Error(

@@ -1,8 +1,15 @@
 require('dotenv').config();
-const app = require('./app');
+const { createApp } = require('./app');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
-app.listen(PORT, () => {
-  console.log(`API rodando na porta ${PORT}`);
-});
+createApp()
+  .then((app) => {
+    app.listen(PORT, () => {
+      console.log(`API rodando na porta ${PORT}`);
+    });
+  })
+  .catch((error) => {
+    console.error('Falha ao iniciar a API:', error);
+    process.exit(1);
+  });

@@ -1,6 +1,7 @@
 const DEFAULT_CONSTRAINT_TYPE = 1;
 const fetchApi = global.fetch || require('node-fetch');
 const https = require('https');
+const { env } = require('../config/env');
 
 const CONSTRAINT_TYPE_MAP = {
   1: 'MUST',
@@ -14,7 +15,7 @@ function shouldAllowInsecure(url) {
   if (!url || !url.startsWith('https://')) {
     return false;
   }
-  return String(process.env.FLUIG_ALLOW_INSECURE || '').toLowerCase() === 'true';
+  return String(env.FLUIG_ALLOW_INSECURE || '').toLowerCase() === 'true';
 }
 
 function buildRequestOptions(url) {
@@ -27,7 +28,7 @@ function buildRequestOptions(url) {
 }
 
 function resolveFluigUrl() {
-  const url = process.env.FLUIG_URL;
+  const url = env.FLUIG_URL;
   if (!url) {
     throw new Error('FLUIG_URL nao configurado.');
   }
@@ -35,8 +36,8 @@ function resolveFluigUrl() {
 }
 
 function resolveAuthHeader() {
-  const user = process.env.FLUIG_USER;
-  const password = process.env.FLUIG_PASSWORD;
+  const user = env.FLUIG_USER;
+  const password = env.FLUIG_PASSWORD;
 
   if (!user || !password) {
     return null;
@@ -56,8 +57,8 @@ function buildConstraint(field, initialValue, finalValue = initialValue, type = 
 }
 
 async function createFluigSession() {
-  const user = process.env.FLUIG_USER;
-  const password = process.env.FLUIG_PASSWORD;
+  const user = env.FLUIG_USER;
+  const password = env.FLUIG_PASSWORD;
 
   if (!user || !password) {
     throw new Error('FLUIG_USER e FLUIG_PASSWORD nao configurados.');

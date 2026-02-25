@@ -86,6 +86,14 @@ const swaggerSpec = {
         responses: jsonResponse,
       },
     },
+    '/inadimplencia/responsavel/{nome}': {
+      get: {
+        tags: ['Inadimplencia'],
+        summary: 'Busca inadimplencia por responsavel',
+        parameters: [pathParam('nome', 'Nome do responsavel', 'joao')],
+        responses: jsonResponse,
+      },
+    },
     '/proximas-acoes': {
       get: {
         tags: ['ProximasAcoes'],
