@@ -493,25 +493,21 @@ function chunkArray<T>(items: T[], size: number) {
   return result
 }
 
-async function loadCompanyEmployeesBySectionCodes(sectionCodes: string[]) {
+async function loadCompanyEmployeesByObraCodes(obraCodes: string[]) {
   const normalizedCodes = Array.from(
-    new Set(
-      sectionCodes
-        .map((code) => normalizeCode(code))
-        .filter(Boolean),
-    ),
+    new Set(obraCodes.map((code) => normalizeCode(code)).filter(Boolean)),
   )
 
   if (normalizedCodes.length === 0) {
     return [] as CompanyEmployee[]
   }
 
-  const codeChunks = chunkArray(normalizedCodes, 60)
+  const codeChunks = chunkArray(normalizedCodes, 20)
   const allRows: Record<string, string>[] = []
 
   for (const chunk of codeChunks) {
     const conditions = chunk
-      .map((code) => `PFUNC.CODSECAO='${escapeReadViewFilterValue(code)}'`)
+      .map((code) => `PFUNC.CODSECAO LIKE '${escapeReadViewFilterValue(code)}%'`)
       .join(" OR ")
     const filter = `PFUNC.CODCOLIGADA=1 AND (${conditions})`
 
@@ -529,7 +525,7 @@ async function loadCompanyEmployeesBySectionCodes(sectionCodes: string[]) {
   return mapCompanyEmployees(allRows)
 }
 
-function getSectionCodesForObraFilter(
+function getObraCodesForFilter(
   sections: SectionRecord[],
   params: {
     obra?: string
@@ -566,10 +562,8 @@ function getSectionCodesForObraFilter(
 
     if (!matchesByCode && !matchesByName) continue
 
-    const sectionCode = normalizeCode(section.CODIGO)
-    if (sectionCode) {
-      codes.add(sectionCode)
-    }
+    const obraCode = normalizeCode(obraInfo.OBRA_CODIGO)
+    if (obraCode) codes.add(obraCode)
   }
 
   return Array.from(codes)
@@ -619,11 +613,11 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
 
   let employees: CompanyEmployee[]
   if (obraCodigoFilterRaw || obraFilterRaw) {
-    const sectionCodes = getSectionCodesForObraFilter(sections, {
+    const obraCodes = getObraCodesForFilter(sections, {
       obra: obraFilterRaw,
       obraCodigo: obraCodigoFilterRaw,
     })
-    employees = await loadCompanyEmployeesBySectionCodes(sectionCodes)
+    employees = await loadCompanyEmployeesByObraCodes(obraCodes)
   } else {
     employees = await getCompanyEmployees(forceRefresh)
   }
