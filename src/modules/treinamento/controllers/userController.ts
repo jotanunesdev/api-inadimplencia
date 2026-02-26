@@ -481,6 +481,100 @@ async function loadCompanyEmployeesFresh() {
   return mapCompanyEmployees(rows)
 }
 
+function escapeReadViewFilterValue(value: string) {
+  return value.replace(/'/g, "''")
+}
+
+function chunkArray<T>(items: T[], size: number) {
+  const result: T[][] = []
+  for (let index = 0; index < items.length; index += size) {
+    result.push(items.slice(index, index + size))
+  }
+  return result
+}
+
+async function loadCompanyEmployeesBySectionCodes(sectionCodes: string[]) {
+  const normalizedCodes = Array.from(
+    new Set(
+      sectionCodes
+        .map((code) => normalizeCode(code))
+        .filter(Boolean),
+    ),
+  )
+
+  if (normalizedCodes.length === 0) {
+    return [] as CompanyEmployee[]
+  }
+
+  const codeChunks = chunkArray(normalizedCodes, 60)
+  const allRows: Record<string, string>[] = []
+
+  for (const chunk of codeChunks) {
+    const conditions = chunk
+      .map((code) => `PFUNC.CODSECAO='${escapeReadViewFilterValue(code)}'`)
+      .join(" OR ")
+    const filter = `PFUNC.CODCOLIGADA=1 AND (${conditions})`
+
+    // eslint-disable-next-line no-await-in-loop
+    const readViewResult = await readView({
+      dataServerName: "FopFuncData",
+      filter,
+      context: "CODCOLIGADA=1",
+    })
+
+    const rows = extractPFuncRows(readViewResult)
+    allRows.push(...rows)
+  }
+
+  return mapCompanyEmployees(allRows)
+}
+
+function getSectionCodesForObraFilter(
+  sections: SectionRecord[],
+  params: {
+    obra?: string
+    obraCodigo?: string
+  },
+) {
+  const sectionByHierarchyKey = new Map<string, SectionRecord>()
+
+  for (const section of sections) {
+    const codColigadaCompact = normalizeCodeCompact(section.CODCOLIGADA)
+    const codigo = normalizeCode(section.CODIGO)
+    if (!codColigadaCompact || !codigo) continue
+    sectionByHierarchyKey.set(`${codColigadaCompact}|${codigo}`, section)
+  }
+
+  const targetObraCodigo = params.obraCodigo ? normalizeCode(params.obraCodigo) : ""
+  const targetObraNome = params.obra ? normalizeText(params.obra) : ""
+  const codes = new Set<string>()
+
+  for (const section of sections) {
+    const codColigadaCompact = normalizeCodeCompact(section.CODCOLIGADA)
+    const obraInfo = deriveObraInfo({
+      section,
+      codColigadaCompact,
+      sectionByHierarchyKey,
+    })
+
+    const matchesByCode =
+      Boolean(targetObraCodigo) && normalizeCode(obraInfo.OBRA_CODIGO) === targetObraCodigo
+    const matchesByName =
+      !targetObraCodigo &&
+      Boolean(targetObraNome) &&
+      normalizeText(obraInfo.OBRA_NOME) === targetObraNome
+
+    if (!matchesByCode && !matchesByName) continue
+
+    const sectionCode = normalizeCode(section.CODIGO)
+    if (sectionCode) {
+      codes.add(sectionCode)
+    }
+  }
+
+  return Array.from(codes)
+}
+
 async function getCompanyEmployees(forceRefresh = false) {
   const now = Date.now()
   if (
@@ -521,10 +615,18 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
   const obraCodigoFilterRaw = (req.query.obraCodigo as string | undefined)?.trim()
   const includeLocation = parseBoolean((req.query.includeLocation as string | undefined)?.trim()) === true
 
-  const [employees, sections] = await Promise.all([
-    getCompanyEmployees(forceRefresh),
-    getCompanySectionsNormalized(forceRefresh),
-  ])
+  const sections = await getCompanySectionsNormalized(forceRefresh)
+
+  let employees: CompanyEmployee[]
+  if (obraCodigoFilterRaw || obraFilterRaw) {
+    const sectionCodes = getSectionCodesForObraFilter(sections, {
+      obra: obraFilterRaw,
+      obraCodigo: obraCodigoFilterRaw,
+    })
+    employees = await loadCompanyEmployeesBySectionCodes(sectionCodes)
+  } else {
+    employees = await getCompanyEmployees(forceRefresh)
+  }
 
   let enrichedEmployees = buildCompanyEmployeesWithLocation(employees, sections)
 
