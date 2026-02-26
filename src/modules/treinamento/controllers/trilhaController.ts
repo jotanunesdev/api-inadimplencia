@@ -153,7 +153,30 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
-  await deleteTrilha(req.params.id)
+  try {
+    await deleteTrilha(req.params.id)
+  } catch (error) {
+    const requestError = error as {
+      number?: number
+      originalError?: { info?: { message?: string } }
+      message?: string
+    }
+    const message =
+      requestError?.originalError?.info?.message ?? requestError?.message ?? ""
+
+    if (requestError?.number === 547) {
+      throw new HttpError(
+        409,
+        "Nao e possivel excluir a trilha porque existem conteudos, provas ou vinculos associados. Remova os itens vinculados antes de excluir.",
+      )
+    }
+
+    if (message) {
+      throw new HttpError(400, message)
+    }
+
+    throw error
+  }
   res.status(204).send()
 })
 

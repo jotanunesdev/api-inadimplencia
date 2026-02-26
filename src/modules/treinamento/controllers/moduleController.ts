@@ -113,6 +113,25 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
-  await deleteModule(req.params.id)
+  try {
+    await deleteModule(req.params.id)
+  } catch (error) {
+    const requestError = error as {
+      number?: number
+      originalError?: { info?: { message?: string } }
+      message?: string
+    }
+    const message =
+      requestError?.originalError?.info?.message ?? requestError?.message ?? ""
+
+    if (requestError?.number === 547 && message.includes("FK_TTRILHAS_MODULO")) {
+      throw new HttpError(
+        409,
+        "Nao e possivel excluir o modulo porque existem trilhas vinculadas. Exclua as trilhas do modulo primeiro.",
+      )
+    }
+
+    throw error
+  }
   res.status(204).send()
 })
