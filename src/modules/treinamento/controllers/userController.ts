@@ -428,6 +428,11 @@ export const listAllUsers = asyncHandler(async (req: Request, res: Response) => 
 function mapCompanyEmployees(rows: Record<string, string>[]) {
   const candidates = rows
     .map((row): CompanyEmployee | null => {
+      const isActive = (row.CODSITUACAO ?? "").trim().toUpperCase() === "A"
+      if (!isActive) {
+        return null
+      }
+
       const cpfDigits = normalizeCpf(row.CPF ?? "")
       if (cpfDigits.length !== 11) {
         return null
@@ -473,7 +478,7 @@ function mapCompanyEmployees(rows: Record<string, string>[]) {
 async function loadCompanyEmployeesFresh() {
   const readViewResult = await readView({
     dataServerName: "FopFuncData",
-    filter: "PFUNC.CODCOLIGADA=1",
+    filter: "PFUNC.CODCOLIGADA=1 AND PFUNC.CODSITUACAO='A'",
     context: "CODCOLIGADA=1",
   })
 
@@ -509,7 +514,7 @@ async function loadCompanyEmployeesByObraCodes(obraCodes: string[]) {
     const conditions = chunk
       .map((code) => `PFUNC.CODSECAO LIKE '${escapeReadViewFilterValue(code)}%'`)
       .join(" OR ")
-    const filter = `PFUNC.CODCOLIGADA=1 AND (${conditions})`
+    const filter = `PFUNC.CODCOLIGADA=1 AND PFUNC.CODSITUACAO='A' AND (${conditions})`
 
     // eslint-disable-next-line no-await-in-loop
     const readViewResult = await readView({
