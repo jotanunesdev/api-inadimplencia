@@ -556,22 +556,37 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
 
 export const listCompanyEmployeeObras = asyncHandler(async (req: Request, res: Response) => {
   const forceRefresh = parseBoolean((req.query.refresh as string | undefined)?.trim()) === true
-  const [employees, sections] = await Promise.all([
-    getCompanyEmployees(forceRefresh),
-    getCompanySectionsNormalized(forceRefresh),
-  ])
+  const sections = await getCompanySectionsNormalized(forceRefresh)
+  const sectionByHierarchyKey = new Map<string, SectionRecord>()
 
-  const enrichedEmployees = buildCompanyEmployeesWithLocation(employees, sections)
+  for (const section of sections) {
+    const codColigadaCompact = normalizeCodeCompact(section.CODCOLIGADA)
+    const codigo = normalizeCode(section.CODIGO)
+    if (!codColigadaCompact || !codigo) continue
+    sectionByHierarchyKey.set(`${codColigadaCompact}|${codigo}`, section)
+  }
+
   const byKey = new Map<string, { codigo: string | null; nome: string }>()
 
-  for (const item of enrichedEmployees) {
-    const nome = item.OBRA_NOME?.trim()
+  for (const section of sections) {
+    const sectionCode = normalizeCode(section.CODIGO)
+    if (!isObraHierarchyCode(sectionCode)) continue
+
+    const codColigadaCompact = normalizeCodeCompact(section.CODCOLIGADA)
+    const obraInfo = deriveObraInfo({
+      section,
+      codColigadaCompact,
+      sectionByHierarchyKey,
+    })
+
+    const nome = obraInfo.OBRA_NOME?.trim()
     if (!nome) continue
-    const key = normalizeText(nome)
+    const codigo = obraInfo.OBRA_CODIGO ? normalizeCode(obraInfo.OBRA_CODIGO) : null
+    const key = codigo ? `codigo:${codigo}` : `nome:${normalizeText(nome)}`
     if (!key) continue
     if (!byKey.has(key)) {
       byKey.set(key, {
-        codigo: item.OBRA_CODIGO ? normalizeCode(item.OBRA_CODIGO) : null,
+        codigo,
         nome,
       })
     }
