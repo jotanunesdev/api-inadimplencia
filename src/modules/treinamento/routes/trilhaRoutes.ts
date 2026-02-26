@@ -1,5 +1,6 @@
 import { Router } from "express"
 import {
+  clearEficaciaConfig,
   create,
   getById,
   list,
@@ -15,6 +16,7 @@ router.get("/:id", getById)
 router.post("/", create)
 router.put("/:id", update)
 router.put("/:id/eficacia", upsertEficaciaConfig)
+router.delete("/:id/eficacia", clearEficaciaConfig)
 router.delete("/:id", remove)
 
 export default router

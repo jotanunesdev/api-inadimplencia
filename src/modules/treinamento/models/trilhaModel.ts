@@ -172,6 +172,24 @@ export async function upsertTrilhaEficaciaConfig(
   return getTrilhaById(trilhaId)
 }
 
+export async function clearTrilhaEficaciaConfig(trilhaId: string) {
+  await ensureTrilhaEficaciaColumns()
+  const pool = await getPool()
+  await pool
+    .request()
+    .input("ID", sql.UniqueIdentifier, trilhaId)
+    .query(`
+      UPDATE dbo.TTRILHAS
+      SET
+        AVALIACAO_EFICACIA_OBRIGATORIA = 0,
+        AVALIACAO_EFICACIA_PERGUNTA = NULL,
+        AVALIACAO_EFICACIA_ATUALIZADA_EM = SYSUTCDATETIME()
+      WHERE ID = @ID
+    `)
+
+  return getTrilhaById(trilhaId)
+}
+
 export type TrilhaCreateInput = {
   id: string
   moduloId: string

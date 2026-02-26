@@ -2,6 +2,7 @@ import type { Request, Response } from "express"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import {
+  clearTrilhaEficaciaConfig,
   createTrilha,
   deleteTrilha,
   getTrilhaById,
@@ -201,6 +202,30 @@ export const upsertEficaciaConfig = asyncHandler(async (req: Request, res: Respo
       pergunta: perguntaTrimmed,
       obrigatoria: obrigatoria !== false,
     })
+    res.json({ trilha: updated })
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : ""
+    if (code === "TRILHA_EFICACIA_CONFIG_COLUMNS_MISSING") {
+      throw new HttpError(
+        400,
+        "Banco sem suporte a configuracao de avaliacao de eficacia por trilha. Execute a migration de TTRILHAS.",
+      )
+    }
+    throw error
+  }
+})
+
+export const clearEficaciaConfig = asyncHandler(async (req: Request, res: Response) => {
+  const trilha = await getTrilhaById(req.params.id)
+  if (!trilha) {
+    throw new HttpError(404, "Trilha nao encontrada")
+  }
+
+  try {
+    const updated = await clearTrilhaEficaciaConfig(req.params.id)
     res.json({ trilha: updated })
   } catch (error) {
     const code =

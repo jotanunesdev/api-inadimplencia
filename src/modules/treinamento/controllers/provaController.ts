@@ -196,7 +196,29 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
 })
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
-  await deleteProva(req.params.id)
+  try {
+    await deleteProva(req.params.id)
+  } catch (error) {
+    const requestError = error as {
+      number?: number
+      originalError?: { info?: { message?: string } }
+      message?: string
+    }
+    const message =
+      requestError?.originalError?.info?.message ?? requestError?.message ?? ""
+
+    if (requestError?.number === 547) {
+      throw new HttpError(
+        409,
+        "Nao e possivel excluir esta prova porque existem tentativas, conclusoes ou registros associados.",
+      )
+    }
+
+    if (message) {
+      throw new HttpError(400, message)
+    }
+    throw error
+  }
   res.status(204).send()
 })
 

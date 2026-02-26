@@ -321,7 +321,29 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
 })
 
 export const remove = asyncHandler(async (req: Request, res: Response) => {
-  await deleteVideo(req.params.id)
+  try {
+    await deleteVideo(req.params.id)
+  } catch (error) {
+    const requestError = error as {
+      number?: number
+      originalError?: { info?: { message?: string } }
+      message?: string
+    }
+    const message =
+      requestError?.originalError?.info?.message ?? requestError?.message ?? ""
+
+    if (requestError?.number === 547) {
+      throw new HttpError(
+        409,
+        "Nao e possivel excluir este video porque existem conclusoes, vinculos ou registros associados.",
+      )
+    }
+
+    if (message) {
+      throw new HttpError(400, message)
+    }
+    throw error
+  }
   res.status(204).send()
 })
 

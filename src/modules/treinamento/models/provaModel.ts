@@ -207,10 +207,31 @@ export async function updateProva(id: string, input: ProvaUpdateInput) {
 
 export async function deleteProva(id: string) {
   const pool = await getPool()
-  await pool
-    .request()
-    .input("ID", sql.UniqueIdentifier, id)
-    .query("DELETE FROM dbo.TPROVAS WHERE ID = @ID")
+  const transaction = new sql.Transaction(pool)
+  await transaction.begin()
+  try {
+    await new sql.Request(transaction)
+      .input("PROVA_ID", sql.UniqueIdentifier, id)
+      .query(`
+        DELETE o
+        FROM dbo.TPROVA_OPCOES o
+        INNER JOIN dbo.TPROVA_QUESTOES q ON q.ID = o.QUESTAO_ID
+        WHERE q.PROVA_ID = @PROVA_ID
+      `)
+
+    await new sql.Request(transaction)
+      .input("PROVA_ID", sql.UniqueIdentifier, id)
+      .query("DELETE FROM dbo.TPROVA_QUESTOES WHERE PROVA_ID = @PROVA_ID")
+
+    await new sql.Request(transaction)
+      .input("ID", sql.UniqueIdentifier, id)
+      .query("DELETE FROM dbo.TPROVAS WHERE ID = @ID")
+
+    await transaction.commit()
+  } catch (error) {
+    await transaction.rollback()
+    throw error
+  }
 }
 
 export type ObjectiveQuestionOptionInput = {
