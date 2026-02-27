@@ -20,6 +20,7 @@ import normaRoutes from "./normaRoutes"
 import notificationRoutes from "./notificationRoutes"
 import dossieRoutes from "./dossieRoutes"
 import feedbackRoutes from "./feedbackRoutes"
+import reportRoutes from "./reportRoutes"
 
 const router = Router()
 
@@ -44,5 +45,6 @@ router.use("/turmas", turmaRoutes)
 router.use("/notificacoes", notificationRoutes)
 router.use("/dossies", dossieRoutes)
 router.use("/feedbacks", feedbackRoutes)
+router.use("/reports", reportRoutes)
 
 export default router
