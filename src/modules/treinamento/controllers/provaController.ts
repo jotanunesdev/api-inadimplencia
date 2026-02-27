@@ -1,4 +1,5 @@
 import type { Request, Response } from "express"
+import { env } from "../config/env"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import { normalizeCpf } from "../utils/normalizeCpf"
@@ -22,10 +23,19 @@ import {
   getObjectiveProvaByTrilhaId,
   getProvaById,
   listProvas,
+  normalizeProvaModoAplicacao,
+  type ProvaObjectiveRecord,
+  PROVA_MODO_APLICACAO,
   updateProva,
 } from "../models/provaModel"
 import { getTrilhaById, updateTrilha } from "../models/trilhaModel"
 import { getModuleById } from "../models/moduleModel"
+import {
+  assertCollectiveProofTokenActive,
+  createCollectiveProofToken,
+  type CollectiveProofTokenPayload,
+  parseCollectiveProofToken,
+} from "../utils/collectiveProofToken"
 import {
   buildModuleRelativePath,
   buildStoredFileName,
@@ -76,11 +86,12 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { id, trilhaId, provaPath, versao } = req.body as {
+  const { id, trilhaId, provaPath, versao, modoAplicacao } = req.body as {
     id?: string
     trilhaId?: string
     provaPath?: string
     versao?: number
+    modoAplicacao?: string
   }
 
   if (!id || !trilhaId || !provaPath) {
@@ -92,16 +103,18 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     trilhaId,
     provaPath,
     versao,
+    modoAplicacao: normalizeProvaModoAplicacao(modoAplicacao),
   })
 
   res.status(201).json({ prova })
 })
 
 export const createUpload = asyncHandler(async (req: Request, res: Response) => {
-  const { id, trilhaId, versao } = req.body as {
+  const { id, trilhaId, versao, modoAplicacao } = req.body as {
     id?: string
     trilhaId?: string
     versao?: number
+    modoAplicacao?: string
   }
   const file = req.file
 
@@ -125,16 +138,18 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
     trilhaId,
     provaPath: relativePath,
     versao,
+    modoAplicacao: normalizeProvaModoAplicacao(modoAplicacao),
   })
 
   res.status(201).json({ prova })
 })
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { trilhaId, provaPath, versao } = req.body as {
+  const { trilhaId, provaPath, versao, modoAplicacao } = req.body as {
     trilhaId?: string
     provaPath?: string
     versao?: number
+    modoAplicacao?: string
   }
 
   if (
@@ -149,6 +164,10 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     trilhaId,
     provaPath,
     versao,
+    modoAplicacao:
+      modoAplicacao !== undefined
+        ? normalizeProvaModoAplicacao(modoAplicacao)
+        : undefined,
   })
 
   if (!prova) {
@@ -159,9 +178,10 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const updateUpload = asyncHandler(async (req: Request, res: Response) => {
-  const { trilhaId, versao } = req.body as {
+  const { trilhaId, versao, modoAplicacao } = req.body as {
     trilhaId?: string
     versao?: number
+    modoAplicacao?: string
   }
   const file = req.file
 
@@ -186,6 +206,10 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
     trilhaId: resolvedTrilhaId,
     provaPath: relativePath,
     versao,
+    modoAplicacao:
+      modoAplicacao !== undefined
+        ? normalizeProvaModoAplicacao(modoAplicacao)
+        : undefined,
   })
 
   if (!prova) {
@@ -253,6 +277,13 @@ type ObjectiveCollectiveSubmitPayload = {
   origem?: string
 }
 
+type ObjectiveCollectiveQrPayload = {
+  users?: Array<Record<string, unknown>>
+  trilhaIds?: string[]
+  turmaId?: string
+  redirectBaseUrl?: string
+}
+
 type GabaritoItem = {
   questaoId: string
   enunciado: string
@@ -272,6 +303,7 @@ function sanitizeObjectiveProvaForPlayer(prova: {
   ID: string
   TRILHA_FK_ID: string
   VERSAO: number
+  MODO_APLICACAO: string
   TITULO: string | null
   NOTA_TOTAL: number | null
   ATUALIZADO_EM: Date | null
@@ -288,10 +320,12 @@ function sanitizeObjectiveProvaForPlayer(prova: {
     }>
   }>
 }) {
+  const modoAplicacao = normalizeProvaModoAplicacao(prova.MODO_APLICACAO)
   return {
     ID: prova.ID,
     TRILHA_FK_ID: prova.TRILHA_FK_ID,
     VERSAO: prova.VERSAO,
+    MODO_APLICACAO: modoAplicacao,
     TITULO: prova.TITULO,
     NOTA_TOTAL: prova.NOTA_TOTAL,
     ATUALIZADO_EM: prova.ATUALIZADO_EM,
@@ -322,6 +356,36 @@ function parseUserRecord(user: Record<string, unknown> | undefined) {
   }
 
   return Object.keys(record).length > 0 ? record : null
+}
+
+function assertTokenCanAccessTrilha(
+  token: string | undefined,
+  cpfDigits: string,
+  trilhaId: string,
+) {
+  if (!token?.trim()) {
+    return null
+  }
+
+  let payload: CollectiveProofTokenPayload
+  try {
+    payload = parseCollectiveProofToken(token.trim())
+    assertCollectiveProofTokenActive(payload)
+  } catch (error) {
+    throw new HttpError(
+      401,
+      error instanceof Error ? error.message : "Token coletivo invalido",
+    )
+  }
+
+  if (!payload.cpfs.includes(cpfDigits)) {
+    throw new HttpError(403, "CPF nao autorizado para este token coletivo")
+  }
+  if (!payload.trilhaIds.includes(trilhaId)) {
+    throw new HttpError(403, "Trilha nao autorizada para este token coletivo")
+  }
+
+  return payload
 }
 
 function evaluateObjectiveAnswers(
@@ -398,9 +462,10 @@ export const getObjectiveByTrilha = asyncHandler(async (req: Request, res: Respo
 
 export const createOrVersionObjective = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId } = req.params
-  const { titulo, questoes } = req.body as {
+  const { titulo, questoes, modoAplicacao } = req.body as {
     titulo?: string
     questoes?: ObjectiveQuestionPayload[]
+    modoAplicacao?: string
   }
 
   if (!titulo?.trim()) {
@@ -467,6 +532,7 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     trilhaId,
     titulo: titulo.trim(),
     notaTotal: totalScore,
+    modoAplicacao: normalizeProvaModoAplicacao(modoAplicacao),
     questoes: normalizedQuestions,
   })
 
@@ -474,7 +540,7 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
 })
 
 export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Response) => {
-  const { cpf } = req.query as { cpf?: string }
+  const { cpf, token } = req.query as { cpf?: string; token?: string }
 
   if (cpf) {
     const cpfDigits = normalizeCpf(cpf)
@@ -482,9 +548,12 @@ export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Resp
       throw new HttpError(400, "CPF invalido")
     }
 
-    const assigned = await isUserAssignedToTrilha(cpfDigits, req.params.trilhaId)
-    if (!assigned) {
-      throw new HttpError(403, "Trilha nao atribuida para este usuario")
+    const tokenPayload = assertTokenCanAccessTrilha(token, cpfDigits, req.params.trilhaId)
+    if (!tokenPayload) {
+      const assigned = await isUserAssignedToTrilha(cpfDigits, req.params.trilhaId)
+      if (!assigned) {
+        throw new HttpError(403, "Trilha nao atribuida para este usuario")
+      }
     }
   }
 
@@ -499,7 +568,9 @@ export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Resp
 
 export const submitObjectiveForPlayer = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId } = req.params
-  const { cpf, respostas, user } = req.body as ObjectiveSubmitPayload
+  const { cpf, respostas, user, token } = req.body as ObjectiveSubmitPayload & {
+    token?: string
+  }
 
   if (!cpf) {
     throw new HttpError(400, "cpf e obrigatorio")
@@ -514,9 +585,12 @@ export const submitObjectiveForPlayer = asyncHandler(async (req: Request, res: R
     throw new HttpError(400, "respostas invalida")
   }
 
-  const assigned = await isUserAssignedToTrilha(cpfDigits, trilhaId)
-  if (!assigned) {
-    throw new HttpError(403, "Trilha nao atribuida para este usuario")
+  const tokenPayload = assertTokenCanAccessTrilha(token, cpfDigits, trilhaId)
+  if (!tokenPayload) {
+    const assigned = await isUserAssignedToTrilha(cpfDigits, trilhaId)
+    if (!assigned) {
+      throw new HttpError(403, "Trilha nao atribuida para este usuario")
+    }
   }
 
   const prova = await getObjectiveProvaByTrilhaId(trilhaId)
@@ -558,8 +632,11 @@ export const submitObjectiveForPlayer = asyncHandler(async (req: Request, res: R
       tipo: "prova",
       materialId: prova.ID,
       materialVersao: prova.VERSAO,
+      turmaId: tokenPayload?.turmaId ?? null,
       concluidoEm: new Date(),
-      origem: "prova-objectiva",
+      origem: tokenPayload
+        ? "prova-objectiva-coletiva-individual"
+        : "prova-objectiva",
     })
   }
 
@@ -594,6 +671,12 @@ export const submitObjectiveForCollective = asyncHandler(async (req: Request, re
   const prova = await getObjectiveProvaByTrilhaId(trilhaId)
   if (!prova) {
     throw new HttpError(404, "Prova objetiva nao encontrada para esta trilha")
+  }
+  if (normalizeProvaModoAplicacao(prova.MODO_APLICACAO) === PROVA_MODO_APLICACAO.INDIVIDUAL) {
+    throw new HttpError(
+      409,
+      "Esta prova esta configurada para realizacao individual e nao pode ser aplicada em modo coletivo.",
+    )
   }
 
   const concluidoDate = concluidoEm ? new Date(concluidoEm) : new Date()
@@ -686,6 +769,147 @@ export const submitObjectiveForCollective = asyncHandler(async (req: Request, re
     aprovacoesRegistradas: approvalsCreated,
   })
 })
+
+function sanitizeObjectiveProvaListItem(prova: ProvaObjectiveRecord) {
+  const modoAplicacao = normalizeProvaModoAplicacao(prova.MODO_APLICACAO)
+  return {
+    ID: prova.ID,
+    TRILHA_FK_ID: prova.TRILHA_FK_ID,
+    VERSAO: prova.VERSAO,
+    TITULO: prova.TITULO,
+    NOTA_TOTAL: prova.NOTA_TOTAL,
+    MODO_APLICACAO: modoAplicacao,
+  }
+}
+
+export const generateCollectiveIndividualProofQr = asyncHandler(
+  async (req: Request, res: Response) => {
+    const { users, trilhaIds, turmaId, redirectBaseUrl } =
+      req.body as ObjectiveCollectiveQrPayload
+
+    if (!Array.isArray(users) || users.length === 0) {
+      throw new HttpError(400, "users e obrigatorio")
+    }
+    if (!Array.isArray(trilhaIds) || trilhaIds.length === 0) {
+      throw new HttpError(400, "trilhaIds e obrigatorio")
+    }
+    if (turmaId && !GUID_REGEX.test(turmaId)) {
+      throw new HttpError(400, "turmaId invalido")
+    }
+
+    const cpfs = new Set<string>()
+    for (const user of users) {
+      const parsed = parseUserRecord(user)
+      if (!parsed) continue
+      const cpfDigits = normalizeCpf(parsed.CPF ?? parsed.cpf ?? "")
+      if (cpfDigits.length === 11) {
+        cpfs.add(cpfDigits)
+      }
+    }
+    if (!cpfs.size) {
+      throw new HttpError(400, "Nenhum CPF valido informado")
+    }
+
+    const validTrilhaIds = Array.from(
+      new Set(
+        trilhaIds
+          .map((id) => String(id ?? "").trim())
+          .filter((id) => GUID_REGEX.test(id)),
+      ),
+    )
+    if (!validTrilhaIds.length) {
+      throw new HttpError(400, "Nenhuma trilha valida informada")
+    }
+
+    const provasIndividuais: ProvaObjectiveRecord[] = []
+    for (const trilhaId of validTrilhaIds) {
+      // eslint-disable-next-line no-await-in-loop
+      const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+      if (!prova) continue
+      if (normalizeProvaModoAplicacao(prova.MODO_APLICACAO) !== PROVA_MODO_APLICACAO.INDIVIDUAL) continue
+      provasIndividuais.push(prova)
+    }
+
+    if (!provasIndividuais.length) {
+      throw new HttpError(
+        400,
+        "Nenhuma das trilhas selecionadas possui prova configurada para aplicacao individual.",
+      )
+    }
+
+    const { token, payload } = createCollectiveProofToken({
+      cpfs: Array.from(cpfs),
+      trilhaIds: provasIndividuais.map((item) => item.TRILHA_FK_ID),
+      turmaId: turmaId ?? null,
+    })
+
+    const baseUrl =
+      (typeof redirectBaseUrl === "string" && redirectBaseUrl.trim()) ||
+      env.COLLECTIVE_PROVA_REDIRECT_BASE_URL
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, "")
+    const redirectUrl = `${normalizedBaseUrl}/?coletivoProvaToken=${encodeURIComponent(token)}`
+    const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
+      redirectUrl,
+    )}`
+
+    res.status(201).json({
+      token,
+      redirectUrl,
+      qrCodeImageUrl,
+      expiresAt: new Date(payload.exp * 1000).toISOString(),
+      trilhas: provasIndividuais.map(sanitizeObjectiveProvaListItem),
+      totalUsuarios: cpfs.size,
+    })
+  },
+)
+
+export const resolveCollectiveIndividualProofToken = asyncHandler(
+  async (req: Request, res: Response) => {
+    const token = String(req.params.token ?? "").trim()
+    if (!token) {
+      throw new HttpError(400, "token e obrigatorio")
+    }
+
+    let payload
+    try {
+      payload = parseCollectiveProofToken(token)
+      assertCollectiveProofTokenActive(payload)
+    } catch (error) {
+      throw new HttpError(
+        401,
+        error instanceof Error ? error.message : "Token coletivo invalido",
+      )
+    }
+
+    const cpfQuery = String(req.query.cpf ?? "").trim()
+    if (cpfQuery) {
+      const cpfDigits = normalizeCpf(cpfQuery)
+      if (cpfDigits.length !== 11) {
+        throw new HttpError(400, "CPF invalido")
+      }
+      if (!payload.cpfs.includes(cpfDigits)) {
+        throw new HttpError(403, "CPF nao autorizado para este token coletivo")
+      }
+    }
+
+    const provas: ReturnType<typeof sanitizeObjectiveProvaListItem>[] = []
+    for (const trilhaId of payload.trilhaIds) {
+      // eslint-disable-next-line no-await-in-loop
+      const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+      if (!prova) continue
+      provas.push(sanitizeObjectiveProvaListItem(prova))
+    }
+
+    res.json({
+      token,
+      expiresAt: new Date(payload.exp * 1000).toISOString(),
+      turmaId: payload.turmaId,
+      trilhas: payload.trilhaIds,
+      cpfs: payload.cpfs,
+      provas,
+    })
+  },
+)
 
 export const getLatestObjectiveResult = asyncHandler(async (req: Request, res: Response) => {
   const { cpf } = req.query as { cpf?: string }

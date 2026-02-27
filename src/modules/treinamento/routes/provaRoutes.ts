@@ -3,6 +3,7 @@ import {
   createOrVersionObjective,
   create,
   createUpload,
+  generateCollectiveIndividualProofQr,
   getLatestObjectiveResult,
   getObjectiveForPlayer,
   getObjectiveByTrilha,
@@ -10,6 +11,7 @@ import {
   listAttemptsReport,
   list,
   remove,
+  resolveCollectiveIndividualProofToken,
   submitObjectiveForCollective,
   submitObjectiveForPlayer,
   update,
@@ -29,6 +31,8 @@ router.post("/", create)
 router.post("/trilha/:trilhaId/objectiva", createOrVersionObjective)
 router.post("/trilha/:trilhaId/objectiva/player/submit", submitObjectiveForPlayer)
 router.post("/trilha/:trilhaId/objectiva/instrutor/submit", submitObjectiveForCollective)
+router.post("/objectiva/instrutor/individual/qr", generateCollectiveIndividualProofQr)
+router.get("/objectiva/instrutor/individual/qr/:token", resolveCollectiveIndividualProofToken)
 router.post("/upload", upload.single("file"), createUpload)
 router.put("/:id", update)
 router.put("/:id/upload", upload.single("file"), updateUpload)

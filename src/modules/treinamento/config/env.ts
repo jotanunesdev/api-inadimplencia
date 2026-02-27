@@ -79,4 +79,13 @@ export const env = {
   SHAREPOINT_LIBRARY_NAME:
     envSource.SP_LIBRARY_NAME ?? "Documentos Compartilhados",
   SHAREPOINT_ROOT_FOLDER: envSource.SP_ROOT_FOLDER ?? "Treinamento",
+  COLLECTIVE_PROVA_TOKEN_SECRET:
+    envSource.COLLECTIVE_PROVA_TOKEN_SECRET ?? "change-me-collective-prova-secret",
+  COLLECTIVE_PROVA_TOKEN_TTL_MINUTES: parsePositiveNumber(
+    "COLLECTIVE_PROVA_TOKEN_TTL_MINUTES",
+    180,
+  ),
+  COLLECTIVE_PROVA_REDIRECT_BASE_URL:
+    envSource.COLLECTIVE_PROVA_REDIRECT_BASE_URL ??
+    "https://treinamento.jotanunes.com",
 }

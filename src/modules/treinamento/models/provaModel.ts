@@ -6,12 +6,28 @@ export type ProvaRecord = {
   TRILHA_FK_ID: string
   PROVA_PATH: string | null
   VERSAO: number
+  MODO_APLICACAO: ProvaModoAplicacao
   TITULO: string | null
   NOTA_TOTAL: number | null
   ATUALIZADO_EM: Date | null
 }
 
 export const OBJECTIVE_PLACEHOLDER_PATH = "__PROVA_OBJETIVA__"
+export const PROVA_MODO_APLICACAO = {
+  COLETIVA: "coletiva",
+  INDIVIDUAL: "individual",
+} as const
+
+export type ProvaModoAplicacao =
+  (typeof PROVA_MODO_APLICACAO)[keyof typeof PROVA_MODO_APLICACAO]
+
+export function normalizeProvaModoAplicacao(
+  value: unknown,
+): ProvaModoAplicacao {
+  return String(value).toLowerCase() === PROVA_MODO_APLICACAO.INDIVIDUAL
+    ? PROVA_MODO_APLICACAO.INDIVIDUAL
+    : PROVA_MODO_APLICACAO.COLETIVA
+}
 
 export async function listProvas(
   trilhaId?: string,
@@ -46,13 +62,22 @@ export async function listProvas(
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
   const result = await request.query(`
-    SELECT ID, TRILHA_FK_ID, PROVA_PATH, VERSAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM
+    SELECT
+      ID,
+      TRILHA_FK_ID,
+      PROVA_PATH,
+      VERSAO,
+      MODO_APLICACAO,
+      TITULO,
+      NOTA_TOTAL,
+      ATUALIZADO_EM
     FROM (
       SELECT
         p.ID,
         p.TRILHA_FK_ID,
         p.PROVA_PATH,
         p.VERSAO,
+        p.MODO_APLICACAO,
         p.TITULO,
         p.NOTA_TOTAL,
         p.ATUALIZADO_EM,
@@ -112,6 +137,7 @@ export type ProvaCreateInput = {
   trilhaId: string
   provaPath: string
   versao?: number | null
+  modoAplicacao?: ProvaModoAplicacao
   titulo?: string | null
   notaTotal?: number | null
   atualizadoEm?: Date | null
@@ -125,11 +151,16 @@ export async function createProva(input: ProvaCreateInput) {
     .input("TRILHA_FK_ID", sql.UniqueIdentifier, input.trilhaId)
     .input("PROVA_PATH", sql.NVarChar(1000), input.provaPath)
     .input("VERSAO", sql.Int, input.versao ?? 1)
+    .input(
+      "MODO_APLICACAO",
+      sql.VarChar(20),
+      normalizeProvaModoAplicacao(input.modoAplicacao),
+    )
     .input("TITULO", sql.NVarChar(255), input.titulo ?? null)
     .input("NOTA_TOTAL", sql.Decimal(5, 2), input.notaTotal ?? null)
     .input("ATUALIZADO_EM", sql.DateTime2, input.atualizadoEm ?? new Date())
     .query(
-      "INSERT INTO dbo.TPROVAS (ID, TRILHA_FK_ID, PROVA_PATH, VERSAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM) VALUES (@ID, @TRILHA_FK_ID, @PROVA_PATH, @VERSAO, @TITULO, @NOTA_TOTAL, @ATUALIZADO_EM)",
+      "INSERT INTO dbo.TPROVAS (ID, TRILHA_FK_ID, PROVA_PATH, VERSAO, MODO_APLICACAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM) VALUES (@ID, @TRILHA_FK_ID, @PROVA_PATH, @VERSAO, @MODO_APLICACAO, @TITULO, @NOTA_TOTAL, @ATUALIZADO_EM)",
     )
 
   return getProvaById(input.id)
@@ -139,6 +170,7 @@ export type ProvaUpdateInput = {
   trilhaId?: string | null
   provaPath?: string | null
   versao?: number | null
+  modoAplicacao?: ProvaModoAplicacao
   titulo?: string | null
   notaTotal?: number | null
   atualizadoEm?: Date | null
@@ -162,6 +194,9 @@ export async function updateProva(id: string, input: ProvaUpdateInput) {
 
   const trilhaId = input.trilhaId ?? latest.TRILHA_FK_ID
   const provaPath = input.provaPath ?? latest.PROVA_PATH
+  const modoAplicacao = normalizeProvaModoAplicacao(
+    input.modoAplicacao ?? latest.MODO_APLICACAO,
+  )
   const titulo =
     input.titulo !== undefined ? input.titulo : latest.TITULO
   const notaTotal =
@@ -178,6 +213,7 @@ export async function updateProva(id: string, input: ProvaUpdateInput) {
     .input("TRILHA_FK_ID", sql.UniqueIdentifier, trilhaId)
     .input("PROVA_PATH", sql.NVarChar(1000), provaPath)
     .input("VERSAO", sql.Int, nextVersion)
+    .input("MODO_APLICACAO", sql.VarChar(20), modoAplicacao)
     .input("TITULO", sql.NVarChar(255), titulo ?? null)
     .input("NOTA_TOTAL", sql.Decimal(5, 2), notaTotal ?? null)
     .input("ATUALIZADO_EM", sql.DateTime2, atualizadoEm)
@@ -187,6 +223,7 @@ export async function updateProva(id: string, input: ProvaUpdateInput) {
         TRILHA_FK_ID,
         PROVA_PATH,
         VERSAO,
+        MODO_APLICACAO,
         TITULO,
         NOTA_TOTAL,
         ATUALIZADO_EM
@@ -196,6 +233,7 @@ export async function updateProva(id: string, input: ProvaUpdateInput) {
         @TRILHA_FK_ID,
         @PROVA_PATH,
         @VERSAO,
+        @MODO_APLICACAO,
         @TITULO,
         @NOTA_TOTAL,
         @ATUALIZADO_EM
@@ -249,6 +287,7 @@ export type ProvaObjectiveRecord = {
   ID: string
   TRILHA_FK_ID: string
   VERSAO: number
+  MODO_APLICACAO: ProvaModoAplicacao
   TITULO: string | null
   NOTA_TOTAL: number | null
   ATUALIZADO_EM: Date | null
@@ -292,6 +331,7 @@ async function fetchObjectiveProvaByVersion(
     .input("ID", sql.UniqueIdentifier, provaId)
     .query(`
       SELECT ID, TRILHA_FK_ID, VERSAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM
+      , MODO_APLICACAO
       FROM dbo.TPROVAS
       WHERE ID = @ID
     `)
@@ -356,6 +396,7 @@ async function fetchObjectiveProvaByVersion(
 
   return {
     ...prova,
+    MODO_APLICACAO: normalizeProvaModoAplicacao(prova.MODO_APLICACAO),
     QUESTOES: questoes,
   }
 }
@@ -396,6 +437,7 @@ export async function createOrVersionObjectiveProva(input: {
   trilhaId: string
   titulo: string
   notaTotal: number
+  modoAplicacao?: ProvaModoAplicacao
   questoes: ObjectiveQuestionInput[]
 }) {
   const pool = await getPool()
@@ -430,23 +472,34 @@ export async function createOrVersionObjectiveProva(input: {
           OBJECTIVE_PLACEHOLDER_PATH,
         )
         .input("VERSAO", sql.Int, nextVersion)
+        .input(
+          "MODO_APLICACAO",
+          sql.VarChar(20),
+          normalizeProvaModoAplicacao(input.modoAplicacao),
+        )
         .input("TITULO", sql.NVarChar(255), input.titulo)
         .input("NOTA_TOTAL", sql.Decimal(5, 2), input.notaTotal)
         .input("ATUALIZADO_EM", sql.DateTime2, new Date())
         .query(`
-          INSERT INTO dbo.TPROVAS (ID, TRILHA_FK_ID, PROVA_PATH, VERSAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM)
-          VALUES (@ID, @TRILHA_FK_ID, @PROVA_PATH, @VERSAO, @TITULO, @NOTA_TOTAL, @ATUALIZADO_EM)
+          INSERT INTO dbo.TPROVAS (ID, TRILHA_FK_ID, PROVA_PATH, VERSAO, MODO_APLICACAO, TITULO, NOTA_TOTAL, ATUALIZADO_EM)
+          VALUES (@ID, @TRILHA_FK_ID, @PROVA_PATH, @VERSAO, @MODO_APLICACAO, @TITULO, @NOTA_TOTAL, @ATUALIZADO_EM)
         `)
     } else {
       await new sql.Request(transaction)
         .input("ID", sql.UniqueIdentifier, provaId)
         .input("VERSAO", sql.Int, nextVersion)
+        .input(
+          "MODO_APLICACAO",
+          sql.VarChar(20),
+          normalizeProvaModoAplicacao(input.modoAplicacao),
+        )
         .input("TITULO", sql.NVarChar(255), input.titulo)
         .input("NOTA_TOTAL", sql.Decimal(5, 2), input.notaTotal)
         .input("ATUALIZADO_EM", sql.DateTime2, new Date())
         .query(`
           UPDATE dbo.TPROVAS
           SET VERSAO = @VERSAO,
+              MODO_APLICACAO = @MODO_APLICACAO,
               TITULO = @TITULO,
               NOTA_TOTAL = @NOTA_TOTAL,
               ATUALIZADO_EM = @ATUALIZADO_EM
