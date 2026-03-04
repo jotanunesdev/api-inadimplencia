@@ -7,5 +7,6 @@ router.get('/', controller.getAll);
 router.get('/responsavel/:nome', controller.getByResponsavel);
 router.get('/cpf/:cpf', controller.getByCpf);
 router.get('/num-venda/:numVenda', controller.getByNumVenda);
+router.get('/cliente/:nomeCliente', controller.getByNomeCliente);
 
 module.exports = router;
