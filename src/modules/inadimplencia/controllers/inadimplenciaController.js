@@ -40,7 +40,7 @@ async function getByNumVenda(req, res, next) {
 async function getByResponsavel(req, res, next) {
   try {
     const { nome } = req.params;
-    console.log(`getresponsavel`, nome);
+
     if (!nome || typeof nome !== 'string') {
       return res.status(400).json({ error: 'NOME_USUARIO_FK e obrigatorio.' });
     }
@@ -55,7 +55,7 @@ async function getByResponsavel(req, res, next) {
 async function getByNomeCliente(req, res, next) {
   try {
     const { nomeCliente } = req.params;
-    console.log('getnomecliente', typeof nomeCliente)
+  
     if (!nomeCliente || typeof nomeCliente !== 'string') {
       return res.status(400).json({ error: 'CLIENTE e obrigatorio'});
     }

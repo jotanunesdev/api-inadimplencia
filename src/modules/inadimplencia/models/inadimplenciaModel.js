@@ -136,7 +136,7 @@ async function findbyNomeCliente(nomeCliente) {
       `SELECT ${SELECT_FIELDS}
               FROM ${TABLE} f
               ${LATEST_ACAO_APPLY}
-              WHERE CLIENTE = @nomeCliente`
+              WHERE CLIENTE LIKE '%' + @nomeCliente + '%'`
     );
 
     return result.recordset;
