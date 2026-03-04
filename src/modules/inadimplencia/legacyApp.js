@@ -12,10 +12,25 @@ const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const swaggerSpec = require('./swagger');
+const { env } = require('./config/env');
 
 const app = express();
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || env.CORS_ALLOW_ALL) {
+      callback(null, true);
+      return;
+    }
 
-app.use(cors());
+    callback(null, env.CORS_ORIGINS.includes(origin.toLowerCase()));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+};
+
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
 app.use(express.json());
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
