@@ -15,9 +15,29 @@ const { env } = require('./config/env');
 
 function createInadimplenciaModule() {
   const router = Router();
+  const originGuard = (req, res, next) => {
+    const origin = String(req.headers.origin ?? '').trim().toLowerCase();
+
+    if (!origin) {
+      res.status(403).json({ error: 'Origem nao permitida.' });
+      return;
+    }
+
+    if (env.CORS_ALLOW_ALL || env.CORS_ORIGINS.includes(origin)) {
+      next();
+      return;
+    }
+
+    res.status(403).json({ error: 'Origem nao permitida.' });
+  };
   const corsOptions = {
     origin: (origin, callback) => {
-      if (!origin || env.CORS_ALLOW_ALL) {
+      if (!origin) {
+        callback(null, false);
+        return;
+      }
+
+      if (env.CORS_ALLOW_ALL) {
         callback(null, true);
         return;
       }
@@ -31,6 +51,7 @@ function createInadimplenciaModule() {
 
   router.use(cors(corsOptions));
   router.options('*', cors(corsOptions));
+  router.use(originGuard);
 
   router.get('/health', (_req, res) => {
     res.json({ status: 'ok' });

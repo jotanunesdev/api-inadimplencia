@@ -15,9 +15,29 @@ const swaggerSpec = require('./swagger');
 const { env } = require('./config/env');
 
 const app = express();
+const originGuard = (req, res, next) => {
+  const origin = String(req.headers.origin ?? '').trim().toLowerCase();
+
+  if (!origin) {
+    res.status(403).json({ error: 'Origem nao permitida.' });
+    return;
+  }
+
+  if (env.CORS_ALLOW_ALL || env.CORS_ORIGINS.includes(origin)) {
+    next();
+    return;
+  }
+
+  res.status(403).json({ error: 'Origem nao permitida.' });
+};
 const corsOptions = {
   origin: (origin, callback) => {
-    if (!origin || env.CORS_ALLOW_ALL) {
+    if (!origin) {
+      callback(null, false);
+      return;
+    }
+
+    if (env.CORS_ALLOW_ALL) {
       callback(null, true);
       return;
     }
@@ -31,6 +51,7 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));
+app.use(originGuard);
 app.use(express.json());
 
 app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));

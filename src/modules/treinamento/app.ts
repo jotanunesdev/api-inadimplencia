@@ -10,18 +10,28 @@ import { notFound } from "./middlewares/notFound"
 
 const app = express()
 
+function isLocalhostOrigin(origin: string) {
+  return (
+    origin.startsWith("http://localhost") ||
+    origin.startsWith("http://127.0.0.1") ||
+    origin.startsWith("http://[::1]")
+  )
+}
+
 const corsOptions = {
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin || env.CORS_ALLOW_ALL) {
+    if (!origin) {
+      callback(null, false)
+      return
+    }
+
+    if (env.CORS_ALLOW_ALL) {
       callback(null, true)
       return
     }
 
     const normalized = origin.toLowerCase()
-    const isLocalhost =
-      normalized.startsWith("http://localhost") ||
-      normalized.startsWith("http://127.0.0.1") ||
-      normalized.startsWith("http://[::1]")
+    const isLocalhost = isLocalhostOrigin(normalized)
 
     if (env.CORS_ORIGINS.includes(normalized) || (env.NODE_ENV !== "production" && isLocalhost)) {
       callback(null, true)
@@ -37,6 +47,25 @@ const corsOptions = {
 
 app.use(cors(corsOptions))
 app.options("*", cors(corsOptions))
+app.use((req, res, next) => {
+  const origin = String(req.headers.origin ?? "").trim().toLowerCase()
+
+  if (!origin) {
+    res.status(403).json({ error: "Origem nao permitida." })
+    return
+  }
+
+  if (
+    env.CORS_ALLOW_ALL ||
+    env.CORS_ORIGINS.includes(origin) ||
+    (env.NODE_ENV !== "production" && isLocalhostOrigin(origin))
+  ) {
+    next()
+    return
+  }
+
+  res.status(403).json({ error: "Origem nao permitida." })
+})
 app.use(express.json({ limit: "10mb" }))
 
 app.get("/health", (_req, res) => {
