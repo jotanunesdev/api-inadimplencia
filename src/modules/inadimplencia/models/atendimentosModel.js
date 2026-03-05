@@ -166,9 +166,23 @@ async function findByNumVenda(numVendaFk) {
   return result.recordset.map(attachSnapshot);
 }
 
+async function findbyNomeCliente(nomeCliente) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('nomeCliente', sql.VarChar, nomeCliente)
+    .query(
+      `SELECT * FROM ${TABLE} f
+       WHERE CLIENTE LIKE '%' + @nomeCliente + '%'`
+    );
+
+    return result.recordset;
+}
+
 module.exports = {
   createFromVenda,
   findByProtocolo,
   findByCpf,
   findByNumVenda,
+  findbyNomeCliente
 };

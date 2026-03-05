@@ -94,6 +94,14 @@ const swaggerSpec = {
         responses: jsonResponse,
       },
     },
+        '/inadimplencia/cliente/{nomeCliente}': {
+      get: {
+        tags: ['Inadimplencia'],
+        summary: 'Busca inadimplencia por nome do cliente',
+        parameters: [pathParam('nomeCliente', 'Nome do cliente', 'joao')],
+        responses: jsonResponse,
+      },
+    },
     '/proximas-acoes': {
       get: {
         tags: ['ProximasAcoes'],
@@ -448,6 +456,14 @@ const swaggerSpec = {
         tags: ['Atendimentos'],
         summary: 'Busca atendimentos por protocolo',
         parameters: [pathParam('protocolo', 'Número do protocolo', 'PROT-001')],
+        responses: jsonResponse,
+      },
+    },
+    '/atendimentos/cliente/{nomeCliente}': {
+      get: {
+        tags: ['Atendimentos'],
+        summary: 'Busca atendimento por nome do cliente',
+        parameters: [pathParam('nomeCliente', 'Nome do cliente', 'joao')],
         responses: jsonResponse,
       },
     },

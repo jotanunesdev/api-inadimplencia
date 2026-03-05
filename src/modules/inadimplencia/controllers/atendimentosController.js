@@ -99,9 +99,25 @@ async function getByNumVenda(req, res, next) {
   }
 }
 
+async function getByNomeCliente(req, res, next) {
+  try {
+    const { nomeCliente } = req.params;
+
+    if (!nomeCliente || typeof nomeCliente !== 'string') {
+      return res.status(400).json({ error: 'Nome do cliente invalido.'});
+    }
+
+    const data = await atendimentosModel.findbyNomeCliente(nomeCliente);
+    res.json({ data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 module.exports = {
   create,
   getByProtocolo,
   getByCpf,
   getByNumVenda,
+  getByNomeCliente
 };

@@ -127,9 +127,24 @@ async function findByResponsavel(nomeUsuario) {
   return result.recordset;
 }
 
+async function findbyNomeCliente(nomeCliente) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('nomeCliente', sql.VarChar, nomeCliente)
+    .query(
+      `SELECT ${SELECT_FIELDS}
+              FROM ${TABLE} f
+              ${LATEST_ACAO_APPLY}
+              WHERE CLIENTE LIKE '%' + @nomeCliente + '%'`
+    );
+
+    return result.recordset;
+}
 module.exports = {
   findAll,
   findByCpf,
   findByNumVenda,
   findByResponsavel,
+  findbyNomeCliente
 };
