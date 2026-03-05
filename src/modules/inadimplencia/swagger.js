@@ -459,6 +459,14 @@ const swaggerSpec = {
         responses: jsonResponse,
       },
     },
+    '/atendimentos/cliente/{nomeCliente}': {
+      get: {
+        tags: ['Atendimentos'],
+        summary: 'Busca atendimento por nome do cliente',
+        parameters: [pathParam('nomeCliente', 'Nome do cliente', 'joao')],
+        responses: jsonResponse,
+      },
+    },
     '/atendimentos': {
       post: {
         tags: ['Atendimentos'],
