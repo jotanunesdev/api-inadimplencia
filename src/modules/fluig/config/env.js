@@ -7,6 +7,11 @@ dotenv.config({
 });
 
 const sourceEnv = resolvePrefixedEnv('FLUIG');
+const corsOrigin = sourceEnv.CORS_ORIGIN ?? '*';
+const corsOrigins = corsOrigin
+  .split(',')
+  .map((origin) => origin.trim().toLowerCase())
+  .filter(Boolean);
 
 function requireEnv(name, fallback) {
   const value = sourceEnv[name] ?? fallback;
@@ -20,6 +25,9 @@ function requireEnv(name, fallback) {
 
 const env = {
   PORT: Number(sourceEnv.PORT ?? 3002),
+  CORS_ORIGIN: corsOrigin,
+  CORS_ORIGINS: corsOrigins,
+  CORS_ALLOW_ALL: corsOrigins.includes('*'),
   SMTP_HOST: requireEnv('SMTP_HOST'),
   SMTP_PORT: Number(sourceEnv.SMTP_PORT ?? 587),
   SMTP_USER: requireEnv('SMTP_USER'),
