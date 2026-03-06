@@ -22,6 +22,7 @@ import {
 } from "../utils/storage"
 import {
   deleteSharePointFileByUrl,
+  downloadSharePointFileByUrl,
   ensureSharePointFolder,
   isSharePointEnabled,
   uploadFileToSharePoint,
@@ -148,6 +149,43 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(404, "Norma nao encontrada")
   }
   res.json({ norma })
+})
+
+export const downloadContent = asyncHandler(async (req: Request, res: Response) => {
+  const versao = parseOptionalVersion((req.query as { versao?: string }).versao)
+  const norma = await getNormaById(req.params.id, versao)
+  if (!norma) {
+    throw new HttpError(404, "Norma nao encontrada")
+  }
+
+  const rawPath = norma.PATH_PDF?.trim()
+  if (!rawPath) {
+    throw new HttpError(404, "Arquivo PDF da norma nao encontrado")
+  }
+
+  let buffer: Buffer
+  if (rawPath.startsWith("http")) {
+    buffer = await downloadSharePointFileByUrl(rawPath)
+  } else {
+    const localPath = toFsPath(rawPath)
+    try {
+      buffer = await fs.readFile(localPath)
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException
+      if (err.code === "ENOENT") {
+        throw new HttpError(404, "Arquivo PDF da norma nao encontrado")
+      }
+      throw error
+    }
+  }
+
+  const safeName = sanitizeSegment(
+    norma.NOME || `norma-${norma.ID}`,
+  ).replace(/\s+/g, "-")
+  const fileName = `${safeName || "norma"}-v${norma.VERSAO ?? 1}.pdf`
+  res.setHeader("Content-Type", "application/pdf")
+  res.setHeader("Content-Disposition", `inline; filename=\"${fileName}\"`)
+  res.send(buffer)
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {

@@ -1,0 +1,2 @@
+require("tsx/cjs");
+require("./src/modules/treinamento/server.ts");

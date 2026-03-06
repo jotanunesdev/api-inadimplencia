@@ -12,6 +12,10 @@ import {
   listProcedimentos,
   updateProcedimento,
 } from "../models/procedimentoModel"
+import {
+  replaceProcedimentoProvaQuestoes,
+  type ProcedimentoProvaQuestaoInput,
+} from "../models/procedimentoProvaModel"
 import { archiveTrainingsByProcedimentoId } from "../models/userTrainingModel"
 import {
   buildProcedureRelativePath,
@@ -22,6 +26,7 @@ import {
 } from "../utils/storage"
 import {
   deleteSharePointFileByUrl,
+  downloadSharePointFileByUrl,
   ensureSharePointFolder,
   isSharePointEnabled,
   uploadFileToSharePoint,
@@ -47,6 +52,93 @@ function parseOptionalObservacoes(raw: unknown) {
 
   const normalized = String(raw).trim()
   return normalized ? normalized : null
+}
+
+type ProcedimentoProvaQuestaoPayload = {
+  enunciado?: unknown
+  peso?: unknown
+  opcoes?: Array<{
+    texto?: unknown
+    correta?: unknown
+  }>
+}
+
+function parseProcedimentoProvaQuestoes(raw: unknown) {
+  let normalizedRaw = raw
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim()
+    if (!trimmed) {
+      throw new HttpError(
+        400,
+        "Informe ao menos uma questao para a prova do procedimento.",
+      )
+    }
+    try {
+      normalizedRaw = JSON.parse(trimmed)
+    } catch {
+      throw new HttpError(
+        400,
+        "Formato invalido para provaQuestoes. Envie um JSON valido.",
+      )
+    }
+  }
+
+  if (!Array.isArray(normalizedRaw) || normalizedRaw.length === 0) {
+    throw new HttpError(
+      400,
+      "Informe ao menos uma questao para a prova do procedimento.",
+    )
+  }
+
+  return normalizedRaw.map((question, questionIndex) => {
+    const payload = question as ProcedimentoProvaQuestaoPayload
+    const enunciado = String(payload?.enunciado ?? "").trim()
+    if (!enunciado) {
+      throw new HttpError(400, `Questao ${questionIndex + 1}: enunciado obrigatorio.`)
+    }
+
+    const pesoRaw = Number(payload?.peso ?? 1)
+    if (!Number.isFinite(pesoRaw) || pesoRaw <= 0) {
+      throw new HttpError(400, `Questao ${questionIndex + 1}: peso invalido.`)
+    }
+
+    if (!Array.isArray(payload?.opcoes) || payload.opcoes.length < 2) {
+      throw new HttpError(
+        400,
+        `Questao ${questionIndex + 1}: inclua ao menos duas opcoes.`,
+      )
+    }
+
+    const opcoes = payload.opcoes.map((option, optionIndex) => {
+      const texto = String(option?.texto ?? "").trim()
+      if (!texto) {
+        throw new HttpError(
+          400,
+          `Questao ${questionIndex + 1}, opcao ${optionIndex + 1}: texto obrigatorio.`,
+        )
+      }
+
+      return {
+        texto,
+        correta: Boolean(option?.correta),
+      }
+    })
+
+    const correctCount = opcoes.filter((option) => option.correta).length
+    if (correctCount !== 1) {
+      throw new HttpError(
+        400,
+        `Questao ${questionIndex + 1}: deve existir exatamente uma opcao correta.`,
+      )
+    }
+
+    return {
+      enunciado,
+      peso: Math.round(pesoRaw * 10000) / 10000,
+      opcoes,
+    } satisfies ProcedimentoProvaQuestaoInput
+  })
 }
 
 function validatePdfFile(file: Express.Multer.File | undefined) {
@@ -106,13 +198,51 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
   res.json({ procedimento })
 })
 
+export const downloadContent = asyncHandler(async (req: Request, res: Response) => {
+  const versao = parseOptionalVersion((req.query as { versao?: string }).versao)
+  const procedimento = await getProcedimentoById(req.params.id, versao)
+  if (!procedimento) {
+    throw new HttpError(404, "Procedimento nao encontrado")
+  }
+
+  const rawPath = procedimento.PATH_PDF?.trim()
+  if (!rawPath) {
+    throw new HttpError(404, "Arquivo PDF do procedimento nao encontrado")
+  }
+
+  let buffer: Buffer
+  if (rawPath.startsWith("http")) {
+    buffer = await downloadSharePointFileByUrl(rawPath)
+  } else {
+    const localPath = toFsPath(rawPath)
+    try {
+      buffer = await fs.readFile(localPath)
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException
+      if (err.code === "ENOENT") {
+        throw new HttpError(404, "Arquivo PDF do procedimento nao encontrado")
+      }
+      throw error
+    }
+  }
+
+  const safeName = sanitizeSegment(
+    procedimento.NOME || `procedimento-${procedimento.ID}`,
+  ).replace(/\s+/g, "-")
+  const fileName = `${safeName || "procedimento"}-v${procedimento.VERSAO ?? 1}.pdf`
+  res.setHeader("Content-Type", "application/pdf")
+  res.setHeader("Content-Disposition", `inline; filename=\"${fileName}\"`)
+  res.send(buffer)
+})
+
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { id, nome, pathPdf, versao, observacoes } = req.body as {
+  const { id, nome, pathPdf, versao, observacoes, provaQuestoes } = req.body as {
     id?: string
     nome?: string
     pathPdf?: string
     versao?: number
     observacoes?: string
+    provaQuestoes?: unknown
   }
 
   const trimmedName = nome?.trim()
@@ -120,6 +250,8 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   if (!trimmedName || !trimmedPath) {
     throw new HttpError(400, "nome e pathPdf sao obrigatorios")
   }
+
+  const normalizedQuestoes = parseProcedimentoProvaQuestoes(provaQuestoes)
 
   const created = await createProcedimento({
     id: id?.trim() || randomUUID(),
@@ -130,15 +262,26 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     alteradoEm: new Date(),
   })
 
+  if (!created) {
+    throw new HttpError(500, "Nao foi possivel criar o procedimento.")
+  }
+
+  await replaceProcedimentoProvaQuestoes(
+    created.ID,
+    created.VERSAO ?? parseOptionalVersion(versao) ?? 1,
+    normalizedQuestoes,
+  )
+
   res.status(201).json({ procedimento: created })
 })
 
 export const createUpload = asyncHandler(async (req: Request, res: Response) => {
-  const { id, nome, versao, observacoes } = req.body as {
+  const { id, nome, versao, observacoes, provaQuestoes } = req.body as {
     id?: string
     nome?: string
     versao?: number
     observacoes?: string
+    provaQuestoes?: unknown
   }
 
   const trimmedName = nome?.trim()
@@ -146,6 +289,7 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
     throw new HttpError(400, "nome e obrigatorio")
   }
 
+  const normalizedQuestoes = parseProcedimentoProvaQuestoes(provaQuestoes)
   const parsedVersion = parseOptionalVersion(versao) ?? 1
   const file = validatePdfFile(req.file)
   const folder = await resolveProcedureFolder()
@@ -175,6 +319,12 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
     versao: parsedVersion,
     alteradoEm: new Date(),
   })
+
+  if (!created) {
+    throw new HttpError(500, "Nao foi possivel criar o procedimento.")
+  }
+
+  await replaceProcedimentoProvaQuestoes(created.ID, created.VERSAO ?? parsedVersion, normalizedQuestoes)
 
   res.status(201).json({ procedimento: created })
 })
@@ -218,11 +368,13 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
     throw new HttpError(404, "Procedimento nao encontrado")
   }
 
-  const { nome, versao } = req.body as {
+  const { nome, versao, provaQuestoes } = req.body as {
     nome?: string
     versao?: number
     observacoes?: string
+    provaQuestoes?: unknown
   }
+  const normalizedQuestoes = parseProcedimentoProvaQuestoes(provaQuestoes)
   const file = validatePdfFile(req.file)
   const parsedVersion = parseOptionalVersion(versao)
   const nextVersion =
@@ -260,6 +412,12 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
   if (!procedimento) {
     throw new HttpError(404, "Procedimento nao encontrado")
   }
+
+  await replaceProcedimentoProvaQuestoes(
+    procedimento.ID,
+    procedimento.VERSAO ?? nextVersion,
+    normalizedQuestoes,
+  )
 
   await archiveTrainingsByProcedimentoId(req.params.id)
   res.json({ procedimento })

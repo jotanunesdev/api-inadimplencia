@@ -1,5 +1,9 @@
 import { randomUUID } from "crypto"
 import { getPool, sql } from "../config/db"
+import {
+  listLatestProcedimentoProvaQuestoesByTrilha,
+  trilhaHasMaterialVinculadoAProcedimento,
+} from "./procedimentoProvaModel"
 
 export type ProvaRecord = {
   ID: string
@@ -321,6 +325,46 @@ type ObjectiveOptionRow = {
   CORRETA: boolean | number
 }
 
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+function normalizeObjectiveQuestionWeights(
+  questions: ProvaObjectiveRecord["QUESTOES"],
+) {
+  if (!questions.length) {
+    return questions
+  }
+
+  const rawWeights = questions.map((question) =>
+    Number.isFinite(Number(question.PESO)) && Number(question.PESO) > 0
+      ? Number(question.PESO)
+      : 1,
+  )
+  const totalRaw = rawWeights.reduce((sum, value) => sum + value, 0)
+  if (totalRaw <= 0) {
+    return questions
+  }
+
+  const scale = 10 / totalRaw
+  let accumulated = 0
+
+  return questions.map((question, index) => {
+    if (index === questions.length - 1) {
+      const remaining = round2(10 - accumulated)
+      return {
+        ...question,
+        PESO: remaining > 0 ? remaining : 0.01,
+      }
+    }
+
+    const normalized = round2(rawWeights[index] * scale)
+    accumulated += normalized
+    return {
+      ...question,
+      PESO: normalized > 0 ? normalized : 0.01,
+    }
+  })
+}
+
 async function fetchObjectiveProvaByVersion(
   provaId: string,
   versao: number,
@@ -412,6 +456,48 @@ export async function getObjectiveProvaByTrilhaId(
 
   const targetVersion = versao ?? prova.VERSAO
   return fetchObjectiveProvaByVersion(prova.ID, targetVersion)
+}
+
+export async function getObjectiveProvaForExecutionByTrilhaId(
+  trilhaId: string,
+) {
+  const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+  if (!prova) {
+    return undefined
+  }
+
+  const procedimentoQuestoes = await listLatestProcedimentoProvaQuestoesByTrilha(trilhaId)
+  if (!procedimentoQuestoes.length) {
+    return prova
+  }
+
+  const baseOrder = prova.QUESTOES.length
+  const mergedQuestions = [
+    ...prova.QUESTOES.map((question) => ({ ...question })),
+    ...procedimentoQuestoes.map((question, index) => ({
+      ID: question.ID,
+      ORDEM: baseOrder + index + 1,
+      ENUNCIADO: question.ENUNCIADO,
+      PESO: question.PESO,
+      OPCOES: question.OPCOES.map((option) => ({
+        ID: option.ID,
+        ORDEM: option.ORDEM,
+        TEXTO: option.TEXTO,
+        CORRETA: option.CORRETA,
+      })),
+    })),
+  ]
+
+  return {
+    ...prova,
+    MODO_APLICACAO: PROVA_MODO_APLICACAO.COLETIVA,
+    NOTA_TOTAL: 10,
+    QUESTOES: normalizeObjectiveQuestionWeights(mergedQuestions),
+  }
+}
+
+export async function proofExecutionMustBeCollective(trilhaId: string) {
+  return trilhaHasMaterialVinculadoAProcedimento(trilhaId)
 }
 
 export async function trilhaHasObjectiveProva(trilhaId: string) {

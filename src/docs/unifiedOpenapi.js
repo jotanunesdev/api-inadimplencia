@@ -214,6 +214,24 @@ function buildTreinamentoPaths(openapi) {
   };
 }
 
+function buildFluigPaths(openapi) {
+  const sourcePaths = openapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/fluig/health'
+        : pathName.startsWith('/fluig')
+        ? pathName
+        : prefixedPath('/fluig', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
 function buildInadimplenciaOpenapi(inadimplenciaOpenapi) {
   const prefixedPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
 
@@ -249,13 +267,34 @@ function buildTreinamentoOpenapi(treinamentoOpenapi) {
   };
 }
 
-function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi) {
+function buildFluigOpenapi(fluigOpenapi) {
+  const prefixedPaths = buildFluigPaths(fluigOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: fluigOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo de auditoria Fluig.',
+    },
+    servers: [{ url: '/fluig' }],
+    tags: uniqueTags([
+      ...(fluigOpenapi?.tags ?? []),
+      { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/fluig'),
+  };
+}
+
+function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpenapi) {
   const inadPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
   const treinamentoPaths = buildTreinamentoPaths(treinamentoOpenapi);
+  const fluigPaths = buildFluigPaths(fluigOpenapi);
 
   const tags = [
     ...(inadimplenciaOpenapi?.tags ?? []),
     { name: 'Treinamento', description: 'Endpoints do modulo de treinamento' },
+    { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
   ];
 
   return {
@@ -263,7 +302,7 @@ function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi) {
     info: {
       title: API_TITLE,
       version: '1.0.0',
-      description: 'API unica com os modulos Inadimplencia e Treinamento.',
+      description: 'API unica com os modulos Inadimplencia, Treinamento e Fluig.',
     },
     servers: [{ url: '/' }],
     tags: uniqueTags(tags),
@@ -281,6 +320,7 @@ function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi) {
       },
       ...inadPaths,
       ...treinamentoPaths,
+      ...fluigPaths,
     },
   };
 }
@@ -289,4 +329,5 @@ module.exports = {
   buildUnifiedOpenapi,
   buildInadimplenciaOpenapi,
   buildTreinamentoOpenapi,
+  buildFluigOpenapi,
 };

@@ -85,9 +85,14 @@ async function resolveTrilhaPath(trilhaId: string) {
 }
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
-  const { trilhaId, cpf } = req.query as { trilhaId?: string; cpf?: string }
+  const { trilhaId, cpf, includePdf } = req.query as {
+    trilhaId?: string
+    cpf?: string
+    includePdf?: string
+  }
   const normalizedCpf = cpf ? normalizeCpf(cpf) : undefined
-  const videos = await listVideos(trilhaId, normalizedCpf)
+  const includePdfFlag = includePdf === "true" || (includePdf === undefined && Boolean(normalizedCpf))
+  const videos = await listVideos(trilhaId, normalizedCpf, includePdfFlag)
   res.json({ videos })
 })
 

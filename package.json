@@ -6,8 +6,12 @@
   "scripts": {
     "dev": "tsx watch src/server.js",
     "start": "tsx src/server.js",
+    "dev:inadimplencia": "tsx watch src/modules/inadimplencia/server.js",
     "start:inadimplencia": "tsx src/modules/inadimplencia/server.js",
-    "start:treinamento": "tsx src/modules/treinamento/server.ts"
+    "dev:treinamento": "tsx watch src/modules/treinamento/server.ts",
+    "start:treinamento": "tsx src/modules/treinamento/server.ts",
+    "dev:fluig": "tsx watch src/modules/fluig/server.js",
+    "start:fluig": "tsx src/modules/fluig/server.js"
   },
   "keywords": [],
   "author": "",
@@ -26,6 +30,7 @@
     "mssql": "^10.0.2",
     "multer": "^2.0.2",
     "node-fetch": "^2.6.12",
+    "nodemailer": "^6.10.1",
     "pizzip": "^3.2.0",
     "sharp": "^0.34.5",
     "swagger-ui-express": "^5.0.0",

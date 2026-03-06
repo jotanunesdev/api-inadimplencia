@@ -1,7 +1,10 @@
+const path = require('path');
 const { resolvePrefixedEnv } = require('../../../shared/moduleEnv');
 const dotenv = require('dotenv');
 
-dotenv.config();
+dotenv.config({
+  path: path.resolve(__dirname, '..', '.env'),
+});
 
 const sourceEnv = resolvePrefixedEnv('INAD');
 const corsOrigin = sourceEnv.CORS_ORIGIN ?? '*';

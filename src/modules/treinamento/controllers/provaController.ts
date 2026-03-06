@@ -20,10 +20,12 @@ import {
   createOrVersionObjectiveProva,
   createProva,
   deleteProva,
+  getObjectiveProvaForExecutionByTrilhaId,
   getObjectiveProvaByTrilhaId,
   getProvaById,
   listProvas,
   normalizeProvaModoAplicacao,
+  proofExecutionMustBeCollective,
   type ProvaObjectiveRecord,
   PROVA_MODO_APLICACAO,
   updateProva,
@@ -528,11 +530,17 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     throw new HttpError(400, "A soma dos pesos das questoes deve ser exatamente 10")
   }
 
+  const requestedModoAplicacao = normalizeProvaModoAplicacao(modoAplicacao)
+  const mustBeCollective = await proofExecutionMustBeCollective(trilhaId)
+  const finalModoAplicacao = mustBeCollective
+    ? PROVA_MODO_APLICACAO.COLETIVA
+    : requestedModoAplicacao
+
   const prova = await createOrVersionObjectiveProva({
     trilhaId,
     titulo: titulo.trim(),
     notaTotal: totalScore,
-    modoAplicacao: normalizeProvaModoAplicacao(modoAplicacao),
+    modoAplicacao: finalModoAplicacao,
     questoes: normalizedQuestions,
   })
 
@@ -557,7 +565,7 @@ export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Resp
     }
   }
 
-  const prova = await getObjectiveProvaByTrilhaId(req.params.trilhaId)
+  const prova = await getObjectiveProvaForExecutionByTrilhaId(req.params.trilhaId)
   if (!prova) {
     res.json({ prova: null })
     return
@@ -593,7 +601,7 @@ export const submitObjectiveForPlayer = asyncHandler(async (req: Request, res: R
     }
   }
 
-  const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+  const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
   if (!prova) {
     throw new HttpError(404, "Prova objetiva nao encontrada para esta trilha")
   }
@@ -668,7 +676,7 @@ export const submitObjectiveForCollective = asyncHandler(async (req: Request, re
     throw new HttpError(400, "respostas invalida")
   }
 
-  const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+  const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
   if (!prova) {
     throw new HttpError(404, "Prova objetiva nao encontrada para esta trilha")
   }
@@ -824,7 +832,7 @@ export const generateCollectiveIndividualProofQr = asyncHandler(
     const provasIndividuais: ProvaObjectiveRecord[] = []
     for (const trilhaId of validTrilhaIds) {
       // eslint-disable-next-line no-await-in-loop
-      const prova = await getObjectiveProvaByTrilhaId(trilhaId)
+      const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
       if (!prova) continue
       if (normalizeProvaModoAplicacao(prova.MODO_APLICACAO) !== PROVA_MODO_APLICACAO.INDIVIDUAL) continue
       provasIndividuais.push(prova)

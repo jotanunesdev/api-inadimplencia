@@ -5,6 +5,7 @@ export type VideoRecord = {
   ID: string
   TRILHA_FK_ID: string
   PATH_VIDEO: string | null
+  TIPO_CONTEUDO?: "video" | "pdf"
   PROCEDIMENTO_ID: string | null
   NORMA_ID: string | null
   PROCEDIMENTO_OBSERVACOES?: string | null
@@ -14,7 +15,7 @@ export type VideoRecord = {
   ORDEM: number | null
 }
 
-export async function listVideos(trilhaId?: string, cpf?: string) {
+export async function listVideos(trilhaId?: string, cpf?: string, includePdf = false) {
   const pool = await getPool()
   const request = pool.request()
   const conditions: string[] = []
@@ -32,12 +33,77 @@ export async function listVideos(trilhaId?: string, cpf?: string) {
   }
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
+  const videoSource = `
+      SELECT
+        v.ID,
+        v.TRILHA_FK_ID,
+        v.PATH_VIDEO,
+        CAST('video' AS VARCHAR(20)) AS TIPO_CONTEUDO,
+        v.PROCEDIMENTO_ID,
+        v.NORMA_ID,
+        v.VERSAO,
+        v.DURACAO_SEGUNDOS,
+        v.ORDEM
+      FROM (
+        SELECT
+          v.ID,
+          v.TRILHA_FK_ID,
+          v.PATH_VIDEO,
+          v.PROCEDIMENTO_ID,
+          v.NORMA_ID,
+          v.VERSAO,
+          v.DURACAO_SEGUNDOS,
+          v.ORDEM,
+          ROW_NUMBER() OVER (PARTITION BY v.ID ORDER BY v.VERSAO DESC) AS RN
+        FROM dbo.TVIDEOS v
+        ${join}
+        ${where}
+      ) v
+      WHERE v.RN = 1
+  `
+
+  const pdfJoin = cpf
+    ? "JOIN dbo.TUSUARIO_TRILHAS ut ON ut.TRILHA_ID = p.TRILHA_FK_ID"
+    : ""
+  const pdfConditions = [...conditions]
+  const pdfWhere = pdfConditions.length
+    ? `WHERE ${pdfConditions.map((condition) => condition.replace(/\bv\./g, "p.")).join(" AND ")}`
+    : ""
+  const pdfSource = `
+      SELECT
+        p.ID,
+        p.TRILHA_FK_ID,
+        p.PDF_PATH AS PATH_VIDEO,
+        CAST('pdf' AS VARCHAR(20)) AS TIPO_CONTEUDO,
+        p.PROCEDIMENTO_ID,
+        p.NORMA_ID,
+        p.VERSAO,
+        CAST(0 AS INT) AS DURACAO_SEGUNDOS,
+        CAST(NULL AS INT) AS ORDEM
+      FROM (
+        SELECT
+          p.ID,
+          p.TRILHA_FK_ID,
+          p.PDF_PATH,
+          p.PROCEDIMENTO_ID,
+          p.NORMA_ID,
+          p.VERSAO,
+          ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
+        FROM dbo.TPDFS p
+        ${pdfJoin}
+        ${pdfWhere}
+      ) p
+      WHERE p.RN = 1
+  `
+
+  const materialsSource = includePdf ? `${videoSource} UNION ALL ${pdfSource}` : videoSource
 
   const result = await request.query(`
     SELECT
       v.ID,
       v.TRILHA_FK_ID,
       v.PATH_VIDEO,
+      v.TIPO_CONTEUDO,
       v.PROCEDIMENTO_ID,
       v.NORMA_ID,
       pObs.OBSERVACOES AS PROCEDIMENTO_OBSERVACOES,
@@ -46,19 +112,7 @@ export async function listVideos(trilhaId?: string, cpf?: string) {
       v.DURACAO_SEGUNDOS,
       v.ORDEM
     FROM (
-      SELECT
-        v.ID,
-        v.TRILHA_FK_ID,
-        v.PATH_VIDEO,
-        v.PROCEDIMENTO_ID,
-        v.NORMA_ID,
-        v.VERSAO,
-        v.DURACAO_SEGUNDOS,
-        v.ORDEM,
-        ROW_NUMBER() OVER (PARTITION BY v.ID ORDER BY v.VERSAO DESC) AS RN
-      FROM dbo.TVIDEOS v
-      ${join}
-      ${where}
+      ${materialsSource}
     ) v
     OUTER APPLY (
       SELECT TOP 1 p.OBSERVACOES
@@ -72,7 +126,6 @@ export async function listVideos(trilhaId?: string, cpf?: string) {
       WHERE n.ID = v.NORMA_ID
       ORDER BY n.VERSAO DESC
     ) nObs
-    WHERE v.RN = 1
     ORDER BY v.TRILHA_FK_ID, ISNULL(v.ORDEM, 2147483647), v.ID
   `)
 

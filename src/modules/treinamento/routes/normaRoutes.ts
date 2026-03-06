@@ -3,6 +3,7 @@ import { upload } from "../utils/upload"
 import {
   create,
   createUpload,
+  downloadContent,
   getById,
   list,
   remove,
@@ -13,6 +14,7 @@ import {
 const router = Router()
 
 router.get("/", list)
+router.get("/:id/content", downloadContent)
 router.get("/:id", getById)
 router.post("/", create)
 router.post("/upload", upload.single("file"), createUpload)
