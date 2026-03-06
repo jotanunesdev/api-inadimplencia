@@ -2,6 +2,10 @@ import path from "path"
 import dotenv from "dotenv"
 
 dotenv.config({
+  path: path.resolve(__dirname, "..", "..", "..", "..", ".env"),
+})
+
+dotenv.config({
   path: path.resolve(__dirname, "..", ".env"),
 })
 
@@ -43,17 +47,19 @@ function parsePositiveNumber(name: string, fallback: number) {
   return value
 }
 
+const corsOrigin = process.env.CORS_ORIGIN ?? envSource.CORS_ORIGIN ?? "*"
+
 export const env = {
   NODE_ENV: envSource.NODE_ENV ?? "development",
   PORT: Number(envSource.PORT ?? 4000),
   UPLOAD_MAX_FILE_SIZE_MB: parsePositiveNumber("UPLOAD_MAX_FILE_SIZE_MB", 1024),
   SP_UPLOAD_CHUNK_MB: parsePositiveNumber("SP_UPLOAD_CHUNK_MB", 20),
-  CORS_ORIGIN: envSource.CORS_ORIGIN ?? "*",
-  CORS_ORIGINS: (envSource.CORS_ORIGIN ?? "*")
+  CORS_ORIGIN: corsOrigin,
+  CORS_ORIGINS: corsOrigin
     .split(",")
     .map((origin) => origin.trim().toLowerCase())
     .filter(Boolean),
-  CORS_ALLOW_ALL: (envSource.CORS_ORIGIN ?? "*")
+  CORS_ALLOW_ALL: corsOrigin
     .split(",")
     .map((origin) => origin.trim().toLowerCase())
     .filter(Boolean)
