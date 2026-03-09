@@ -34,7 +34,7 @@ async function createApp() {
 
   app.use('/inadimplencia', inadimplenciaModule.router);
   app.use('/treinamento', treinamentoModule.router);
-  app.use('/fluig', fluigModule.router);
+  app.use('/smtpfluig', fluigModule.router);
 
   app.use(
     '/docs',
@@ -46,7 +46,7 @@ async function createApp() {
         urls: [
           { url: '/docs-json/inadimplencia', name: '/inadimplencia' },
           { url: '/docs-json/treinamento', name: '/treinamento' },
-          { url: '/docs-json/fluig', name: '/fluig' },
+          { url: '/docs-json/smtpfluig', name: '/smtpfluig' },
         ],
         'urls.primaryName': '/inadimplencia',
       },
@@ -61,7 +61,7 @@ async function createApp() {
   app.get('/docs-json/treinamento', (_req, res) => {
     res.json(treinamentoOpenapi);
   });
-  app.get('/docs-json/fluig', (_req, res) => {
+  app.get('/docs-json/smtpfluig', (_req, res) => {
     res.json(fluigOpenapi);
   });
 

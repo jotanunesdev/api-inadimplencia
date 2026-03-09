@@ -13,7 +13,7 @@ function createApp() {
     res.json({ ok: true });
   });
 
-  app.use('/fluig', fluigModule.router);
+  app.use('/smtpfluig', fluigModule.router);
   app.use('/docs', swaggerUi.serve, swaggerUi.setup(fluigModule.openapi));
   app.get('/docs-json', (_req, res) => {
     res.json(fluigModule.openapi);

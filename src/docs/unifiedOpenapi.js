@@ -221,10 +221,10 @@ function buildFluigPaths(openapi) {
   Object.entries(sourcePaths).forEach(([pathName, definition]) => {
     const finalPath =
       pathName === '/health'
-        ? '/fluig/health'
-        : pathName.startsWith('/fluig')
+        ? '/smtpfluig/health'
+        : pathName.startsWith('/smtpfluig')
         ? pathName
-        : prefixedPath('/fluig', pathName);
+        : prefixedPath('/smtpfluig', pathName);
 
     targetPaths[finalPath] = clone(definition);
   });
@@ -277,12 +277,12 @@ function buildFluigOpenapi(fluigOpenapi) {
       version: fluigOpenapi?.info?.version ?? '1.0.0',
       description: 'Documentacao do modulo de auditoria Fluig.',
     },
-    servers: [{ url: '/fluig' }],
+    servers: [{ url: '/smtpfluig' }],
     tags: uniqueTags([
       ...(fluigOpenapi?.tags ?? []),
       { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
     ]),
-    paths: stripPrefixFromPaths(prefixedPaths, '/fluig'),
+    paths: stripPrefixFromPaths(prefixedPaths, '/smtpfluig'),
   };
 }
 
