@@ -5,7 +5,7 @@ const { createPm2Module } = require('./index');
 function createApp() {
   const app = express();
   const pm2Module = createPm2Module();
-  console.log("oi")
+
   app.use(express.json({ limit: '10mb' }));
 
   app.get('/health', (_req, res) => {

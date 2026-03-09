@@ -58,6 +58,26 @@ module.exports = {
         responses: jsonResponse,
       },
     },
+    '/stream': {
+      get: {
+        tags: ['PM2'],
+        summary: 'Stream SSE de metricas em tempo real',
+        description:
+          'Mantem a conexao aberta e envia eventos pm2.metrics continuamente como fallback para ambientes sem suporte a websocket.',
+        responses: {
+          '200': {
+            description: 'Stream SSE iniciado com sucesso',
+            content: {
+              'text/event-stream': {
+                schema: {
+                  type: 'string',
+                },
+              },
+            },
+          },
+        },
+      },
+    },
     '/processes': {
       get: {
         tags: ['PM2'],

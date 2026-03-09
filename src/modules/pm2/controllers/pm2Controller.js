@@ -49,6 +49,14 @@ async function getWebsocketInfo(req, res, next) {
   }
 }
 
+async function streamMetrics(req, res, next) {
+  try {
+    await pm2Service.openMetricsStream(req, res);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function updateProcess(req, res, next) {
   try {
     const data = await pm2Service.updateProcess(req.params.id, req);
@@ -106,5 +114,6 @@ module.exports = {
   getWebsocketInfo,
   pauseProcess,
   reloadProcess,
+  streamMetrics,
   updateProcess,
 };

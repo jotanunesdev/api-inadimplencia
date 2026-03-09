@@ -6,6 +6,7 @@ const router = express.Router();
 router.get('/health', controller.getHealth);
 router.get('/overview', controller.getOverview);
 router.get('/ws-info', controller.getWebsocketInfo);
+router.get('/stream', controller.streamMetrics);
 router.get('/processes', controller.getProcesses);
 router.get('/processes/:id', controller.getProcessDetails);
 router.post('/processes/:id/actions/update', controller.updateProcess);

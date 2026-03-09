@@ -107,6 +107,33 @@ function buildWebsocketMetadata(request) {
   return metadata;
 }
 
+function buildStreamMetadata(request) {
+  const metadata = {
+    path: '/pm2/stream',
+    event: 'pm2.metrics',
+    retryMs: env.WS_INTERVAL_MS,
+  };
+
+  if (!request) {
+    return metadata;
+  }
+
+  const forwardedProtocol = String(request.headers['x-forwarded-proto'] ?? '')
+    .trim()
+    .toLowerCase();
+  const isSecure =
+    request.secure === true ||
+    forwardedProtocol === 'https' ||
+    request.protocol === 'https';
+  const host = request.get?.('host') || request.headers.host;
+
+  if (host) {
+    metadata.url = `${isSecure ? 'https' : 'http'}://${host}${metadata.path}`;
+  }
+
+  return metadata;
+}
+
 async function runCommand(command, args, options = {}) {
   try {
     return await execFileAsync(command, args, {
@@ -354,6 +381,7 @@ function buildPayload(processes, generatedAt, request, options = {}) {
   const payload = {
     generatedAt,
     websocket: buildWebsocketMetadata(request),
+    stream: buildStreamMetadata(request),
     summary,
     chart: buildChart(),
     processes,
@@ -402,6 +430,7 @@ async function getProcesses(request) {
   return {
     generatedAt: payload.generatedAt,
     websocket: payload.websocket,
+    stream: payload.stream,
     summary: payload.summary,
     chart: payload.chart,
     processes: payload.processes,
@@ -420,6 +449,7 @@ async function getProcessDetails(id, request) {
   return {
     generatedAt: payload.generatedAt,
     websocket: payload.websocket,
+    stream: payload.stream,
     summary: payload.summary,
     process,
   };
@@ -476,7 +506,74 @@ async function updateProcess(id, request) {
 async function getWebsocketInfo(request) {
   return {
     websocket: buildWebsocketMetadata(request),
+    stream: buildStreamMetadata(request),
   };
+}
+
+function serializeSseEvent(event, data) {
+  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+}
+
+async function openMetricsStream(request, response) {
+  response.status(200);
+  response.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  response.setHeader('Cache-Control', 'no-cache, no-transform');
+  response.setHeader('Connection', 'keep-alive');
+  response.setHeader('X-Accel-Buffering', 'no');
+  response.flushHeaders?.();
+  response.write(`retry: ${env.WS_INTERVAL_MS}\n\n`);
+
+  let isClosed = false;
+
+  const pushMetrics = async () => {
+    try {
+      const payload = await collectOverview(request, { recordHistory: true });
+
+      if (!isClosed) {
+        response.write(serializeSseEvent('pm2.metrics', payload));
+      }
+    } catch (error) {
+      if (!isClosed) {
+        response.write(
+          serializeSseEvent('pm2.error', {
+            message: error.message,
+            statusCode: error.statusCode ?? 500,
+            details: error.details ?? null,
+            generatedAt: new Date().toISOString(),
+          })
+        );
+      }
+    }
+  };
+
+  await pushMetrics();
+
+  const streamInterval = setInterval(() => {
+    pushMetrics().catch(() => {});
+  }, env.WS_INTERVAL_MS);
+
+  const heartbeatInterval = setInterval(() => {
+    if (!isClosed) {
+      response.write(': ping\n\n');
+    }
+  }, 15000);
+
+  streamInterval.unref?.();
+  heartbeatInterval.unref?.();
+
+  const closeStream = () => {
+    if (isClosed) {
+      return;
+    }
+
+    isClosed = true;
+    clearInterval(streamInterval);
+    clearInterval(heartbeatInterval);
+    response.end();
+  };
+
+  request.on('close', closeStream);
+  request.on('aborted', closeStream);
 }
 
 function serializeEvent(event, data) {
@@ -594,6 +691,7 @@ module.exports = {
   getProcesses,
   getWebsocketInfo,
   isAllowedOrigin,
+  openMetricsStream,
   pauseProcess,
   reloadProcess,
   updateProcess,
