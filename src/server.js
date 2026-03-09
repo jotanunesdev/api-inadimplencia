@@ -1,11 +1,21 @@
 require('dotenv').config();
+const http = require('http');
 const { createApp } = require('./app');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 createApp()
   .then((app) => {
-    app.listen(PORT, () => {
+    const server = http.createServer(app);
+    const realtimeAttachers = app.locals.realtimeAttachers ?? [];
+
+    realtimeAttachers.forEach((attach) => {
+      if (typeof attach === 'function') {
+        attach(server);
+      }
+    });
+
+    server.listen(PORT, () => {
       console.log(`API rodando na porta ${PORT}`);
     });
   })

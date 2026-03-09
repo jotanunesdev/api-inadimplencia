@@ -13,41 +13,18 @@ const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const swaggerSpec = require('./swagger');
 const { env } = require('./config/env');
+const { createCorsOptionsDelegate, isRequestAllowed } = require('../../shared/swaggerAccess');
 
 const app = express();
 const originGuard = (req, res, next) => {
-  const origin = String(req.headers.origin ?? '').trim().toLowerCase();
-
-  if (!origin) {
-    res.status(403).json({ error: 'Origem nao permitida.' });
-    return;
-  }
-
-  if (env.CORS_ALLOW_ALL || env.CORS_ORIGINS.includes(origin)) {
+  if (isRequestAllowed(req, env)) {
     next();
     return;
   }
 
   res.status(403).json({ error: 'Origem nao permitida.' });
 };
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (!origin) {
-      callback(null, false);
-      return;
-    }
-
-    if (env.CORS_ALLOW_ALL) {
-      callback(null, true);
-      return;
-    }
-
-    callback(null, env.CORS_ORIGINS.includes(origin.toLowerCase()));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-};
+const corsOptions = createCorsOptionsDelegate(env);
 
 app.use(cors(corsOptions));
 app.options('*', cors(corsOptions));

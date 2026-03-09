@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const { pathToFileURL } = require('url');
 const cors = require('cors');
+const { createCorsOptionsDelegate, isRequestAllowed } = require('../../shared/swaggerAccess');
 
 function importTsFile(relativePath) {
   const absolutePath = path.join(__dirname, relativePath);
@@ -25,14 +26,6 @@ function unwrapDefaultExport(moduleValue) {
   }
 
   return current;
-}
-
-function isLocalhostOrigin(origin) {
-  return (
-    origin.startsWith('http://localhost') ||
-    origin.startsWith('http://127.0.0.1') ||
-    origin.startsWith('http://[::1]')
-  );
 }
 
 async function createTreinamentoModule() {
@@ -61,51 +54,12 @@ async function createTreinamentoModule() {
   const errorHandler = errorHandlerExports.errorHandler ?? errorHandlerExports;
 
   const router = express.Router();
-  const corsOptions = {
-    origin: (origin, callback) => {
-      if (!origin) {
-        callback(null, false);
-        return;
-      }
-
-      if (env.CORS_ALLOW_ALL) {
-        callback(null, true);
-        return;
-      }
-
-      const normalized = origin.toLowerCase();
-      const isLocalhost = isLocalhostOrigin(normalized);
-
-      if (
-        env.CORS_ORIGINS.includes(normalized) ||
-        (env.NODE_ENV !== 'production' && isLocalhost)
-      ) {
-        callback(null, true);
-        return;
-      }
-
-      callback(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-  };
+  const corsOptions = createCorsOptionsDelegate(env);
 
   router.use(cors(corsOptions));
   router.options('*', cors(corsOptions));
   router.use((req, res, next) => {
-    const origin = String(req.headers.origin ?? '').trim().toLowerCase();
-
-    if (!origin) {
-      res.status(403).json({ error: 'Origem nao permitida.' });
-      return;
-    }
-
-    if (
-      env.CORS_ALLOW_ALL ||
-      env.CORS_ORIGINS.includes(origin) ||
-      (env.NODE_ENV !== 'production' && isLocalhostOrigin(origin))
-    ) {
+    if (isRequestAllowed(req, env)) {
       next();
       return;
     }

@@ -232,6 +232,24 @@ function buildFluigPaths(openapi) {
   return targetPaths;
 }
 
+function buildPm2Paths(pm2Openapi) {
+  const sourcePaths = pm2Openapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/pm2/health'
+        : pathName.startsWith('/pm2')
+        ? pathName
+        : prefixedPath('/pm2', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
 function buildInadimplenciaOpenapi(inadimplenciaOpenapi) {
   const prefixedPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
 
@@ -286,15 +304,36 @@ function buildFluigOpenapi(fluigOpenapi) {
   };
 }
 
-function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpenapi) {
+function buildPm2Openapi(pm2Openapi) {
+  const prefixedPaths = buildPm2Paths(pm2Openapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: pm2Openapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo de monitoramento PM2.',
+    },
+    servers: [{ url: '/pm2' }],
+    tags: uniqueTags([
+      ...(pm2Openapi?.tags ?? []),
+      { name: 'PM2', description: 'Endpoints do modulo de monitoramento PM2' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/pm2'),
+  };
+}
+
+function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpenapi, pm2Openapi) {
   const inadPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
   const treinamentoPaths = buildTreinamentoPaths(treinamentoOpenapi);
   const fluigPaths = buildFluigPaths(fluigOpenapi);
+  const pm2Paths = buildPm2Paths(pm2Openapi);
 
   const tags = [
     ...(inadimplenciaOpenapi?.tags ?? []),
     { name: 'Treinamento', description: 'Endpoints do modulo de treinamento' },
     { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
+    { name: 'PM2', description: 'Endpoints do modulo de monitoramento PM2' },
   ];
 
   return {
@@ -321,6 +360,7 @@ function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpen
       ...inadPaths,
       ...treinamentoPaths,
       ...fluigPaths,
+      ...pm2Paths,
     },
   };
 }
@@ -330,4 +370,5 @@ module.exports = {
   buildInadimplenciaOpenapi,
   buildTreinamentoOpenapi,
   buildFluigOpenapi,
+  buildPm2Openapi,
 };

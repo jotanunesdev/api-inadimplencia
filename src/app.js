@@ -3,11 +3,13 @@ const swaggerUi = require('swagger-ui-express');
 const { createInadimplenciaModule } = require('./modules/inadimplencia');
 const { createTreinamentoModule } = require('./modules/treinamento');
 const { createFluigModule } = require('./modules/fluig');
+const { createPm2Module } = require('./modules/pm2');
 const {
   buildUnifiedOpenapi,
   buildInadimplenciaOpenapi,
   buildTreinamentoOpenapi,
   buildFluigOpenapi,
+  buildPm2Openapi,
 } = require('./docs/unifiedOpenapi');
 
 async function createApp() {
@@ -18,15 +20,18 @@ async function createApp() {
   const inadimplenciaModule = createInadimplenciaModule();
   const treinamentoModule = await createTreinamentoModule();
   const fluigModule = createFluigModule();
+  const pm2Module = createPm2Module();
 
   const unifiedOpenapi = buildUnifiedOpenapi(
     inadimplenciaModule.openapi,
     treinamentoModule.openapi,
-    fluigModule.openapi
+    fluigModule.openapi,
+    pm2Module.openapi
   );
   const inadimplenciaOpenapi = buildInadimplenciaOpenapi(inadimplenciaModule.openapi);
   const treinamentoOpenapi = buildTreinamentoOpenapi(treinamentoModule.openapi);
   const fluigOpenapi = buildFluigOpenapi(fluigModule.openapi);
+  const pm2Openapi = buildPm2Openapi(pm2Module.openapi);
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
@@ -35,6 +40,12 @@ async function createApp() {
   app.use('/inadimplencia', inadimplenciaModule.router);
   app.use('/treinamento', treinamentoModule.router);
   app.use('/smtpfluig', fluigModule.router);
+  app.use('/pm2', pm2Module.router);
+
+  app.locals.realtimeAttachers = [
+    ...(app.locals.realtimeAttachers ?? []),
+    pm2Module.attachRealtimeServer,
+  ];
 
   app.use(
     '/docs',
@@ -47,6 +58,7 @@ async function createApp() {
           { url: '/docs-json/inadimplencia', name: '/inadimplencia' },
           { url: '/docs-json/treinamento', name: '/treinamento' },
           { url: '/docs-json/smtpfluig', name: '/smtpfluig' },
+          { url: '/docs-json/pm2', name: '/pm2' },
         ],
         'urls.primaryName': '/inadimplencia',
       },
@@ -63,6 +75,9 @@ async function createApp() {
   });
   app.get('/docs-json/smtpfluig', (_req, res) => {
     res.json(fluigOpenapi);
+  });
+  app.get('/docs-json/pm2', (_req, res) => {
+    res.json(pm2Openapi);
   });
 
   app.use((_, res) => {

@@ -7,59 +7,16 @@ import { env } from "./config/env"
 import openapi from "./docs/openapi"
 import { errorHandler } from "./middlewares/errorHandler"
 import { notFound } from "./middlewares/notFound"
+const { createCorsOptionsDelegate, isRequestAllowed } = require("../../shared/swaggerAccess")
 
 const app = express()
 
-function isLocalhostOrigin(origin: string) {
-  return (
-    origin.startsWith("http://localhost") ||
-    origin.startsWith("http://127.0.0.1") ||
-    origin.startsWith("http://[::1]")
-  )
-}
-
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    if (!origin) {
-      callback(null, false)
-      return
-    }
-
-    if (env.CORS_ALLOW_ALL) {
-      callback(null, true)
-      return
-    }
-
-    const normalized = origin.toLowerCase()
-    const isLocalhost = isLocalhostOrigin(normalized)
-
-    if (env.CORS_ORIGINS.includes(normalized) || (env.NODE_ENV !== "production" && isLocalhost)) {
-      callback(null, true)
-      return
-    }
-
-    callback(null, false)
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-}
+const corsOptions = createCorsOptionsDelegate(env)
 
 app.use(cors(corsOptions))
 app.options("*", cors(corsOptions))
 app.use((req, res, next) => {
-  const origin = String(req.headers.origin ?? "").trim().toLowerCase()
-
-  if (!origin) {
-    res.status(403).json({ error: "Origem nao permitida." })
-    return
-  }
-
-  if (
-    env.CORS_ALLOW_ALL ||
-    env.CORS_ORIGINS.includes(origin) ||
-    (env.NODE_ENV !== "production" && isLocalhostOrigin(origin))
-  ) {
+  if (isRequestAllowed(req, env)) {
     next()
     return
   }

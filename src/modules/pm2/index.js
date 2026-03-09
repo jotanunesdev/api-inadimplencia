@@ -1,12 +1,12 @@
 const cors = require('cors');
 const { Router } = require('express');
-const auditRoutes = require('./routes/auditRoutes');
+const pm2Routes = require('./routes/pm2Routes');
 const openapi = require('./swagger');
-const { notFoundHandler, errorHandler } = require('./middlewares/errorHandler');
 const { env } = require('./config/env');
+const { attachRealtimeServer } = require('./services/pm2Service');
 const { createCorsOptionsDelegate, isRequestAllowed } = require('../../shared/swaggerAccess');
 
-function createFluigModule() {
+function createPm2Module() {
   const router = Router();
   const corsOptions = createCorsOptionsDelegate(env);
 
@@ -18,23 +18,22 @@ function createFluigModule() {
       return;
     }
 
-    res.status(403).json({ ok: false, error: 'origin_not_allowed' });
+    res.status(403).json({ error: 'Origem nao permitida.' });
   });
 
-  router.get('/health', (_req, res) => {
-    res.json({ ok: true });
-  });
+  router.use('/', pm2Routes);
 
-  router.use('/', auditRoutes);
-  router.use(notFoundHandler);
-  router.use(errorHandler);
+  router.use((_, res) => {
+    res.status(404).json({ error: 'Endpoint nao encontrado' });
+  });
 
   return {
     router,
     openapi,
+    attachRealtimeServer,
   };
 }
 
 module.exports = {
-  createFluigModule,
+  createPm2Module,
 };
