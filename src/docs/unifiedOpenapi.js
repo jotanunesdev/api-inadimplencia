@@ -250,6 +250,60 @@ function buildPm2Paths(pm2Openapi) {
   return targetPaths;
 }
 
+function buildM365Paths(m365Openapi) {
+  const sourcePaths = m365Openapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/m365/health'
+        : pathName.startsWith('/m365')
+        ? pathName
+        : prefixedPath('/m365', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
+function buildEstoqueOnlinePaths(estoqueOnlineOpenapi) {
+  const sourcePaths = estoqueOnlineOpenapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/estoque-online/health'
+        : pathName.startsWith('/estoque-online')
+        ? pathName
+        : prefixedPath('/estoque-online', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
+function buildAuthPaths(authOpenapi) {
+  const sourcePaths = authOpenapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/auth/health'
+        : pathName.startsWith('/auth')
+        ? pathName
+        : prefixedPath('/auth', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
 function buildInadimplenciaOpenapi(inadimplenciaOpenapi) {
   const prefixedPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
 
@@ -323,17 +377,88 @@ function buildPm2Openapi(pm2Openapi) {
   };
 }
 
-function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpenapi, pm2Openapi) {
+function buildM365Openapi(m365Openapi) {
+  const prefixedPaths = buildM365Paths(m365Openapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: m365Openapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo Microsoft 365 / Microsoft Graph.',
+    },
+    servers: [{ url: '/m365' }],
+    tags: uniqueTags([
+      ...(m365Openapi?.tags ?? []),
+      { name: 'M365', description: 'Endpoints do modulo Microsoft 365' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/m365'),
+  };
+}
+
+function buildEstoqueOnlineOpenapi(estoqueOnlineOpenapi) {
+  const prefixedPaths = buildEstoqueOnlinePaths(estoqueOnlineOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: estoqueOnlineOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo de estoque online.',
+    },
+    servers: [{ url: '/estoque-online' }],
+    tags: uniqueTags([
+      ...(estoqueOnlineOpenapi?.tags ?? []),
+      { name: 'EstoqueOnline', description: 'Endpoints do modulo de estoque online' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/estoque-online'),
+  };
+}
+
+function buildAuthOpenapi(authOpenapi) {
+  const prefixedPaths = buildAuthPaths(authOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: authOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo de autenticacao LDAP/JWT.',
+    },
+    servers: [{ url: '/auth' }],
+    tags: uniqueTags([
+      ...(authOpenapi?.tags ?? []),
+      { name: 'Auth', description: 'Endpoints do modulo de autenticacao' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/auth'),
+  };
+}
+
+function buildUnifiedOpenapi(
+  inadimplenciaOpenapi,
+  treinamentoOpenapi,
+  fluigOpenapi,
+  pm2Openapi,
+  m365Openapi,
+  estoqueOnlineOpenapi,
+  authOpenapi
+) {
   const inadPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
   const treinamentoPaths = buildTreinamentoPaths(treinamentoOpenapi);
   const fluigPaths = buildFluigPaths(fluigOpenapi);
   const pm2Paths = buildPm2Paths(pm2Openapi);
+  const m365Paths = buildM365Paths(m365Openapi);
+  const estoqueOnlinePaths = buildEstoqueOnlinePaths(estoqueOnlineOpenapi);
+  const authPaths = buildAuthPaths(authOpenapi);
 
   const tags = [
     ...(inadimplenciaOpenapi?.tags ?? []),
     { name: 'Treinamento', description: 'Endpoints do modulo de treinamento' },
     { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
     { name: 'PM2', description: 'Endpoints do modulo de monitoramento PM2' },
+    { name: 'M365', description: 'Endpoints do modulo Microsoft 365' },
+    { name: 'EstoqueOnline', description: 'Endpoints do modulo de estoque online' },
+    { name: 'Auth', description: 'Endpoints do modulo de autenticacao' },
   ];
 
   return {
@@ -341,7 +466,8 @@ function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpen
     info: {
       title: API_TITLE,
       version: '1.0.0',
-      description: 'API unica com os modulos Inadimplencia, Treinamento e Fluig.',
+      description:
+        'API unica com os modulos Inadimplencia, Treinamento, Fluig, PM2 e M365.',
     },
     servers: [{ url: '/' }],
     tags: uniqueTags(tags),
@@ -361,6 +487,9 @@ function buildUnifiedOpenapi(inadimplenciaOpenapi, treinamentoOpenapi, fluigOpen
       ...treinamentoPaths,
       ...fluigPaths,
       ...pm2Paths,
+      ...m365Paths,
+      ...estoqueOnlinePaths,
+      ...authPaths,
     },
   };
 }
@@ -371,4 +500,7 @@ module.exports = {
   buildTreinamentoOpenapi,
   buildFluigOpenapi,
   buildPm2Openapi,
+  buildM365Openapi,
+  buildEstoqueOnlineOpenapi,
+  buildAuthOpenapi,
 };

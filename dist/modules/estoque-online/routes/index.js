@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const estoqueOnlineController_1 = require("../controllers/estoqueOnlineController");
+const ensureConfigured_1 = require("../middlewares/ensureConfigured");
+const validateEstoqueMinBody_1 = require("../middlewares/validateEstoqueMinBody");
+const validateKeyParams_1 = require("../middlewares/validateKeyParams");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const router = (0, express_1.Router)();
+router.get('/health', (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.getHealth));
+router.get('/items', ensureConfigured_1.ensureConfigured, (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.getAllItems));
+router.get('/items/:codigoPrd/:codFilial/:codLoc', ensureConfigured_1.ensureConfigured, validateKeyParams_1.validateKeyParams, (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.getItem));
+router.post('/items/:codigoPrd/:codFilial/:codLoc/estoque-min', ensureConfigured_1.ensureConfigured, validateKeyParams_1.validateKeyParams, validateEstoqueMinBody_1.validateEstoqueMinBody, (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.postEstoqueMin));
+router.put('/items/:codigoPrd/:codFilial/:codLoc/estoque-min', ensureConfigured_1.ensureConfigured, validateKeyParams_1.validateKeyParams, validateEstoqueMinBody_1.validateEstoqueMinBody, (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.putEstoqueMin));
+router.delete('/items/:codigoPrd/:codFilial/:codLoc/estoque-min', ensureConfigured_1.ensureConfigured, validateKeyParams_1.validateKeyParams, (0, asyncHandler_1.asyncHandler)(estoqueOnlineController_1.removeEstoqueMin));
+exports.default = router;

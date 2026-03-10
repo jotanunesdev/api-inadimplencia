@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": [
+    "src/modules/m365/**/*.ts",
+    "src/modules/m365/**/*.d.ts",
+    "src/modules/estoque-online/**/*.ts",
+    "src/modules/auth/**/*.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

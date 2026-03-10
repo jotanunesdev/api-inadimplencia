@@ -1,0 +1,13 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const m365Controller_1 = require("../controllers/m365Controller");
+const ensureConfigured_1 = require("../middlewares/ensureConfigured");
+const validateListUsersQuery_1 = require("../middlewares/validateListUsersQuery");
+const asyncHandler_1 = require("../utils/asyncHandler");
+const router = (0, express_1.Router)();
+router.get('/health', (0, asyncHandler_1.asyncHandler)(m365Controller_1.getHealth));
+router.get('/users', ensureConfigured_1.ensureConfigured, validateListUsersQuery_1.validateListUsersQuery, (0, asyncHandler_1.asyncHandler)(m365Controller_1.listUsers));
+router.get('/users/lookup/:username', ensureConfigured_1.ensureConfigured, (0, asyncHandler_1.asyncHandler)(m365Controller_1.findUserByUsername));
+router.get('/users/:id/photo', ensureConfigured_1.ensureConfigured, (0, asyncHandler_1.asyncHandler)(m365Controller_1.getUserPhoto));
+exports.default = router;

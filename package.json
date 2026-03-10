@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.js",
     "start": "tsx src/server.js",
+    "build": "tsc --project tsconfig.json",
     "dev:inadimplencia": "tsx watch src/modules/inadimplencia/server.js",
     "start:inadimplencia": "tsx src/modules/inadimplencia/server.js",
     "dev:treinamento": "tsx watch src/modules/treinamento/server.ts",
@@ -13,7 +14,13 @@
     "dev:fluig": "tsx watch src/modules/fluig/server.js",
     "start:fluig": "tsx src/modules/fluig/server.js",
     "dev:monitoria": "tsx watch src/modules/pm2/server.js",
-    "start:monitoria": "tsx src/modules/pm2/server.js"
+    "start:monitoria": "tsx src/modules/pm2/server.js",
+    "dev:m365": "ts-node-dev --respawn --transpile-only src/modules/m365/server.ts",
+    "start:m365": "tsx src/modules/m365/server.ts",
+    "dev:estoque-online": "ts-node-dev --respawn --transpile-only src/modules/estoque-online/server.ts",
+    "start:estoque-online": "tsx src/modules/estoque-online/server.ts",
+    "dev:auth": "ts-node-dev --respawn --transpile-only src/modules/auth/server.ts",
+    "start:auth": "tsx src/modules/auth/server.ts"
   },
   "keywords": [],
   "author": "",
@@ -29,6 +36,8 @@
     "express": "^4.19.2",
     "fast-xml-parser": "^4.4.1",
     "ffprobe-static": "^3.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "ldapjs": "^3.0.7",
     "mssql": "^10.0.2",
     "multer": "^2.0.2",
     "node-fetch": "^2.6.12",
@@ -38,5 +47,16 @@
     "swagger-ui-express": "^5.0.0",
     "tsx": "^4.21.0",
     "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.18",
+    "@types/express": "^5.0.1",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/ldapjs": "^3.0.6",
+    "@types/mssql": "^9.1.9",
+    "@types/node": "^24.0.0",
+    "@types/swagger-ui-express": "^4.1.8",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.8.2"
   }
 }

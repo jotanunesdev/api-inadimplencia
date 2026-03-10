@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const LdapClientFactory_1 = require("../infra/ldap/LdapClientFactory");
+const LdapGateway_1 = require("../infra/ldap/LdapGateway");
+const AuthService_1 = require("../services/AuthService");
+const AuthController_1 = require("../controllers/AuthController");
+const ensureConfigured_1 = require("../middlewares/ensureConfigured");
+const router = (0, express_1.Router)();
+const ldapFactory = new LdapClientFactory_1.LdapClientFactory();
+const ldapGateway = new LdapGateway_1.LdapGateway(ldapFactory);
+const authService = new AuthService_1.AuthService(ldapGateway);
+const authController = new AuthController_1.AuthController(authService);
+router.post('/login', ensureConfigured_1.ensureConfigured, authController.login);
+exports.default = router;

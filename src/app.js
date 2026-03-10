@@ -1,19 +1,46 @@
 const express = require('express');
+const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const { createInadimplenciaModule } = require('./modules/inadimplencia');
 const { createTreinamentoModule } = require('./modules/treinamento');
 const { createFluigModule } = require('./modules/fluig');
 const { createPm2Module } = require('./modules/pm2');
+const { createM365Module } = require('./modules/m365');
+const { createEstoqueOnlineModule } = require('./modules/estoque-online');
+const { createAuthModule } = require('./modules/auth');
 const {
   buildUnifiedOpenapi,
   buildInadimplenciaOpenapi,
   buildTreinamentoOpenapi,
   buildFluigOpenapi,
   buildPm2Openapi,
+  buildM365Openapi,
+  buildEstoqueOnlineOpenapi,
+  buildAuthOpenapi,
 } = require('./docs/unifiedOpenapi');
+const { createCorsOptionsDelegate } = require('./shared/swaggerAccess');
+
+function buildRootCorsEnv() {
+  const corsOrigin = String(process.env.CORS_ORIGIN ?? '*');
+  const corsOrigins = corsOrigin
+    .split(',')
+    .map((origin) => origin.trim().toLowerCase())
+    .filter(Boolean);
+
+  return {
+    CORS_ORIGIN: corsOrigin,
+    CORS_ORIGINS: corsOrigins,
+    CORS_ALLOW_ALL: corsOrigins.includes('*'),
+  };
+}
 
 async function createApp() {
   const app = express();
+  const rootCorsEnv = buildRootCorsEnv();
+  const rootCorsOptions = createCorsOptionsDelegate(rootCorsEnv);
+
+  app.use(cors(rootCorsOptions));
+  app.options('*', cors(rootCorsOptions));
 
   app.use(express.json({ limit: '10mb' }));
 
@@ -21,17 +48,26 @@ async function createApp() {
   const treinamentoModule = await createTreinamentoModule();
   const fluigModule = createFluigModule();
   const pm2Module = createPm2Module();
+  const m365Module = await createM365Module();
+  const estoqueOnlineModule = await createEstoqueOnlineModule();
+  const authModule = await createAuthModule();
 
   const unifiedOpenapi = buildUnifiedOpenapi(
     inadimplenciaModule.openapi,
     treinamentoModule.openapi,
     fluigModule.openapi,
-    pm2Module.openapi
+    pm2Module.openapi,
+    m365Module.openapi,
+    estoqueOnlineModule.openapi,
+    authModule.openapi
   );
   const inadimplenciaOpenapi = buildInadimplenciaOpenapi(inadimplenciaModule.openapi);
   const treinamentoOpenapi = buildTreinamentoOpenapi(treinamentoModule.openapi);
   const fluigOpenapi = buildFluigOpenapi(fluigModule.openapi);
   const pm2Openapi = buildPm2Openapi(pm2Module.openapi);
+  const m365Openapi = buildM365Openapi(m365Module.openapi);
+  const estoqueOnlineOpenapi = buildEstoqueOnlineOpenapi(estoqueOnlineModule.openapi);
+  const authOpenapi = buildAuthOpenapi(authModule.openapi);
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
@@ -41,6 +77,9 @@ async function createApp() {
   app.use('/treinamento', treinamentoModule.router);
   app.use('/smtpfluig', fluigModule.router);
   app.use('/pm2', pm2Module.router);
+  app.use('/m365', m365Module.router);
+  app.use('/estoque-online', estoqueOnlineModule.router);
+  app.use('/auth', authModule.router);
 
   app.locals.realtimeAttachers = [
     ...(app.locals.realtimeAttachers ?? []),
@@ -59,6 +98,9 @@ async function createApp() {
           { url: '/docs-json/treinamento', name: '/treinamento' },
           { url: '/docs-json/smtpfluig', name: '/smtpfluig' },
           { url: '/docs-json/pm2', name: '/pm2' },
+          { url: '/docs-json/m365', name: '/m365' },
+          { url: '/docs-json/estoque-online', name: '/estoque-online' },
+          { url: '/docs-json/auth', name: '/auth' },
         ],
         'urls.primaryName': '/inadimplencia',
       },
@@ -78,6 +120,15 @@ async function createApp() {
   });
   app.get('/docs-json/pm2', (_req, res) => {
     res.json(pm2Openapi);
+  });
+  app.get('/docs-json/m365', (_req, res) => {
+    res.json(m365Openapi);
+  });
+  app.get('/docs-json/estoque-online', (_req, res) => {
+    res.json(estoqueOnlineOpenapi);
+  });
+  app.get('/docs-json/auth', (_req, res) => {
+    res.json(authOpenapi);
   });
 
   app.use((_, res) => {

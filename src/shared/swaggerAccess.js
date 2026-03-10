@@ -33,6 +33,10 @@ function isRequestAllowed(req, env) {
     return true;
   }
 
+  if (!normalizeOrigin(req.headers.origin)) {
+    return true;
+  }
+
   return isOriginAllowed(req.headers.origin, env);
 }
 
