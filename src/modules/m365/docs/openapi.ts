@@ -75,6 +75,37 @@ const openapi = {
             },
             description: 'Filtra usuarios ativos ou desativados.',
           },
+          {
+            name: 'search',
+            in: 'query',
+            required: false,
+            schema: {
+              type: 'string',
+            },
+            description: 'Busca por nome, cargo, email ou setor.',
+          },
+          {
+            name: 'page',
+            in: 'query',
+            required: false,
+            schema: {
+              type: 'integer',
+              default: 1,
+              minimum: 1,
+            },
+            description: 'Pagina atual da listagem.',
+          },
+          {
+            name: 'pageSize',
+            in: 'query',
+            required: false,
+            schema: {
+              type: 'integer',
+              default: 12,
+              minimum: 1,
+            },
+            description: 'Quantidade de usuarios por pagina.',
+          },
         ],
         responses: {
           '200': {

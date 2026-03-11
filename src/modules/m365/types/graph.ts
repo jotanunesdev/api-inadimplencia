@@ -52,6 +52,9 @@ export interface ListUsersQuery {
   includePhoto: boolean;
   department?: string;
   accountEnabled?: boolean;
+  search?: string;
+  page: number;
+  pageSize: number;
 }
 
 export interface FindUserByUsernameQuery {

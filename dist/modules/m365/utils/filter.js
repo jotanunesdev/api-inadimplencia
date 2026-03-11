@@ -25,6 +25,16 @@ function normalizeOptionalString(value) {
     const normalized = String(value ?? '').trim();
     return normalized ? normalized : undefined;
 }
+function parsePositiveIntegerQueryValue(value, fieldName, fallback) {
+    if (value === undefined || value === null || value === '') {
+        return fallback;
+    }
+    const parsedValue = Number(value);
+    if (!Number.isInteger(parsedValue) || parsedValue <= 0) {
+        throw new errors_1.AppError(400, `Query param '${fieldName}' deve ser um numero inteiro positivo.`, 'INVALID_QUERY_PARAM');
+    }
+    return parsedValue;
+}
 function escapeFilterValue(value) {
     return value.replace(/'/g, "''");
 }
@@ -33,6 +43,9 @@ function parseListUsersQuery(query) {
         includePhoto: parseBooleanQueryValue(query.includePhoto, 'includePhoto', false) ?? false,
         department: normalizeOptionalString(query.department),
         accountEnabled: parseBooleanQueryValue(query.accountEnabled, 'accountEnabled'),
+        search: normalizeOptionalString(query.search),
+        page: parsePositiveIntegerQueryValue(query.page, 'page', 1),
+        pageSize: parsePositiveIntegerQueryValue(query.pageSize, 'pageSize', 12),
     };
 }
 function parseFindUserByUsernameQuery(query) {

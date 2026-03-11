@@ -34,6 +34,29 @@ function normalizeGraphUser(user) {
         photo: null,
     };
 }
+function normalizeSearchValue(value) {
+    return String(value ?? '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+function matchesSearch(user, search) {
+    const normalizedSearch = normalizeSearchValue(search);
+    if (!normalizedSearch) {
+        return true;
+    }
+    const searchableValues = [
+        user.displayName,
+        user.givenName,
+        user.surname,
+        user.mail,
+        user.userPrincipalName,
+        user.jobTitle,
+        user.department,
+    ];
+    return searchableValues.some((value) => normalizeSearchValue(value).includes(normalizedSearch));
+}
 function extractUsernameCandidate(value) {
     const normalizedValue = String(value ?? '').trim().toLowerCase();
     if (!normalizedValue) {
@@ -72,15 +95,31 @@ async function listOrganizationUsers(query) {
         pagesFetched,
         includePhoto: query.includePhoto,
         filter,
+        search: query.search ?? null,
+        page: query.page,
+        pageSize: query.pageSize,
     });
-    if (!query.includePhoto || users.length === 0) {
+    const filteredUsers = users.filter((user) => matchesSearch(user, query.search));
+    const totalAvailable = users.length;
+    const totalMatched = filteredUsers.length;
+    const pageSize = query.pageSize;
+    const totalPages = Math.max(1, Math.ceil(totalMatched / pageSize));
+    const page = Math.min(query.page, totalPages);
+    const startIndex = (page - 1) * pageSize;
+    const paginatedUsers = filteredUsers.slice(startIndex, startIndex + pageSize);
+    if (!query.includePhoto || paginatedUsers.length === 0) {
         return {
-            users,
+            users: paginatedUsers,
             filter: filter ?? null,
             pagesFetched,
+            totalAvailable,
+            totalMatched,
+            page,
+            pageSize,
+            totalPages,
         };
     }
-    const usersWithPhotos = await (0, concurrency_1.mapWithConcurrency)(users, env_1.env.PHOTO_CONCURRENCY_LIMIT, async (user) => {
+    const usersWithPhotos = await (0, concurrency_1.mapWithConcurrency)(paginatedUsers, env_1.env.PHOTO_CONCURRENCY_LIMIT, async (user) => {
         try {
             const photo = await (0, photoService_1.getUserPhotoById)(user.id);
             return {
@@ -97,6 +136,11 @@ async function listOrganizationUsers(query) {
         users: usersWithPhotos,
         filter: filter ?? null,
         pagesFetched,
+        totalAvailable,
+        totalMatched,
+        page,
+        pageSize,
+        totalPages,
     };
 }
 async function findOrganizationUserByUsername(username, query) {

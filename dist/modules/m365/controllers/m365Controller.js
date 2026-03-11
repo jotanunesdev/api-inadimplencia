@@ -25,17 +25,24 @@ async function getHealth(_req, res) {
 async function listUsers(req, res) {
     const query = req.m365Query ?? {
         includePhoto: false,
+        page: 1,
+        pageSize: 12,
     };
     const result = await (0, userService_1.listOrganizationUsers)(query);
     res.json({
         success: true,
         data: result.users,
         meta: {
-            total: result.users.length,
+            total: result.totalMatched,
+            totalAvailable: result.totalAvailable,
+            currentPage: result.page,
+            pageSize: result.pageSize,
+            totalPages: result.totalPages,
             includePhoto: query.includePhoto,
             filters: {
                 department: query.department ?? null,
                 accountEnabled: typeof query.accountEnabled === 'boolean' ? query.accountEnabled : null,
+                search: query.search ?? null,
             },
             graphFilter: result.filter,
             pagesFetched: result.pagesFetched,

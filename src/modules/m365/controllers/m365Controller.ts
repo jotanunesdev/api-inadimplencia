@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { env } from '../config/env';
-import type { ApiSuccessResponse, HealthResponse } from '../types/graph';
+import type { ApiSuccessResponse, HealthResponse, ListUsersQuery } from '../types/graph';
 import { AppError } from '../types/errors';
 import { getUserPhotoById } from '../services/photoService';
 import {
@@ -25,8 +25,10 @@ export async function getHealth(_req: Request, res: Response): Promise<void> {
 }
 
 export async function listUsers(req: Request, res: Response): Promise<void> {
-  const query = req.m365Query ?? {
+  const query: ListUsersQuery = req.m365Query ?? {
     includePhoto: false,
+    page: 1,
+    pageSize: 12,
   };
 
   const result = await listOrganizationUsers(query);
@@ -35,12 +37,17 @@ export async function listUsers(req: Request, res: Response): Promise<void> {
     success: true,
     data: result.users,
     meta: {
-      total: result.users.length,
+      total: result.totalMatched,
+      totalAvailable: result.totalAvailable,
+      currentPage: result.page,
+      pageSize: result.pageSize,
+      totalPages: result.totalPages,
       includePhoto: query.includePhoto,
       filters: {
         department: query.department ?? null,
         accountEnabled:
           typeof query.accountEnabled === 'boolean' ? query.accountEnabled : null,
+        search: query.search ?? null,
       },
       graphFilter: result.filter,
       pagesFetched: result.pagesFetched,

@@ -40,6 +40,36 @@ function normalizeGraphUser(user: GraphUser): M365UserResponse {
   };
 }
 
+function normalizeSearchValue(value: string | null | undefined): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function matchesSearch(user: M365UserResponse, search: string | undefined): boolean {
+  const normalizedSearch = normalizeSearchValue(search);
+
+  if (!normalizedSearch) {
+    return true;
+  }
+
+  const searchableValues = [
+    user.displayName,
+    user.givenName,
+    user.surname,
+    user.mail,
+    user.userPrincipalName,
+    user.jobTitle,
+    user.department,
+  ];
+
+  return searchableValues.some((value) =>
+    normalizeSearchValue(value).includes(normalizedSearch)
+  );
+}
+
 function extractUsernameCandidate(value: string | null | undefined): string {
   const normalizedValue = String(value ?? '').trim().toLowerCase();
 
@@ -69,6 +99,11 @@ export async function listOrganizationUsers(query: ListUsersQuery): Promise<{
   users: M365UserResponse[];
   filter: string | null;
   pagesFetched: number;
+  totalAvailable: number;
+  totalMatched: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
 }> {
   const filter = buildUsersFilter(query);
   const users: M365UserResponse[] = [];
@@ -92,18 +127,35 @@ export async function listOrganizationUsers(query: ListUsersQuery): Promise<{
     pagesFetched,
     includePhoto: query.includePhoto,
     filter,
+    search: query.search ?? null,
+    page: query.page,
+    pageSize: query.pageSize,
   });
 
-  if (!query.includePhoto || users.length === 0) {
+  const filteredUsers = users.filter((user) => matchesSearch(user, query.search));
+  const totalAvailable = users.length;
+  const totalMatched = filteredUsers.length;
+  const pageSize = query.pageSize;
+  const totalPages = Math.max(1, Math.ceil(totalMatched / pageSize));
+  const page = Math.min(query.page, totalPages);
+  const startIndex = (page - 1) * pageSize;
+  const paginatedUsers = filteredUsers.slice(startIndex, startIndex + pageSize);
+
+  if (!query.includePhoto || paginatedUsers.length === 0) {
     return {
-      users,
+      users: paginatedUsers,
       filter: filter ?? null,
       pagesFetched,
+      totalAvailable,
+      totalMatched,
+      page,
+      pageSize,
+      totalPages,
     };
   }
 
   const usersWithPhotos = await mapWithConcurrency(
-    users,
+    paginatedUsers,
     env.PHOTO_CONCURRENCY_LIMIT,
     async (user) => {
       try {
@@ -123,6 +175,11 @@ export async function listOrganizationUsers(query: ListUsersQuery): Promise<{
     users: usersWithPhotos,
     filter: filter ?? null,
     pagesFetched,
+    totalAvailable,
+    totalMatched,
+    page,
+    pageSize,
+    totalPages,
   };
 }
 
