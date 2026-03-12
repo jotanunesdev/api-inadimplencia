@@ -13,6 +13,10 @@
     "start:treinamento": "tsx src/modules/treinamento/server.ts",
     "dev:fluig": "tsx watch src/modules/fluig/server.js",
     "start:fluig": "tsx src/modules/fluig/server.js",
+    "dev:rm": "ts-node-dev --respawn --transpile-only src/modules/rm/server.ts",
+    "start:rm": "tsx src/modules/rm/server.ts",
+    "dev:entrada-nota-fiscal": "ts-node-dev --respawn --transpile-only src/modules/entrada-nota-fiscal/server.ts",
+    "start:entrada-nota-fiscal": "tsx src/modules/entrada-nota-fiscal/server.ts",
     "dev:monitoria": "tsx watch src/modules/pm2/server.js",
     "start:monitoria": "tsx src/modules/pm2/server.js",
     "dev:m365": "ts-node-dev --respawn --transpile-only src/modules/m365/server.ts",
@@ -27,6 +31,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "axios": "^1.13.6",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.6",
     "docx": "^9.5.3",

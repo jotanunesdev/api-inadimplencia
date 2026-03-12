@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const entryInvoiceController_1 = require("../controllers/entryInvoiceController");
+const entryInvoiceService_1 = require("../services/entryInvoiceService");
+const router = (0, express_1.Router)();
+const controller = new entryInvoiceController_1.EntryInvoiceController(new entryInvoiceService_1.EntryInvoiceService());
+router.get('/metadata', controller.metadata);
+router.get('/entries', controller.list);
+router.get('/entries/:entryId', controller.getById);
+router.post('/entries', controller.create);
+router.put('/entries/:entryId', controller.update);
+router.post('/entries/:entryId/submit', controller.submit);
+router.delete('/entries/:entryId', controller.remove);
+exports.default = router;

@@ -8,6 +8,8 @@ const { createPm2Module } = require('./modules/pm2');
 const { createM365Module } = require('./modules/m365');
 const { createEstoqueOnlineModule } = require('./modules/estoque-online');
 const { createAuthModule } = require('./modules/auth');
+const { createRmModule } = require('./modules/rm');
+const { createEntradaNotaFiscalModule } = require('./modules/entrada-nota-fiscal');
 const {
   buildUnifiedOpenapi,
   buildInadimplenciaOpenapi,
@@ -17,6 +19,8 @@ const {
   buildM365Openapi,
   buildEstoqueOnlineOpenapi,
   buildAuthOpenapi,
+  buildRmOpenapi,
+  buildEntradaNotaFiscalOpenapi,
 } = require('./docs/unifiedOpenapi');
 const { createCorsOptionsDelegate } = require('./shared/swaggerAccess');
 
@@ -51,6 +55,8 @@ async function createApp() {
   const m365Module = await createM365Module();
   const estoqueOnlineModule = await createEstoqueOnlineModule();
   const authModule = await createAuthModule();
+  const rmModule = await createRmModule();
+  const entradaNotaFiscalModule = await createEntradaNotaFiscalModule();
 
   const unifiedOpenapi = buildUnifiedOpenapi(
     inadimplenciaModule.openapi,
@@ -59,7 +65,9 @@ async function createApp() {
     pm2Module.openapi,
     m365Module.openapi,
     estoqueOnlineModule.openapi,
-    authModule.openapi
+    authModule.openapi,
+    rmModule.openapi,
+    entradaNotaFiscalModule.openapi
   );
   const inadimplenciaOpenapi = buildInadimplenciaOpenapi(inadimplenciaModule.openapi);
   const treinamentoOpenapi = buildTreinamentoOpenapi(treinamentoModule.openapi);
@@ -68,6 +76,10 @@ async function createApp() {
   const m365Openapi = buildM365Openapi(m365Module.openapi);
   const estoqueOnlineOpenapi = buildEstoqueOnlineOpenapi(estoqueOnlineModule.openapi);
   const authOpenapi = buildAuthOpenapi(authModule.openapi);
+  const rmOpenapi = buildRmOpenapi(rmModule.openapi);
+  const entradaNotaFiscalOpenapi = buildEntradaNotaFiscalOpenapi(
+    entradaNotaFiscalModule.openapi
+  );
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
@@ -80,6 +92,8 @@ async function createApp() {
   app.use('/m365', m365Module.router);
   app.use('/estoque-online', estoqueOnlineModule.router);
   app.use('/auth', authModule.router);
+  app.use('/rm', rmModule.router);
+  app.use('/entrada-nota-fiscal', entradaNotaFiscalModule.router);
 
   app.locals.realtimeAttachers = [
     ...(app.locals.realtimeAttachers ?? []),
@@ -101,6 +115,8 @@ async function createApp() {
           { url: '/docs-json/m365', name: '/m365' },
           { url: '/docs-json/estoque-online', name: '/estoque-online' },
           { url: '/docs-json/auth', name: '/auth' },
+          { url: '/docs-json/rm', name: '/rm' },
+          { url: '/docs-json/entrada-nota-fiscal', name: '/entrada-nota-fiscal' },
         ],
         'urls.primaryName': '/inadimplencia',
       },
@@ -129,6 +145,12 @@ async function createApp() {
   });
   app.get('/docs-json/auth', (_req, res) => {
     res.json(authOpenapi);
+  });
+  app.get('/docs-json/rm', (_req, res) => {
+    res.json(rmOpenapi);
+  });
+  app.get('/docs-json/entrada-nota-fiscal', (_req, res) => {
+    res.json(entradaNotaFiscalOpenapi);
   });
 
   app.use((_, res) => {

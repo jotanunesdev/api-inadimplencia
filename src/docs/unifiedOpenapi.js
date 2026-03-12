@@ -304,6 +304,42 @@ function buildAuthPaths(authOpenapi) {
   return targetPaths;
 }
 
+function buildRmPaths(rmOpenapi) {
+  const sourcePaths = rmOpenapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/rm/health'
+        : pathName.startsWith('/rm')
+        ? pathName
+        : prefixedPath('/rm', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
+function buildEntradaNotaFiscalPaths(entradaNotaFiscalOpenapi) {
+  const sourcePaths = entradaNotaFiscalOpenapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/entrada-nota-fiscal/health'
+        : pathName.startsWith('/entrada-nota-fiscal')
+        ? pathName
+        : prefixedPath('/entrada-nota-fiscal', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
 function buildInadimplenciaOpenapi(inadimplenciaOpenapi) {
   const prefixedPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
 
@@ -434,6 +470,47 @@ function buildAuthOpenapi(authOpenapi) {
   };
 }
 
+function buildRmOpenapi(rmOpenapi) {
+  const prefixedPaths = buildRmPaths(rmOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: rmOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo de integracao RM.',
+    },
+    servers: [{ url: '/rm' }],
+    tags: uniqueTags([
+      ...(rmOpenapi?.tags ?? []),
+      { name: 'RM', description: 'Endpoints do modulo de integracao RM' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/rm'),
+  };
+}
+
+function buildEntradaNotaFiscalOpenapi(entradaNotaFiscalOpenapi) {
+  const prefixedPaths = buildEntradaNotaFiscalPaths(entradaNotaFiscalOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: entradaNotaFiscalOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo Entrada de Nota Fiscal.',
+    },
+    servers: [{ url: '/entrada-nota-fiscal' }],
+    tags: uniqueTags([
+      ...(entradaNotaFiscalOpenapi?.tags ?? []),
+      {
+        name: 'EntradaNotaFiscal',
+        description: 'Endpoints do modulo Entrada de Nota Fiscal',
+      },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/entrada-nota-fiscal'),
+  };
+}
+
 function buildUnifiedOpenapi(
   inadimplenciaOpenapi,
   treinamentoOpenapi,
@@ -441,7 +518,9 @@ function buildUnifiedOpenapi(
   pm2Openapi,
   m365Openapi,
   estoqueOnlineOpenapi,
-  authOpenapi
+  authOpenapi,
+  rmOpenapi,
+  entradaNotaFiscalOpenapi
 ) {
   const inadPaths = buildInadimplenciaPaths(inadimplenciaOpenapi);
   const treinamentoPaths = buildTreinamentoPaths(treinamentoOpenapi);
@@ -450,6 +529,8 @@ function buildUnifiedOpenapi(
   const m365Paths = buildM365Paths(m365Openapi);
   const estoqueOnlinePaths = buildEstoqueOnlinePaths(estoqueOnlineOpenapi);
   const authPaths = buildAuthPaths(authOpenapi);
+  const rmPaths = buildRmPaths(rmOpenapi);
+  const entradaNotaFiscalPaths = buildEntradaNotaFiscalPaths(entradaNotaFiscalOpenapi);
 
   const tags = [
     ...(inadimplenciaOpenapi?.tags ?? []),
@@ -459,6 +540,8 @@ function buildUnifiedOpenapi(
     { name: 'M365', description: 'Endpoints do modulo Microsoft 365' },
     { name: 'EstoqueOnline', description: 'Endpoints do modulo de estoque online' },
     { name: 'Auth', description: 'Endpoints do modulo de autenticacao' },
+    { name: 'RM', description: 'Endpoints do modulo de integracao RM' },
+    { name: 'EntradaNotaFiscal', description: 'Endpoints do modulo Entrada de Nota Fiscal' },
   ];
 
   return {
@@ -490,6 +573,8 @@ function buildUnifiedOpenapi(
       ...m365Paths,
       ...estoqueOnlinePaths,
       ...authPaths,
+      ...rmPaths,
+      ...entradaNotaFiscalPaths,
     },
   };
 }
@@ -503,4 +588,6 @@ module.exports = {
   buildM365Openapi,
   buildEstoqueOnlineOpenapi,
   buildAuthOpenapi,
+  buildRmOpenapi,
+  buildEntradaNotaFiscalOpenapi,
 };
