@@ -1,1 +1,12 @@
-require("./src/modules/rm/server.ts");
+const fs = require('fs');
+const path = require('path');
+
+const distEntry = path.resolve(__dirname, 'dist/modules/rm/server.js');
+const srcEntry = path.resolve(__dirname, 'src/modules/rm/server.ts');
+
+if (fs.existsSync(distEntry)) {
+  require(distEntry);
+} else {
+  require('tsx/cjs');
+  require(srcEntry);
+}
