@@ -9,12 +9,14 @@ const { resolvePrefixedEnv } = require('../../../shared/moduleEnv') as {
   ) => Record<string, string | undefined>;
 };
 
+const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
+
 dotenv.config({
-  path: path.resolve(__dirname, '..', '..', '..', '..', '.env'),
+  path: path.resolve(projectRoot, '.env'),
 });
 
 dotenv.config({
-  path: path.resolve(__dirname, '..', '.env'),
+  path: path.resolve(projectRoot, 'src/modules/rm/.env'),
 });
 
 function normalizeOrigin(origin: string): string {

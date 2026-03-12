@@ -8,11 +8,12 @@ exports.buildMissingConfigMessage = buildMissingConfigMessage;
 const path_1 = __importDefault(require("path"));
 const dotenv_1 = __importDefault(require("dotenv"));
 const { resolvePrefixedEnv } = require('../../../shared/moduleEnv');
+const projectRoot = path_1.default.resolve(__dirname, '..', '..', '..', '..');
 dotenv_1.default.config({
-    path: path_1.default.resolve(__dirname, '..', '..', '..', '..', '.env'),
+    path: path_1.default.resolve(projectRoot, '.env'),
 });
 dotenv_1.default.config({
-    path: path_1.default.resolve(__dirname, '..', '.env'),
+    path: path_1.default.resolve(projectRoot, 'src/modules/entrada-nota-fiscal/.env'),
 });
 function normalizeOrigin(origin) {
     return origin.trim().toLowerCase();
