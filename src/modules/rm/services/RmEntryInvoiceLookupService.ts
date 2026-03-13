@@ -26,7 +26,7 @@ const { buildConstraint, fetchDataset } = require('../../../shared/fluigDataset.
 };
 
 const DATASET_NAME = 'dsIntegraFacilRM';
-const DATASET_ENV_PREFIX = 'RM_FLUIG';
+const DATASET_ENV_PREFIX = 'RM';
 
 function toLookupRows(dataset: Record<string, unknown>): LookupRow[] {
   const values =

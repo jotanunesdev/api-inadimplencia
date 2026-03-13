@@ -5,7 +5,7 @@ const Rm_1 = require("../types/Rm");
 const entryInvoiceLookupDefinitions_1 = require("./entryInvoiceLookupDefinitions");
 const { buildConstraint, fetchDataset } = require('../../../shared/fluigDataset.js');
 const DATASET_NAME = 'dsIntegraFacilRM';
-const DATASET_ENV_PREFIX = 'RM_FLUIG';
+const DATASET_ENV_PREFIX = 'RM';
 function toLookupRows(dataset) {
     const values = dataset.values ??
         dataset.content ??
