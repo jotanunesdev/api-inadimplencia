@@ -195,7 +195,7 @@ function mapTaxes(items: EntryRecordInput['taxes']): EntryTax[] {
     codTrb: toNullableString(item?.codTrb),
     baseDeCalculo: toNullableNumber(item?.baseDeCalculo),
     aliquota: toNullableNumber(item?.aliquota),
-    tipoRecolhimento: toNullableString(item?.tipoRecolhimento),
+    tipoRecolhimento: toNullableString(item?.tipoRecolhimento) ?? '1',
     valor: toNullableNumber(item?.valor),
   }));
 }

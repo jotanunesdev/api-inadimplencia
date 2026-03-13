@@ -155,7 +155,7 @@ function mapTaxes(items) {
         codTrb: (0, normalize_1.toNullableString)(item?.codTrb),
         baseDeCalculo: (0, normalize_1.toNullableNumber)(item?.baseDeCalculo),
         aliquota: (0, normalize_1.toNullableNumber)(item?.aliquota),
-        tipoRecolhimento: (0, normalize_1.toNullableString)(item?.tipoRecolhimento),
+        tipoRecolhimento: (0, normalize_1.toNullableString)(item?.tipoRecolhimento) ?? '1',
         valor: (0, normalize_1.toNullableNumber)(item?.valor),
     }));
 }
