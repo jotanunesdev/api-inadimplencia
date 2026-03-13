@@ -49,7 +49,10 @@ BEGIN
     [cnpj_cpf] NVARCHAR(30) NULL,
     [data_emissao] DATE NULL,
     [data_saida] DATE NULL,
+    [local_estoque_description] NVARCHAR(255) NULL,
+    [cod_loc] NVARCHAR(50) NULL,
     [cod_tmv] NVARCHAR(50) NULL,
+    [cod_tdo] NVARCHAR(50) NULL,
     [movimento_description] NVARCHAR(255) NULL,
     [serie_nf] NVARCHAR(50) NULL,
     [id_nat] NVARCHAR(50) NULL,
@@ -78,10 +81,79 @@ BEGIN
     [payload_json] NVARCHAR(MAX) NULL,
     [created_by] NVARCHAR(255) NULL,
     [updated_by] NVARCHAR(255) NULL,
+    [review_comment] NVARCHAR(MAX) NULL,
+    [approved_by] NVARCHAR(255) NULL,
+    [approved_at] DATETIME2 NULL,
+    [rejected_by] NVARCHAR(255) NULL,
+    [rejected_at] DATETIME2 NULL,
+    [rm_movement_id] NVARCHAR(50) NULL,
+    [rm_primary_key] NVARCHAR(255) NULL,
+    [rm_integration_status] NVARCHAR(50) NULL,
+    [rm_integration_message] NVARCHAR(MAX) NULL,
     [created_at] DATETIME2 NOT NULL CONSTRAINT DF_${env_1.env.TABLE_PREFIX}_entries_created_at DEFAULT(SYSUTCDATETIME()),
     [updated_at] DATETIME2 NOT NULL CONSTRAINT DF_${env_1.env.TABLE_PREFIX}_entries_updated_at DEFAULT(SYSUTCDATETIME()),
     [deleted_at] DATETIME2 NULL
   );
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'local_estoque_description') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [local_estoque_description] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'cod_loc') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [cod_loc] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'cod_tdo') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [cod_tdo] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'review_comment') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [review_comment] NVARCHAR(MAX) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'approved_by') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [approved_by] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'approved_at') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [approved_at] DATETIME2 NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rejected_by') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rejected_by] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rejected_at') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rejected_at] DATETIME2 NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rm_movement_id') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rm_movement_id] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rm_primary_key') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rm_primary_key] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rm_integration_status') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rm_integration_status] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_entries', 'rm_integration_message') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [rm_integration_message] NVARCHAR(MAX) NULL;
 END;
 
 IF NOT EXISTS (
@@ -175,6 +247,7 @@ BEGIN
     [item_seq_f] NVARCHAR(50) NULL,
     [nseq_itm_mov] NVARCHAR(50) NULL,
     [cod_trb] NVARCHAR(50) NULL,
+    [sit_tributaria] NVARCHAR(50) NULL,
     [base_de_calculo] DECIMAL(18, 4) NULL,
     [aliquota] DECIMAL(18, 4) NULL,
     [tipo_recolhimento] NVARCHAR(100) NULL,
@@ -182,6 +255,11 @@ BEGIN
     CONSTRAINT FK_${env_1.env.TABLE_PREFIX}_taxes_entry
       FOREIGN KEY ([entry_id]) REFERENCES ${entriesTable}([id]) ON DELETE CASCADE
   );
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_taxes', 'sit_tributaria') IS NULL
+BEGIN
+  ALTER TABLE ${taxesTable} ADD [sit_tributaria] NVARCHAR(50) NULL;
 END;
 
 IF OBJECT_ID('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'U') IS NULL
@@ -198,12 +276,54 @@ BEGIN
     [valor] DECIMAL(18, 4) NULL,
     [desc_forma_pagto] NVARCHAR(255) NULL,
     [id_forma_pagto] NVARCHAR(50) NULL,
+    [tipo_forma_pagto] NVARCHAR(50) NULL,
+    [cod_col_cxa] NVARCHAR(20) NULL,
     [desc_cod_cxa] NVARCHAR(255) NULL,
     [cod_cxa] NVARCHAR(50) NULL,
+    [tipo_pagamento] NVARCHAR(20) NULL,
+    [debito_credito] NVARCHAR(5) NULL,
     [taxa_adm] DECIMAL(18, 4) NULL,
+    [id_lan] NVARCHAR(50) NULL,
+    [adt_integrado] NVARCHAR(20) NULL,
+    [linha_digitavel] NVARCHAR(120) NULL,
     CONSTRAINT FK_${env_1.env.TABLE_PREFIX}_payments_entry
       FOREIGN KEY ([entry_id]) REFERENCES ${entriesTable}([id]) ON DELETE CASCADE
   );
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'tipo_forma_pagto') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [tipo_forma_pagto] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'cod_col_cxa') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [cod_col_cxa] NVARCHAR(20) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'tipo_pagamento') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [tipo_pagamento] NVARCHAR(20) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'debito_credito') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [debito_credito] NVARCHAR(5) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'id_lan') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [id_lan] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'adt_integrado') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [adt_integrado] NVARCHAR(20) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_payments', 'linha_digitavel') IS NULL
+BEGIN
+  ALTER TABLE ${paymentsTable} ADD [linha_digitavel] NVARCHAR(120) NULL;
 END;
 `;
 }

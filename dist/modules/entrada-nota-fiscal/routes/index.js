@@ -29,5 +29,7 @@ router.get('/entries/:entryId', controller.getById);
 router.post('/entries', controller.create);
 router.put('/entries/:entryId', controller.update);
 router.post('/entries/:entryId/submit', controller.submit);
+router.post('/entries/:entryId/approve', controller.approve);
+router.post('/entries/:entryId/reject', controller.reject);
 router.delete('/entries/:entryId', controller.remove);
 exports.default = router;

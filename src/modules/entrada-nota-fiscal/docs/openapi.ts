@@ -148,10 +148,39 @@ const openapi = {
     '/entries/{entryId}/submit': {
       post: {
         tags: ['EntradaNotaFiscal'],
-        summary: 'Valida e submete uma entrada de nota fiscal',
+        summary: 'Valida e envia uma nota para analise fiscal',
         requestBody: { required: false, content: jsonContent },
         responses: {
           '200': { description: 'Registro submetido com sucesso', content: jsonContent },
+          '400': errorResponse,
+          '404': errorResponse,
+          '409': errorResponse,
+          '500': errorResponse,
+        },
+      },
+    },
+    '/entries/{entryId}/approve': {
+      post: {
+        tags: ['EntradaNotaFiscal'],
+        summary: 'Aprova a nota pendente e integra o movimento no RM',
+        requestBody: { required: false, content: jsonContent },
+        responses: {
+          '200': { description: 'Registro aprovado com sucesso', content: jsonContent },
+          '400': errorResponse,
+          '404': errorResponse,
+          '409': errorResponse,
+          '502': errorResponse,
+          '500': errorResponse,
+        },
+      },
+    },
+    '/entries/{entryId}/reject': {
+      post: {
+        tags: ['EntradaNotaFiscal'],
+        summary: 'Reprova a nota pendente de analise',
+        requestBody: { required: false, content: jsonContent },
+        responses: {
+          '200': { description: 'Registro reprovado com sucesso', content: jsonContent },
           '400': errorResponse,
           '404': errorResponse,
           '409': errorResponse,

@@ -25,7 +25,12 @@ class EntryInvoiceController {
             const status = String(req.query.status ?? 'all').toLowerCase();
             const query = {
                 search: typeof req.query.search === 'string' ? req.query.search : undefined,
-                status: status === 'draft' || status === 'submitted' || status === 'all'
+                status: status === 'draft' ||
+                    status === 'pending_analysis' ||
+                    status === 'approved' ||
+                    status === 'rejected' ||
+                    status === 'submitted' ||
+                    status === 'all'
                     ? status
                     : 'all',
                 page: parsePositiveInteger(req.query.page, 1),
@@ -78,6 +83,28 @@ class EntryInvoiceController {
             res.status(200).json({
                 success: true,
                 data: await this.entryInvoiceService.submitEntry(String(req.params.entryId), req.body),
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    approve = async (req, res, next) => {
+        try {
+            res.status(200).json({
+                success: true,
+                data: await this.entryInvoiceService.approveEntry(String(req.params.entryId), req.body),
+            });
+        }
+        catch (error) {
+            next(error);
+        }
+    };
+    reject = async (req, res, next) => {
+        try {
+            res.status(200).json({
+                success: true,
+                data: await this.entryInvoiceService.rejectEntry(String(req.params.entryId), req.body),
             });
         }
         catch (error) {

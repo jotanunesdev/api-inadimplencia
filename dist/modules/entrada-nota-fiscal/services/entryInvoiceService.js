@@ -8,6 +8,7 @@ const errors_1 = require("../types/errors");
 const normalize_1 = require("../utils/normalize");
 const schemaService_1 = require("./schemaService");
 const entryInvoiceValidationService_1 = require("./entryInvoiceValidationService");
+const RmEntryInvoiceMovementService_1 = require("../../rm/services/RmEntryInvoiceMovementService");
 function quoteIdentifier(identifier) {
     return `[${identifier}]`;
 }
@@ -20,10 +21,29 @@ function normalizeLineNumber(value, fallback) {
 }
 function normalizeMode(value) {
     const normalized = String(value ?? '').toLowerCase();
-    return normalized === 'submit' || normalized === 'submitted' ? 'submit' : 'draft';
+    return normalized === 'submit' ||
+        normalized === 'submitted' ||
+        normalized === 'pending_analysis' ||
+        normalized === 'approved' ||
+        normalized === 'rejected'
+        ? 'submit'
+        : 'draft';
 }
 function normalizeStatus(mode) {
-    return mode === 'submit' ? 'submitted' : 'draft';
+    return mode === 'submit' ? 'pending_analysis' : 'draft';
+}
+function normalizePersistedStatus(value) {
+    const normalized = String(value ?? '').toLowerCase();
+    if (normalized === 'submitted') {
+        return 'pending_analysis';
+    }
+    if (normalized === 'draft' ||
+        normalized === 'pending_analysis' ||
+        normalized === 'approved' ||
+        normalized === 'rejected') {
+        return normalized;
+    }
+    return 'draft';
 }
 function mapDateValue(value) {
     if (!value) {
@@ -64,8 +84,11 @@ function mapHeader(input) {
         cnpjCpf: (0, normalize_1.toNullableString)(input?.cnpjCpf),
         dataEmissao: (0, normalize_1.toDateOnly)(input?.dataEmissao),
         dataSaida: (0, normalize_1.toDateOnly)(input?.dataSaida),
+        localEstoqueDescription: (0, normalize_1.toNullableString)(input?.localEstoqueDescription),
+        codLoc: (0, normalize_1.toNullableString)(input?.codLoc),
         movimentoDescription: (0, normalize_1.toNullableString)(input?.movimentoDescription),
         codTmv: (0, normalize_1.toNullableString)(input?.codTmv),
+        codTdo: (0, normalize_1.toNullableString)(input?.codTdo),
         serie: (0, normalize_1.toNullableString)(input?.serie),
         idNat: (0, normalize_1.toNullableString)(input?.idNat),
         codNat: (0, normalize_1.toNullableString)(input?.codNat),
@@ -153,6 +176,7 @@ function mapTaxes(items) {
         itemSeqF: (0, normalize_1.toNullableString)(item?.itemSeqF),
         nseqItmMov: (0, normalize_1.toNullableString)(item?.nseqItmMov),
         codTrb: (0, normalize_1.toNullableString)(item?.codTrb),
+        sitTributaria: (0, normalize_1.toNullableString)(item?.sitTributaria),
         baseDeCalculo: (0, normalize_1.toNullableNumber)(item?.baseDeCalculo),
         aliquota: (0, normalize_1.toNullableNumber)(item?.aliquota),
         tipoRecolhimento: (0, normalize_1.toNullableString)(item?.tipoRecolhimento) ?? '1',
@@ -170,9 +194,16 @@ function mapPayments(items) {
         valor: (0, normalize_1.toNullableNumber)(item?.valor),
         descFormaPagto: (0, normalize_1.toNullableString)(item?.descFormaPagto),
         idFormaPagto: (0, normalize_1.toNullableString)(item?.idFormaPagto),
+        tipoFormaPagto: (0, normalize_1.toNullableString)(item?.tipoFormaPagto),
+        codColCxa: (0, normalize_1.toNullableString)(item?.codColCxa),
         descCodCxa: (0, normalize_1.toNullableString)(item?.descCodCxa),
         codCxa: (0, normalize_1.toNullableString)(item?.codCxa),
+        tipoPagamento: (0, normalize_1.toNullableString)(item?.tipoPagamento) ?? '1',
+        debitoCredito: (0, normalize_1.toNullableString)(item?.debitoCredito) ?? 'C',
         taxaAdm: (0, normalize_1.toNullableNumber)(item?.taxaAdm),
+        idLan: (0, normalize_1.toNullableString)(item?.idLan),
+        adtIntegrado: (0, normalize_1.toNullableString)(item?.adtIntegrado) ?? 'nao',
+        linhaDigitavel: (0, normalize_1.toNullableString)(item?.linhaDigitavel),
     }));
 }
 function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
@@ -186,6 +217,15 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
         requestedBy,
         createdBy: createdBy ?? requestedBy,
         updatedBy: requestedBy,
+        reviewComment: null,
+        approvedBy: null,
+        approvedAt: null,
+        rejectedBy: null,
+        rejectedAt: null,
+        rmMovementId: null,
+        rmPrimaryKey: null,
+        rmIntegrationStatus: null,
+        rmIntegrationMessage: null,
         createdAt,
         updatedAt,
         header: normalizedHeader,
@@ -197,6 +237,7 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
     };
 }
 class EntryInvoiceService {
+    rmEntryInvoiceMovementService = new RmEntryInvoiceMovementService_1.RmEntryInvoiceMovementService();
     getFormMetadata() {
         return {
             ratings: [1, 2, 3, 4, 5].map((value) => ({
@@ -205,7 +246,9 @@ class EntryInvoiceService {
             })),
             statuses: [
                 { value: 'draft', label: 'Rascunho' },
-                { value: 'submitted', label: 'Submetido' },
+                { value: 'pending_analysis', label: 'Pendente de Analise' },
+                { value: 'approved', label: 'Aprovada' },
+                { value: 'rejected', label: 'Reprovada' },
             ],
             saveModes: [
                 { value: 'draft', label: 'Salvar rascunho' },
@@ -239,7 +282,11 @@ class EntryInvoiceService {
         request.input('pageSize', query.pageSize);
         const filterClause = `
       WHERE deleted_at IS NULL
-        AND (@status IS NULL OR status = @status)
+        AND (
+          @status IS NULL
+          OR (@status = 'pending_analysis' AND status IN ('pending_analysis', 'submitted'))
+          OR status = @status
+        )
         AND (
           @search IS NULL
           OR numero_mov LIKE '%' + @search + '%'
@@ -249,7 +296,20 @@ class EntryInvoiceService {
         )
     `;
         const result = await request.query(`
-      SELECT id, status, numero_mov, serie, fornecedor_description, filial_description, data_emissao, valor_liquido, updated_at
+      SELECT
+        id,
+        status,
+        numero_mov,
+        serie,
+        fornecedor_description,
+        filial_description,
+        data_emissao,
+        valor_liquido,
+        payload_json,
+        created_by,
+        rm_movement_id,
+        review_comment,
+        updated_at
       FROM ${entriesTable}
       ${filterClause}
       ORDER BY updated_at DESC
@@ -262,13 +322,16 @@ class EntryInvoiceService {
         const recordsets = result.recordsets;
         const items = (recordsets[0] ?? []).map((row) => ({
             id: String(row.id),
-            status: String(row.status),
+            status: normalizePersistedStatus(row.status),
             numeroMov: (0, normalize_1.toNullableString)(row.numero_mov),
             serie: (0, normalize_1.toNullableString)(row.serie),
             fornecedorDescription: (0, normalize_1.toNullableString)(row.fornecedor_description),
             filialDescription: (0, normalize_1.toNullableString)(row.filial_description),
             dataEmissao: mapDateValue(row.data_emissao),
             valorLiquido: (0, normalize_1.toNullableNumber)(row.valor_liquido),
+            requestedBy: (0, normalize_1.toNullableString)(parsePayloadJson(row).requestedBy) ?? (0, normalize_1.toNullableString)(row.created_by),
+            rmMovementId: (0, normalize_1.toNullableString)(row.rm_movement_id),
+            reviewComment: (0, normalize_1.toNullableString)(row.review_comment),
             updatedAt: mapDateTimeValue(row.updated_at),
         }));
         const total = Number(recordsets[1]?.[0]?.total ?? 0);
@@ -312,11 +375,20 @@ class EntryInvoiceService {
         const mode = normalizeMode(payload.mode ?? headerRow.status);
         return {
             id: String(headerRow.id),
-            status: String(headerRow.status),
+            status: normalizePersistedStatus(headerRow.status),
             mode,
             requestedBy: (0, normalize_1.toNullableString)(payload.requestedBy),
             createdBy: (0, normalize_1.toNullableString)(headerRow.created_by),
             updatedBy: (0, normalize_1.toNullableString)(headerRow.updated_by),
+            reviewComment: (0, normalize_1.toNullableString)(headerRow.review_comment),
+            approvedBy: (0, normalize_1.toNullableString)(headerRow.approved_by),
+            approvedAt: headerRow.approved_at ? mapDateTimeValue(headerRow.approved_at) : null,
+            rejectedBy: (0, normalize_1.toNullableString)(headerRow.rejected_by),
+            rejectedAt: headerRow.rejected_at ? mapDateTimeValue(headerRow.rejected_at) : null,
+            rmMovementId: (0, normalize_1.toNullableString)(headerRow.rm_movement_id),
+            rmPrimaryKey: (0, normalize_1.toNullableString)(headerRow.rm_primary_key),
+            rmIntegrationStatus: (0, normalize_1.toNullableString)(headerRow.rm_integration_status),
+            rmIntegrationMessage: (0, normalize_1.toNullableString)(headerRow.rm_integration_message),
             createdAt: mapDateTimeValue(headerRow.created_at),
             updatedAt: mapDateTimeValue(headerRow.updated_at),
             header: {
@@ -330,8 +402,11 @@ class EntryInvoiceService {
                 cnpjCpf: (0, normalize_1.toNullableString)(headerRow.cnpj_cpf),
                 dataEmissao: mapDateValue(headerRow.data_emissao),
                 dataSaida: mapDateValue(headerRow.data_saida),
+                localEstoqueDescription: (0, normalize_1.toNullableString)(headerRow.local_estoque_description),
+                codLoc: (0, normalize_1.toNullableString)(headerRow.cod_loc),
                 movimentoDescription: (0, normalize_1.toNullableString)(headerRow.movimento_description),
                 codTmv: (0, normalize_1.toNullableString)(headerRow.cod_tmv),
+                codTdo: (0, normalize_1.toNullableString)(headerRow.cod_tdo),
                 serie: (0, normalize_1.toNullableString)(headerRow.serie_nf ?? headerRow.serie),
                 idNat: (0, normalize_1.toNullableString)(headerRow.id_nat),
                 codNat: (0, normalize_1.toNullableString)(headerRow.cod_nat),
@@ -408,6 +483,7 @@ class EntryInvoiceService {
                 itemSeqF: (0, normalize_1.toNullableString)(row.item_seq_f),
                 nseqItmMov: (0, normalize_1.toNullableString)(row.nseq_itm_mov),
                 codTrb: (0, normalize_1.toNullableString)(row.cod_trb),
+                sitTributaria: (0, normalize_1.toNullableString)(row.sit_tributaria),
                 baseDeCalculo: (0, normalize_1.toNullableNumber)(row.base_de_calculo),
                 aliquota: (0, normalize_1.toNullableNumber)(row.aliquota),
                 tipoRecolhimento: (0, normalize_1.toNullableString)(row.tipo_recolhimento),
@@ -423,9 +499,16 @@ class EntryInvoiceService {
                 valor: (0, normalize_1.toNullableNumber)(row.valor),
                 descFormaPagto: (0, normalize_1.toNullableString)(row.desc_forma_pagto),
                 idFormaPagto: (0, normalize_1.toNullableString)(row.id_forma_pagto),
+                tipoFormaPagto: (0, normalize_1.toNullableString)(row.tipo_forma_pagto),
+                codColCxa: (0, normalize_1.toNullableString)(row.cod_col_cxa),
                 descCodCxa: (0, normalize_1.toNullableString)(row.desc_cod_cxa),
                 codCxa: (0, normalize_1.toNullableString)(row.cod_cxa),
+                tipoPagamento: (0, normalize_1.toNullableString)(row.tipo_pagamento),
+                debitoCredito: (0, normalize_1.toNullableString)(row.debito_credito),
                 taxaAdm: (0, normalize_1.toNullableNumber)(row.taxa_adm),
+                idLan: (0, normalize_1.toNullableString)(row.id_lan),
+                adtIntegrado: (0, normalize_1.toNullableString)(row.adt_integrado),
+                linhaDigitavel: (0, normalize_1.toNullableString)(row.linha_digitavel),
             })),
         };
     }
@@ -440,8 +523,20 @@ class EntryInvoiceService {
     }
     async updateEntry(entryId, payload) {
         const existing = await this.getEntryById(entryId);
+        if (existing.status === 'approved') {
+            throw new errors_1.AppError(409, 'Notas ja aprovadas nao podem ser alteradas.', 'ENTRY_ALREADY_APPROVED');
+        }
         const now = new Date().toISOString();
         const entry = mapRecordFromInput(entryId, payload, existing.createdAt, now, existing.createdBy);
+        entry.reviewComment = existing.reviewComment;
+        entry.approvedBy = existing.approvedBy;
+        entry.approvedAt = existing.approvedAt;
+        entry.rejectedBy = existing.rejectedBy;
+        entry.rejectedAt = existing.rejectedAt;
+        entry.rmMovementId = existing.rmMovementId;
+        entry.rmPrimaryKey = existing.rmPrimaryKey;
+        entry.rmIntegrationStatus = existing.rmIntegrationStatus;
+        entry.rmIntegrationMessage = existing.rmIntegrationMessage;
         (0, entryInvoiceValidationService_1.validateEntryRecord)(entry, entry.mode);
         await this.ensureDuplicate(entry, entryId);
         await this.persistEntry(entry, true);
@@ -451,14 +546,82 @@ class EntryInvoiceService {
         const sourceRecord = payload
             ? await this.updateEntry(entryId, { ...payload, mode: 'submit' })
             : await this.getEntryById(entryId);
+        if (sourceRecord.status === 'approved') {
+            throw new errors_1.AppError(409, 'Esta nota ja foi aprovada e integrada ao RM.', 'ENTRY_ALREADY_APPROVED');
+        }
         const recordToSubmit = {
             ...sourceRecord,
             mode: 'submit',
-            status: 'submitted',
+            status: 'pending_analysis',
+            reviewComment: null,
+            approvedBy: null,
+            approvedAt: null,
+            rejectedBy: null,
+            rejectedAt: null,
+            rmIntegrationStatus: null,
+            rmIntegrationMessage: null,
         };
         (0, entryInvoiceValidationService_1.validateEntryRecord)(recordToSubmit, 'submit');
         await this.ensureDuplicate(recordToSubmit, entryId);
         await this.persistEntry(recordToSubmit, true);
+        return this.getEntryById(entryId);
+    }
+    async approveEntry(entryId, review) {
+        const sourceRecord = await this.getEntryById(entryId);
+        if (!['pending_analysis', 'submitted'].includes(sourceRecord.status)) {
+            throw new errors_1.AppError(409, 'Somente notas pendentes de analise podem ser aprovadas.', 'ENTRY_REVIEW_INVALID_STATUS');
+        }
+        try {
+            const integrationResult = await this.rmEntryInvoiceMovementService.integrate(sourceRecord);
+            const reviewedBy = (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy;
+            const reviewedComment = (0, normalize_1.toNullableString)(review.comment);
+            const approvedRecord = {
+                ...sourceRecord,
+                status: 'approved',
+                reviewComment: reviewedComment,
+                approvedBy: reviewedBy,
+                approvedAt: new Date().toISOString(),
+                rejectedBy: null,
+                rejectedAt: null,
+                rmMovementId: integrationResult.movementId,
+                rmPrimaryKey: integrationResult.primaryKey,
+                rmIntegrationStatus: 'integrated',
+                rmIntegrationMessage: null,
+                updatedBy: reviewedBy,
+            };
+            await this.persistEntry(approvedRecord, true);
+            return this.getEntryById(entryId);
+        }
+        catch (error) {
+            const message = error instanceof Error ? error.message : 'Falha desconhecida na integracao RM.';
+            await this.updateReviewMetadata(entryId, {
+                reviewComment: (0, normalize_1.toNullableString)(review.comment),
+                rmIntegrationStatus: 'error',
+                rmIntegrationMessage: message,
+                updatedBy: (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy,
+            });
+            throw new errors_1.AppError(502, 'Nao foi possivel integrar a nota no RM durante a aprovacao.', 'ENTRY_RM_INTEGRATION_ERROR', { message });
+        }
+    }
+    async rejectEntry(entryId, review) {
+        const sourceRecord = await this.getEntryById(entryId);
+        if (!['pending_analysis', 'submitted'].includes(sourceRecord.status)) {
+            throw new errors_1.AppError(409, 'Somente notas pendentes de analise podem ser reprovadas.', 'ENTRY_REVIEW_INVALID_STATUS');
+        }
+        const reviewedBy = (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy;
+        const rejectedRecord = {
+            ...sourceRecord,
+            status: 'rejected',
+            reviewComment: (0, normalize_1.toNullableString)(review.comment),
+            approvedBy: null,
+            approvedAt: null,
+            rejectedBy: reviewedBy,
+            rejectedAt: new Date().toISOString(),
+            rmIntegrationStatus: 'rejected',
+            rmIntegrationMessage: null,
+            updatedBy: reviewedBy,
+        };
+        await this.persistEntry(rejectedRecord, true);
         return this.getEntryById(entryId);
     }
     async deleteEntry(entryId) {
@@ -515,6 +678,27 @@ class EntryInvoiceService {
             throw new errors_1.AppError(409, 'Ja existe uma Entrada de Nota Fiscal cadastrada para essa combinacao de fornecedor, filial, numero e serie.', 'ENTRY_DUPLICATED');
         }
     }
+    async updateReviewMetadata(entryId, metadata) {
+        await (0, schemaService_1.ensureDatabaseStructure)();
+        const pool = await (0, db_1.getPool)();
+        const request = pool.request();
+        request.input('entryId', entryId);
+        request.input('reviewComment', metadata.reviewComment ?? null);
+        request.input('rmIntegrationStatus', metadata.rmIntegrationStatus ?? null);
+        request.input('rmIntegrationMessage', metadata.rmIntegrationMessage ?? null);
+        request.input('updatedBy', metadata.updatedBy ?? null);
+        await request.query(`
+      UPDATE ${tableName('entries')}
+      SET
+        review_comment = @reviewComment,
+        rm_integration_status = @rmIntegrationStatus,
+        rm_integration_message = @rmIntegrationMessage,
+        updated_by = COALESCE(@updatedBy, updated_by),
+        updated_at = SYSUTCDATETIME()
+      WHERE id = @entryId
+        AND deleted_at IS NULL;
+    `);
+    }
     async persistEntry(entry, isUpdate) {
         await (0, schemaService_1.ensureDatabaseStructure)();
         const pool = await (0, db_1.getPool)();
@@ -535,7 +719,10 @@ class EntryInvoiceService {
             request.input('cnpjCpf', entry.header.cnpjCpf);
             request.input('dataEmissao', entry.header.dataEmissao);
             request.input('dataSaida', entry.header.dataSaida);
+            request.input('localEstoqueDescription', entry.header.localEstoqueDescription);
+            request.input('codLoc', entry.header.codLoc);
             request.input('codTmv', entry.header.codTmv);
+            request.input('codTdo', entry.header.codTdo);
             request.input('movimentoDescription', entry.header.movimentoDescription);
             request.input('serieNf', entry.header.serie);
             request.input('idNat', entry.header.idNat);
@@ -566,7 +753,16 @@ class EntryInvoiceService {
                 requestedBy: entry.requestedBy,
             }));
             request.input('createdBy', entry.createdBy);
-            request.input('updatedBy', entry.requestedBy ?? entry.updatedBy);
+            request.input('updatedBy', entry.updatedBy ?? entry.requestedBy);
+            request.input('reviewComment', entry.reviewComment);
+            request.input('approvedBy', entry.approvedBy);
+            request.input('approvedAt', entry.approvedAt);
+            request.input('rejectedBy', entry.rejectedBy);
+            request.input('rejectedAt', entry.rejectedAt);
+            request.input('rmMovementId', entry.rmMovementId);
+            request.input('rmPrimaryKey', entry.rmPrimaryKey);
+            request.input('rmIntegrationStatus', entry.rmIntegrationStatus);
+            request.input('rmIntegrationMessage', entry.rmIntegrationMessage);
             if (isUpdate) {
                 await request.query(`
           UPDATE ${tableName('entries')}
@@ -583,7 +779,10 @@ class EntryInvoiceService {
             cnpj_cpf = @cnpjCpf,
             data_emissao = @dataEmissao,
             data_saida = @dataSaida,
+            local_estoque_description = @localEstoqueDescription,
+            cod_loc = @codLoc,
             cod_tmv = @codTmv,
+            cod_tdo = @codTdo,
             movimento_description = @movimentoDescription,
             serie_nf = @serieNf,
             id_nat = @idNat,
@@ -610,6 +809,15 @@ class EntryInvoiceService {
             cod_cxa = @codCxa,
             descricao_cod_cxa = @descricaoCodCxa,
             payload_json = @payloadJson,
+            review_comment = @reviewComment,
+            approved_by = @approvedBy,
+            approved_at = @approvedAt,
+            rejected_by = @rejectedBy,
+            rejected_at = @rejectedAt,
+            rm_movement_id = @rmMovementId,
+            rm_primary_key = @rmPrimaryKey,
+            rm_integration_status = @rmIntegrationStatus,
+            rm_integration_message = @rmIntegrationMessage,
             updated_by = @updatedBy,
             updated_at = SYSUTCDATETIME()
           WHERE id = @id;
@@ -627,19 +835,23 @@ class EntryInvoiceService {
           INSERT INTO ${tableName('entries')} (
             id, status, numero_mov, serie, cod_coligada, cod_filial, filial_description,
             cod_col_cfo, cod_cfo, fornecedor_description, cnpj_cpf, data_emissao, data_saida,
-            cod_tmv, movimento_description, serie_nf, id_nat, cod_nat, natureza_description,
+            local_estoque_description, cod_loc, cod_tmv, cod_tdo, movimento_description, serie_nf, id_nat, cod_nat, natureza_description,
             qualidade, prazo, atendimento, valor_bruto, valor_liquido, valor_frete, valor_desc,
             valor_desp, valor_outros, chave_acesso_nfe, gerar_frap, data_prev_baixa, historico,
             observacao_avaliacao, financeiro, possui_adiantamento, cod_cpg, descricao_cod_cpg,
-            cod_cxa, descricao_cod_cxa, payload_json, created_by, updated_by
+            cod_cxa, descricao_cod_cxa, payload_json, created_by, updated_by, review_comment,
+            approved_by, approved_at, rejected_by, rejected_at, rm_movement_id, rm_primary_key,
+            rm_integration_status, rm_integration_message
           ) VALUES (
             @id, @status, @numeroMov, @serie, @codColigada, @codFilial, @filialDescription,
             @codColCfo, @codCfo, @fornecedorDescription, @cnpjCpf, @dataEmissao, @dataSaida,
-            @codTmv, @movimentoDescription, @serieNf, @idNat, @codNat, @naturezaDescription,
+            @localEstoqueDescription, @codLoc, @codTmv, @codTdo, @movimentoDescription, @serieNf, @idNat, @codNat, @naturezaDescription,
             @qualidade, @prazo, @atendimento, @valorBruto, @valorLiquido, @valorFrete, @valorDesc,
             @valorDesp, @valorOutros, @chaveAcessoNfe, @gerarFrap, @dataPrevBaixa, @historico,
             @observacaoAvaliacao, @financeiro, @possuiAdiantamento, @codCpg, @descricaoCodCpg,
-            @codCxa, @descricaoCodCxa, @payloadJson, @createdBy, @updatedBy
+            @codCxa, @descricaoCodCxa, @payloadJson, @createdBy, @updatedBy, @reviewComment,
+            @approvedBy, @approvedAt, @rejectedBy, @rejectedAt, @rmMovementId, @rmPrimaryKey,
+            @rmIntegrationStatus, @rmIntegrationMessage
           );
         `);
             }
@@ -694,6 +906,7 @@ class EntryInvoiceService {
                 item_seq_f: row.itemSeqF,
                 nseq_itm_mov: row.nseqItmMov,
                 cod_trb: row.codTrb,
+                sit_tributaria: row.sitTributaria,
                 base_de_calculo: row.baseDeCalculo,
                 aliquota: row.aliquota,
                 tipo_recolhimento: row.tipoRecolhimento,
@@ -709,9 +922,16 @@ class EntryInvoiceService {
                 valor: row.valor,
                 desc_forma_pagto: row.descFormaPagto,
                 id_forma_pagto: row.idFormaPagto,
+                tipo_forma_pagto: row.tipoFormaPagto,
+                cod_col_cxa: row.codColCxa,
                 desc_cod_cxa: row.descCodCxa,
                 cod_cxa: row.codCxa,
+                tipo_pagamento: row.tipoPagamento,
+                debito_credito: row.debitoCredito,
                 taxa_adm: row.taxaAdm,
+                id_lan: row.idLan,
+                adt_integrado: row.adtIntegrado,
+                linha_digitavel: row.linhaDigitavel,
             })));
             await transaction.commit();
         }

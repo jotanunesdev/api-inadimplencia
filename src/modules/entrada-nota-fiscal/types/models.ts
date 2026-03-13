@@ -1,5 +1,5 @@
 export type SaveMode = 'draft' | 'submit';
-export type EntryStatus = 'draft' | 'submitted';
+export type EntryStatus = 'draft' | 'pending_analysis' | 'approved' | 'rejected';
 
 export interface EntryListQuery {
   search?: string;
@@ -19,8 +19,11 @@ export interface EntryHeaderInput {
   cnpjCpf?: string | null;
   dataEmissao?: string | null;
   dataSaida?: string | null;
+  localEstoqueDescription?: string | null;
+  codLoc?: string | null;
   movimentoDescription?: string | null;
   codTmv?: string | null;
+  codTdo?: string | null;
   serie?: string | null;
   idNat?: string | null;
   codNat?: string | null;
@@ -101,6 +104,7 @@ export interface EntryTaxInput {
   itemSeqF?: string | null;
   nseqItmMov?: string | null;
   codTrb?: string | null;
+  sitTributaria?: string | null;
   baseDeCalculo?: number | string | null;
   aliquota?: number | string | null;
   tipoRecolhimento?: string | null;
@@ -117,9 +121,21 @@ export interface EntryPaymentInput {
   valor?: number | string | null;
   descFormaPagto?: string | null;
   idFormaPagto?: string | null;
+  tipoFormaPagto?: string | null;
+  codColCxa?: string | null;
   descCodCxa?: string | null;
   codCxa?: string | null;
+  tipoPagamento?: string | null;
+  debitoCredito?: string | null;
   taxaAdm?: number | string | null;
+  idLan?: string | null;
+  adtIntegrado?: string | null;
+  linhaDigitavel?: string | null;
+}
+
+export interface EntryReviewInput {
+  reviewedBy?: string | null;
+  comment?: string | null;
 }
 
 export interface EntryRecordInput {
@@ -144,8 +160,11 @@ export interface EntryHeader {
   cnpjCpf: string | null;
   dataEmissao: string | null;
   dataSaida: string | null;
+  localEstoqueDescription: string | null;
+  codLoc: string | null;
   movimentoDescription: string | null;
   codTmv: string | null;
+  codTdo: string | null;
   serie: string | null;
   idNat: string | null;
   codNat: string | null;
@@ -226,6 +245,7 @@ export interface EntryTax {
   itemSeqF: string | null;
   nseqItmMov: string | null;
   codTrb: string | null;
+  sitTributaria: string | null;
   baseDeCalculo: number | null;
   aliquota: number | null;
   tipoRecolhimento: string | null;
@@ -242,9 +262,16 @@ export interface EntryPayment {
   valor: number | null;
   descFormaPagto: string | null;
   idFormaPagto: string | null;
+  tipoFormaPagto: string | null;
+  codColCxa: string | null;
   descCodCxa: string | null;
   codCxa: string | null;
+  tipoPagamento: string | null;
+  debitoCredito: string | null;
   taxaAdm: number | null;
+  idLan: string | null;
+  adtIntegrado: string | null;
+  linhaDigitavel: string | null;
 }
 
 export interface EntryRecord {
@@ -254,6 +281,15 @@ export interface EntryRecord {
   requestedBy: string | null;
   createdBy: string | null;
   updatedBy: string | null;
+  reviewComment: string | null;
+  approvedBy: string | null;
+  approvedAt: string | null;
+  rejectedBy: string | null;
+  rejectedAt: string | null;
+  rmMovementId: string | null;
+  rmPrimaryKey: string | null;
+  rmIntegrationStatus: string | null;
+  rmIntegrationMessage: string | null;
   createdAt: string;
   updatedAt: string;
   header: EntryHeader;
@@ -273,6 +309,9 @@ export interface EntryListItem {
   filialDescription: string | null;
   dataEmissao: string | null;
   valorLiquido: number | null;
+  requestedBy: string | null;
+  rmMovementId: string | null;
+  reviewComment: string | null;
   updatedAt: string;
 }
 
