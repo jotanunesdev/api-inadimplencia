@@ -30,6 +30,7 @@ import {
 import { ensureDatabaseStructure } from './schemaService';
 import { validateEntryRecord } from './entryInvoiceValidationService';
 import { RmEntryInvoiceMovementService } from '../../rm/services/RmEntryInvoiceMovementService';
+import { RmEntryInvoiceLookupService } from '../../rm/services/RmEntryInvoiceLookupService';
 
 type RowMap = Record<string, string | number | boolean | null>;
 type DbRow = Record<string, unknown>;
@@ -296,6 +297,7 @@ function mapRecordFromInput(
 
 export class EntryInvoiceService {
   private readonly rmEntryInvoiceMovementService = new RmEntryInvoiceMovementService();
+  private readonly rmEntryInvoiceLookupService = new RmEntryInvoiceLookupService();
 
   public getFormMetadata(): FormMetadataResponse {
     return {
@@ -590,7 +592,10 @@ export class EntryInvoiceService {
 
   public async createEntry(payload: EntryRecordInput): Promise<EntryRecord> {
     const now = new Date().toISOString();
-    const entry = mapRecordFromInput(randomUUID(), payload, now, now);
+    let entry = mapRecordFromInput(randomUUID(), payload, now, now);
+    if (entry.mode === 'submit') {
+      entry = await this.applyAutomaticItemIdentifiers(entry);
+    }
     validateEntryRecord(entry, entry.mode);
     await this.ensureDuplicate(entry);
     await ensureDatabaseStructure();
@@ -609,7 +614,7 @@ export class EntryInvoiceService {
     }
 
     const now = new Date().toISOString();
-    const entry = mapRecordFromInput(entryId, payload, existing.createdAt, now, existing.createdBy);
+    let entry = mapRecordFromInput(entryId, payload, existing.createdAt, now, existing.createdBy);
     entry.reviewComment = existing.reviewComment;
     entry.approvedBy = existing.approvedBy;
     entry.approvedAt = existing.approvedAt;
@@ -619,6 +624,9 @@ export class EntryInvoiceService {
     entry.rmPrimaryKey = existing.rmPrimaryKey;
     entry.rmIntegrationStatus = existing.rmIntegrationStatus;
     entry.rmIntegrationMessage = existing.rmIntegrationMessage;
+    if (entry.mode === 'submit') {
+      entry = await this.applyAutomaticItemIdentifiers(entry);
+    }
     validateEntryRecord(entry, entry.mode);
     await this.ensureDuplicate(entry, entryId);
     await this.persistEntry(entry, true);
@@ -638,7 +646,7 @@ export class EntryInvoiceService {
       );
     }
 
-    const recordToSubmit: EntryRecord = {
+    let recordToSubmit: EntryRecord = {
       ...sourceRecord,
       mode: 'submit',
       status: 'pending_analysis',
@@ -651,6 +659,7 @@ export class EntryInvoiceService {
       rmIntegrationMessage: null,
     };
 
+    recordToSubmit = await this.applyAutomaticItemIdentifiers(recordToSubmit);
     validateEntryRecord(recordToSubmit, 'submit');
     await this.ensureDuplicate(recordToSubmit, entryId);
     await this.persistEntry(recordToSubmit, true);
@@ -669,11 +678,17 @@ export class EntryInvoiceService {
     }
 
     try {
-      const integrationResult = await this.rmEntryInvoiceMovementService.integrate(sourceRecord);
+      const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
+
+      if (recordToApprove !== sourceRecord) {
+        await this.persistEntry(recordToApprove, true);
+      }
+
+      const integrationResult = await this.rmEntryInvoiceMovementService.integrate(recordToApprove);
       const reviewedBy = toNullableString(review.reviewedBy) ?? sourceRecord.updatedBy;
       const reviewedComment = toNullableString(review.comment);
       const approvedRecord: EntryRecord = {
-        ...sourceRecord,
+        ...recordToApprove,
         status: 'approved',
         reviewComment: reviewedComment,
         approvedBy: reviewedBy,
@@ -695,7 +710,7 @@ export class EntryInvoiceService {
 
       if (message.includes('Número Identificador inválido') || message.includes('Numero Identificador invalido')) {
         details.hint =
-          'O produto exige Numero Identificador no item. Preencha o campo Numero Identificador antes de aprovar a nota.';
+          'O produto exige Numero Identificador no item. A API tentou inferir esse valor automaticamente a partir da O.C.; se ainda assim falhou, revise o cadastro ou o identificador do produto no RM.';
       }
 
       await this.updateReviewMetadata(entryId, {
@@ -740,6 +755,89 @@ export class EntryInvoiceService {
 
     await this.persistEntry(rejectedRecord, true);
     return this.getEntryById(entryId);
+  }
+
+  private async applyAutomaticItemIdentifiers(entry: EntryRecord): Promise<EntryRecord> {
+    const codColigada = toNullableString(entry.header.codColigada);
+    if (!codColigada) {
+      return entry;
+    }
+
+    const itemsToResolve = entry.items.filter(
+      (item) =>
+        !hasValue(item.numNoFabric) &&
+        hasValue(item.idMovOc) &&
+        hasValue(item.nseqItmMovOc)
+    );
+
+    if (!itemsToResolve.length) {
+      return entry;
+    }
+
+    const purchaseOrderIds = [
+      ...new Set(itemsToResolve.map((item) => String(item.idMovOc).trim()).filter(Boolean)),
+    ];
+
+    if (!purchaseOrderIds.length) {
+      return entry;
+    }
+
+    try {
+      const lookupRows = await this.rmEntryInvoiceLookupService.getPurchaseOrderItems({
+        CODCOLIGADA: codColigada,
+        LISTIDMOV: purchaseOrderIds.join('-'),
+        SEPARADOR: '-',
+        IDMOVDESTEXCEP: '',
+      });
+
+      const identifierByItemKey = new Map<string, string>();
+      for (const row of lookupRows) {
+        const idMovOc = toNullableString(row.TITMMOV_T_IDMOV);
+        const nseqItmMovOc = toNullableString(row.TITMMOV_T_NSEQITMMOV);
+        const inferredIdentifier =
+          toNullableString(row.TITMMOV_T_NUMNOFABRIC) ??
+          toNullableString(row.TITMMOV_T_CODNOFORN);
+
+        if (!idMovOc || !nseqItmMovOc || !inferredIdentifier) {
+          continue;
+        }
+
+        identifierByItemKey.set(`${idMovOc}_${nseqItmMovOc}`, inferredIdentifier);
+      }
+
+      let changed = false;
+      const items = entry.items.map((item) => {
+        if (hasValue(item.numNoFabric) || !item.idMovOc || !item.nseqItmMovOc) {
+          return item;
+        }
+
+        const inferredIdentifier = identifierByItemKey.get(
+          `${String(item.idMovOc).trim()}_${String(item.nseqItmMovOc).trim()}`
+        );
+
+        if (!inferredIdentifier) {
+          return item;
+        }
+
+        changed = true;
+        return {
+          ...item,
+          numNoFabric: inferredIdentifier,
+        };
+      });
+
+      if (!changed) {
+        return entry;
+      }
+
+      return {
+        ...entry,
+        items,
+        updatedAt: new Date().toISOString(),
+      };
+    } catch {
+      return entry;
+    }
   }
 
   public async deleteEntry(entryId: string): Promise<void> {

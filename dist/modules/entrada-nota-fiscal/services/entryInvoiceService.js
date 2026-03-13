@@ -9,6 +9,7 @@ const normalize_1 = require("../utils/normalize");
 const schemaService_1 = require("./schemaService");
 const entryInvoiceValidationService_1 = require("./entryInvoiceValidationService");
 const RmEntryInvoiceMovementService_1 = require("../../rm/services/RmEntryInvoiceMovementService");
+const RmEntryInvoiceLookupService_1 = require("../../rm/services/RmEntryInvoiceLookupService");
 function quoteIdentifier(identifier) {
     return `[${identifier}]`;
 }
@@ -239,6 +240,7 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
 }
 class EntryInvoiceService {
     rmEntryInvoiceMovementService = new RmEntryInvoiceMovementService_1.RmEntryInvoiceMovementService();
+    rmEntryInvoiceLookupService = new RmEntryInvoiceLookupService_1.RmEntryInvoiceLookupService();
     getFormMetadata() {
         return {
             ratings: [1, 2, 3, 4, 5].map((value) => ({
@@ -516,7 +518,10 @@ class EntryInvoiceService {
     }
     async createEntry(payload) {
         const now = new Date().toISOString();
-        const entry = mapRecordFromInput((0, crypto_1.randomUUID)(), payload, now, now);
+        let entry = mapRecordFromInput((0, crypto_1.randomUUID)(), payload, now, now);
+        if (entry.mode === 'submit') {
+            entry = await this.applyAutomaticItemIdentifiers(entry);
+        }
         (0, entryInvoiceValidationService_1.validateEntryRecord)(entry, entry.mode);
         await this.ensureDuplicate(entry);
         await (0, schemaService_1.ensureDatabaseStructure)();
@@ -529,7 +534,7 @@ class EntryInvoiceService {
             throw new errors_1.AppError(409, 'Notas ja aprovadas nao podem ser alteradas.', 'ENTRY_ALREADY_APPROVED');
         }
         const now = new Date().toISOString();
-        const entry = mapRecordFromInput(entryId, payload, existing.createdAt, now, existing.createdBy);
+        let entry = mapRecordFromInput(entryId, payload, existing.createdAt, now, existing.createdBy);
         entry.reviewComment = existing.reviewComment;
         entry.approvedBy = existing.approvedBy;
         entry.approvedAt = existing.approvedAt;
@@ -539,6 +544,9 @@ class EntryInvoiceService {
         entry.rmPrimaryKey = existing.rmPrimaryKey;
         entry.rmIntegrationStatus = existing.rmIntegrationStatus;
         entry.rmIntegrationMessage = existing.rmIntegrationMessage;
+        if (entry.mode === 'submit') {
+            entry = await this.applyAutomaticItemIdentifiers(entry);
+        }
         (0, entryInvoiceValidationService_1.validateEntryRecord)(entry, entry.mode);
         await this.ensureDuplicate(entry, entryId);
         await this.persistEntry(entry, true);
@@ -551,7 +559,7 @@ class EntryInvoiceService {
         if (sourceRecord.status === 'approved') {
             throw new errors_1.AppError(409, 'Esta nota ja foi aprovada e integrada ao RM.', 'ENTRY_ALREADY_APPROVED');
         }
-        const recordToSubmit = {
+        let recordToSubmit = {
             ...sourceRecord,
             mode: 'submit',
             status: 'pending_analysis',
@@ -563,6 +571,7 @@ class EntryInvoiceService {
             rmIntegrationStatus: null,
             rmIntegrationMessage: null,
         };
+        recordToSubmit = await this.applyAutomaticItemIdentifiers(recordToSubmit);
         (0, entryInvoiceValidationService_1.validateEntryRecord)(recordToSubmit, 'submit');
         await this.ensureDuplicate(recordToSubmit, entryId);
         await this.persistEntry(recordToSubmit, true);
@@ -574,11 +583,15 @@ class EntryInvoiceService {
             throw new errors_1.AppError(409, 'Somente notas pendentes de analise podem ser aprovadas.', 'ENTRY_REVIEW_INVALID_STATUS');
         }
         try {
-            const integrationResult = await this.rmEntryInvoiceMovementService.integrate(sourceRecord);
+            const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
+            if (recordToApprove !== sourceRecord) {
+                await this.persistEntry(recordToApprove, true);
+            }
+            const integrationResult = await this.rmEntryInvoiceMovementService.integrate(recordToApprove);
             const reviewedBy = (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy;
             const reviewedComment = (0, normalize_1.toNullableString)(review.comment);
             const approvedRecord = {
-                ...sourceRecord,
+                ...recordToApprove,
                 status: 'approved',
                 reviewComment: reviewedComment,
                 approvedBy: reviewedBy,
@@ -599,7 +612,7 @@ class EntryInvoiceService {
             const details = { message };
             if (message.includes('Número Identificador inválido') || message.includes('Numero Identificador invalido')) {
                 details.hint =
-                    'O produto exige Numero Identificador no item. Preencha o campo Numero Identificador antes de aprovar a nota.';
+                    'O produto exige Numero Identificador no item. A API tentou inferir esse valor automaticamente a partir da O.C.; se ainda assim falhou, revise o cadastro ou o identificador do produto no RM.';
             }
             await this.updateReviewMetadata(entryId, {
                 reviewComment: (0, normalize_1.toNullableString)(review.comment),
@@ -630,6 +643,69 @@ class EntryInvoiceService {
         };
         await this.persistEntry(rejectedRecord, true);
         return this.getEntryById(entryId);
+    }
+    async applyAutomaticItemIdentifiers(entry) {
+        const codColigada = (0, normalize_1.toNullableString)(entry.header.codColigada);
+        if (!codColigada) {
+            return entry;
+        }
+        const itemsToResolve = entry.items.filter((item) => !(0, normalize_1.hasValue)(item.numNoFabric) &&
+            (0, normalize_1.hasValue)(item.idMovOc) &&
+            (0, normalize_1.hasValue)(item.nseqItmMovOc));
+        if (!itemsToResolve.length) {
+            return entry;
+        }
+        const purchaseOrderIds = [
+            ...new Set(itemsToResolve.map((item) => String(item.idMovOc).trim()).filter(Boolean)),
+        ];
+        if (!purchaseOrderIds.length) {
+            return entry;
+        }
+        try {
+            const lookupRows = await this.rmEntryInvoiceLookupService.getPurchaseOrderItems({
+                CODCOLIGADA: codColigada,
+                LISTIDMOV: purchaseOrderIds.join('-'),
+                SEPARADOR: '-',
+                IDMOVDESTEXCEP: '',
+            });
+            const identifierByItemKey = new Map();
+            for (const row of lookupRows) {
+                const idMovOc = (0, normalize_1.toNullableString)(row.TITMMOV_T_IDMOV);
+                const nseqItmMovOc = (0, normalize_1.toNullableString)(row.TITMMOV_T_NSEQITMMOV);
+                const inferredIdentifier = (0, normalize_1.toNullableString)(row.TITMMOV_T_NUMNOFABRIC) ??
+                    (0, normalize_1.toNullableString)(row.TITMMOV_T_CODNOFORN);
+                if (!idMovOc || !nseqItmMovOc || !inferredIdentifier) {
+                    continue;
+                }
+                identifierByItemKey.set(`${idMovOc}_${nseqItmMovOc}`, inferredIdentifier);
+            }
+            let changed = false;
+            const items = entry.items.map((item) => {
+                if ((0, normalize_1.hasValue)(item.numNoFabric) || !item.idMovOc || !item.nseqItmMovOc) {
+                    return item;
+                }
+                const inferredIdentifier = identifierByItemKey.get(`${String(item.idMovOc).trim()}_${String(item.nseqItmMovOc).trim()}`);
+                if (!inferredIdentifier) {
+                    return item;
+                }
+                changed = true;
+                return {
+                    ...item,
+                    numNoFabric: inferredIdentifier,
+                };
+            });
+            if (!changed) {
+                return entry;
+            }
+            return {
+                ...entry,
+                items,
+                updatedAt: new Date().toISOString(),
+            };
+        }
+        catch {
+            return entry;
+        }
     }
     async deleteEntry(entryId) {
         await (0, schemaService_1.ensureDatabaseStructure)();
