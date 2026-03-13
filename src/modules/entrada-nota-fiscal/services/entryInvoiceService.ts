@@ -145,7 +145,11 @@ function mapPurchaseOrders(items: EntryRecordInput['purchaseOrders']): EntryPurc
   }));
 }
 
-function mapItems(items: EntryRecordInput['items']): EntryItem[] {
+function mapItems(items: EntryRecordInput['items'], header?: EntryHeader): EntryItem[] {
+  const fallbackIdNat = toNullableString(header?.idNat);
+  const fallbackCodNat = toNullableString(header?.codNat);
+  const fallbackDescNat = toNullableString(header?.naturezaDescription);
+
   return (items ?? []).map((item, index) => ({
     lineNumber: normalizeLineNumber(item?.lineNumber, index + 1),
     seqF: toNullableString(item?.seqF),
@@ -154,9 +158,9 @@ function mapItems(items: EntryRecordInput['items']): EntryItem[] {
     idPrd: toNullableString(item?.idPrd),
     codUnd: toNullableString(item?.codUnd),
     nseqItmMov: toNullableString(item?.nseqItmMov),
-    idNat: toNullableString(item?.idNat),
-    codNat: toNullableString(item?.codNat),
-    descNat: toNullableString(item?.descNat),
+    idNat: toNullableString(item?.idNat) ?? fallbackIdNat,
+    codNat: toNullableString(item?.codNat) ?? fallbackCodNat,
+    descNat: toNullableString(item?.descNat) ?? fallbackDescNat,
     codColTborcamento: toNullableString(item?.codColTborcamento),
     codTborcamento: toNullableString(item?.codTborcamento),
     descTborcamento: toNullableString(item?.descTborcamento) ?? toNullableString(item?.codTborcamento),
@@ -222,6 +226,7 @@ function mapRecordFromInput(
 ): EntryRecord {
   const mode = normalizeMode(payload.mode);
   const requestedBy = toNullableString(payload.requestedBy);
+  const normalizedHeader = mapHeader(payload.header);
 
   return {
     id,
@@ -232,9 +237,9 @@ function mapRecordFromInput(
     updatedBy: requestedBy,
     createdAt,
     updatedAt,
-    header: mapHeader(payload.header),
+    header: normalizedHeader,
     purchaseOrders: mapPurchaseOrders(payload.purchaseOrders),
-    items: mapItems(payload.items),
+    items: mapItems(payload.items, normalizedHeader),
     apportionments: mapApportionments(payload.apportionments),
     taxes: mapTaxes(payload.taxes),
     payments: mapPayments(payload.payments),

@@ -108,7 +108,10 @@ function mapPurchaseOrders(items) {
         movimentoDestinoDescricao: (0, normalize_1.toNullableString)(item?.movimentoDestinoDescricao),
     }));
 }
-function mapItems(items) {
+function mapItems(items, header) {
+    const fallbackIdNat = (0, normalize_1.toNullableString)(header?.idNat);
+    const fallbackCodNat = (0, normalize_1.toNullableString)(header?.codNat);
+    const fallbackDescNat = (0, normalize_1.toNullableString)(header?.naturezaDescription);
     return (items ?? []).map((item, index) => ({
         lineNumber: normalizeLineNumber(item?.lineNumber, index + 1),
         seqF: (0, normalize_1.toNullableString)(item?.seqF),
@@ -117,9 +120,9 @@ function mapItems(items) {
         idPrd: (0, normalize_1.toNullableString)(item?.idPrd),
         codUnd: (0, normalize_1.toNullableString)(item?.codUnd),
         nseqItmMov: (0, normalize_1.toNullableString)(item?.nseqItmMov),
-        idNat: (0, normalize_1.toNullableString)(item?.idNat),
-        codNat: (0, normalize_1.toNullableString)(item?.codNat),
-        descNat: (0, normalize_1.toNullableString)(item?.descNat),
+        idNat: (0, normalize_1.toNullableString)(item?.idNat) ?? fallbackIdNat,
+        codNat: (0, normalize_1.toNullableString)(item?.codNat) ?? fallbackCodNat,
+        descNat: (0, normalize_1.toNullableString)(item?.descNat) ?? fallbackDescNat,
         codColTborcamento: (0, normalize_1.toNullableString)(item?.codColTborcamento),
         codTborcamento: (0, normalize_1.toNullableString)(item?.codTborcamento),
         descTborcamento: (0, normalize_1.toNullableString)(item?.descTborcamento) ?? (0, normalize_1.toNullableString)(item?.codTborcamento),
@@ -175,6 +178,7 @@ function mapPayments(items) {
 function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
     const mode = normalizeMode(payload.mode);
     const requestedBy = (0, normalize_1.toNullableString)(payload.requestedBy);
+    const normalizedHeader = mapHeader(payload.header);
     return {
         id,
         status: normalizeStatus(mode),
@@ -184,9 +188,9 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
         updatedBy: requestedBy,
         createdAt,
         updatedAt,
-        header: mapHeader(payload.header),
+        header: normalizedHeader,
         purchaseOrders: mapPurchaseOrders(payload.purchaseOrders),
-        items: mapItems(payload.items),
+        items: mapItems(payload.items, normalizedHeader),
         apportionments: mapApportionments(payload.apportionments),
         taxes: mapTaxes(payload.taxes),
         payments: mapPayments(payload.payments),
