@@ -22,6 +22,7 @@ import type {
 } from '../types/models';
 import {
   hasValue,
+  roundDecimal,
   toBoolean,
   toDateOnly,
   toNullableNumber,
@@ -274,7 +275,7 @@ function mapRecordFromInput(
   const requestedBy = toNullableString(payload.requestedBy);
   const normalizedHeader = mapHeader(payload.header);
 
-  return normalizeItemSequences({
+  return normalizeRecordTotals(normalizeItemSequences({
     id,
     status: normalizeStatus(mode),
     mode,
@@ -298,7 +299,7 @@ function mapRecordFromInput(
     apportionments: mapApportionments(payload.apportionments),
     taxes: mapTaxes(payload.taxes),
     payments: mapPayments(payload.payments),
-  });
+  }));
 }
 
 function normalizeItemSequences(record: EntryRecord): EntryRecord {
@@ -334,6 +335,45 @@ function normalizeItemSequences(record: EntryRecord): EntryRecord {
     items: nextItems,
     apportionments: nextApportionments,
     taxes: nextTaxes,
+  };
+}
+
+function calculateItemsBrutoTotal(items: EntryItem[]): number {
+  return roundDecimal(items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0));
+}
+
+function calculateItemsLiquidoTotal(items: EntryItem[]): number {
+  return roundDecimal(items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0));
+}
+
+function calculateFinancialTotal(header: EntryHeader, items: EntryItem[]): number {
+  return roundDecimal(
+    calculateItemsLiquidoTotal(items) +
+      (header.valorFrete ?? 0) +
+      (header.valorDesp ?? 0) +
+      (header.valorOutros ?? 0) -
+      (header.valorDesc ?? 0)
+  );
+}
+
+function normalizeRecordTotals(record: EntryRecord): EntryRecord {
+  const nextValorBruto = calculateItemsBrutoTotal(record.items);
+  const nextValorLiquido = calculateFinancialTotal(record.header, record.items);
+
+  if (
+    record.header.valorBruto === nextValorBruto &&
+    record.header.valorLiquido === nextValorLiquido
+  ) {
+    return record;
+  }
+
+  return {
+    ...record,
+    header: {
+      ...record.header,
+      valorBruto: nextValorBruto,
+      valorLiquido: nextValorLiquido,
+    },
   };
 }
 
@@ -637,7 +677,7 @@ export class EntryInvoiceService {
       })),
     };
 
-    return this.applyAutomaticItemIdentifiers(normalizeItemSequences(entryRecord));
+    return this.applyAutomaticItemIdentifiers(normalizeRecordTotals(normalizeItemSequences(entryRecord)));
   }
 
   public async createEntry(payload: EntryRecordInput): Promise<EntryRecord> {
@@ -727,13 +767,14 @@ export class EntryInvoiceService {
       );
     }
 
+    const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
+    validateEntryRecord(recordToApprove, 'submit');
+
+    if (recordToApprove !== sourceRecord) {
+      await this.persistEntry(recordToApprove, true);
+    }
+
     try {
-      const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
-
-      if (recordToApprove !== sourceRecord) {
-        await this.persistEntry(recordToApprove, true);
-      }
-
       const integrationResult = await this.rmEntryInvoiceMovementService.integrate(recordToApprove);
       const reviewedBy = toNullableString(review.reviewedBy) ?? sourceRecord.updatedBy;
       const reviewedComment = toNullableString(review.comment);

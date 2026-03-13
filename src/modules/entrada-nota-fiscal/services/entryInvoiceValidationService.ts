@@ -51,6 +51,24 @@ function assertClose(expected: number, actual: number, message: string, code: st
   }
 }
 
+function calculateItemsBrutoTotal(items: EntryItem[]): number {
+  return roundDecimal(items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0));
+}
+
+function calculateItemsLiquidoTotal(items: EntryItem[]): number {
+  return roundDecimal(items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0));
+}
+
+function calculateFinancialTotal(header: EntryHeader, items: EntryItem[]): number {
+  return roundDecimal(
+    calculateItemsLiquidoTotal(items) +
+      (header.valorFrete ?? 0) +
+      (header.valorDesp ?? 0) +
+      (header.valorOutros ?? 0) -
+      (header.valorDesc ?? 0)
+  );
+}
+
 function validateHeader(header: EntryHeader): void {
   ensureRequiredString(header.codColigada, 'O campo Coligada e obrigatorio.', 'HEADER_CODCOLIGADA_REQUIRED');
   ensureRequiredString(header.filialDescription, 'O campo Filial e obrigatorio.', 'HEADER_FILIAL_REQUIRED');
@@ -381,12 +399,8 @@ function validatePayments(payments: EntryPayment[], totalValue: number): void {
 }
 
 function validateEntryTotals(record: EntryRecord): void {
-  const itemsBruto = roundDecimal(
-    record.items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0)
-  );
-  const itemsLiquido = roundDecimal(
-    record.items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0)
-  );
+  const itemsBruto = calculateItemsBrutoTotal(record.items);
+  const totalFinanceiro = calculateFinancialTotal(record.header, record.items);
 
   assertClose(
     record.header.valorBruto ?? 0,
@@ -397,8 +411,8 @@ function validateEntryTotals(record: EntryRecord): void {
 
   assertClose(
     record.header.valorLiquido ?? 0,
-    itemsLiquido,
-    'O Valor Liquido Total deve ser igual a soma do Valor Liquido dos itens.',
+    totalFinanceiro,
+    'O Valor Liquido Total deve ser igual aos itens somados com frete, despesa, outros e desconto.',
     'HEADER_VALORLIQUIDO_MISMATCH'
   );
 }
@@ -416,6 +430,6 @@ export function validateEntryRecord(record: EntryRecord, mode: SaveMode): void {
   validateEntryTotals(record);
 
   if (record.header.financeiro) {
-    validatePayments(record.payments, record.header.valorLiquido ?? 0);
+    validatePayments(record.payments, calculateFinancialTotal(record.header, record.items));
   }
 }

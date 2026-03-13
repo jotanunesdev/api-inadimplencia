@@ -218,7 +218,7 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
     const mode = normalizeMode(payload.mode);
     const requestedBy = (0, normalize_1.toNullableString)(payload.requestedBy);
     const normalizedHeader = mapHeader(payload.header);
-    return normalizeItemSequences({
+    return normalizeRecordTotals(normalizeItemSequences({
         id,
         status: normalizeStatus(mode),
         mode,
@@ -242,7 +242,7 @@ function mapRecordFromInput(id, payload, createdAt, updatedAt, createdBy) {
         apportionments: mapApportionments(payload.apportionments),
         taxes: mapTaxes(payload.taxes),
         payments: mapPayments(payload.payments),
-    });
+    }));
 }
 function normalizeItemSequences(record) {
     const nextItems = record.items.map((item, index) => ({
@@ -269,6 +269,35 @@ function normalizeItemSequences(record) {
         items: nextItems,
         apportionments: nextApportionments,
         taxes: nextTaxes,
+    };
+}
+function calculateItemsBrutoTotal(items) {
+    return (0, normalize_1.roundDecimal)(items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0));
+}
+function calculateItemsLiquidoTotal(items) {
+    return (0, normalize_1.roundDecimal)(items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0));
+}
+function calculateFinancialTotal(header, items) {
+    return (0, normalize_1.roundDecimal)(calculateItemsLiquidoTotal(items) +
+        (header.valorFrete ?? 0) +
+        (header.valorDesp ?? 0) +
+        (header.valorOutros ?? 0) -
+        (header.valorDesc ?? 0));
+}
+function normalizeRecordTotals(record) {
+    const nextValorBruto = calculateItemsBrutoTotal(record.items);
+    const nextValorLiquido = calculateFinancialTotal(record.header, record.items);
+    if (record.header.valorBruto === nextValorBruto &&
+        record.header.valorLiquido === nextValorLiquido) {
+        return record;
+    }
+    return {
+        ...record,
+        header: {
+            ...record.header,
+            valorBruto: nextValorBruto,
+            valorLiquido: nextValorLiquido,
+        },
     };
 }
 class EntryInvoiceService {
@@ -554,7 +583,7 @@ class EntryInvoiceService {
                 linhaDigitavel: (0, normalize_1.toNullableString)(row.linha_digitavel),
             })),
         };
-        return this.applyAutomaticItemIdentifiers(normalizeItemSequences(entryRecord));
+        return this.applyAutomaticItemIdentifiers(normalizeRecordTotals(normalizeItemSequences(entryRecord)));
     }
     async createEntry(payload) {
         const now = new Date().toISOString();
@@ -622,11 +651,12 @@ class EntryInvoiceService {
         if (!['pending_analysis', 'submitted'].includes(sourceRecord.status)) {
             throw new errors_1.AppError(409, 'Somente notas pendentes de analise podem ser aprovadas.', 'ENTRY_REVIEW_INVALID_STATUS');
         }
+        const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
+        (0, entryInvoiceValidationService_1.validateEntryRecord)(recordToApprove, 'submit');
+        if (recordToApprove !== sourceRecord) {
+            await this.persistEntry(recordToApprove, true);
+        }
         try {
-            const recordToApprove = await this.applyAutomaticItemIdentifiers(sourceRecord);
-            if (recordToApprove !== sourceRecord) {
-                await this.persistEntry(recordToApprove, true);
-            }
             const integrationResult = await this.rmEntryInvoiceMovementService.integrate(recordToApprove);
             const reviewedBy = (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy;
             const reviewedComment = (0, normalize_1.toNullableString)(review.comment);

@@ -29,6 +29,19 @@ function assertClose(expected, actual, message, code) {
         });
     }
 }
+function calculateItemsBrutoTotal(items) {
+    return (0, normalize_1.roundDecimal)(items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0));
+}
+function calculateItemsLiquidoTotal(items) {
+    return (0, normalize_1.roundDecimal)(items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0));
+}
+function calculateFinancialTotal(header, items) {
+    return (0, normalize_1.roundDecimal)(calculateItemsLiquidoTotal(items) +
+        (header.valorFrete ?? 0) +
+        (header.valorDesp ?? 0) +
+        (header.valorOutros ?? 0) -
+        (header.valorDesc ?? 0));
+}
 function validateHeader(header) {
     ensureRequiredString(header.codColigada, 'O campo Coligada e obrigatorio.', 'HEADER_CODCOLIGADA_REQUIRED');
     ensureRequiredString(header.filialDescription, 'O campo Filial e obrigatorio.', 'HEADER_FILIAL_REQUIRED');
@@ -155,10 +168,10 @@ function validatePayments(payments, totalValue) {
     assertClose(totalValue, totalPayments, 'A soma dos pagamentos deve ser igual ao Valor Liquido Total da nota.', 'PAYMENT_TOTAL_MISMATCH');
 }
 function validateEntryTotals(record) {
-    const itemsBruto = (0, normalize_1.roundDecimal)(record.items.reduce((total, item) => total + (item.valorBrutoItem ?? 0), 0));
-    const itemsLiquido = (0, normalize_1.roundDecimal)(record.items.reduce((total, item) => total + (item.valorLiquido ?? 0), 0));
+    const itemsBruto = calculateItemsBrutoTotal(record.items);
+    const totalFinanceiro = calculateFinancialTotal(record.header, record.items);
     assertClose(record.header.valorBruto ?? 0, itemsBruto, 'O Valor Bruto Total deve ser igual a soma do Valor Bruto dos itens.', 'HEADER_VALORBRUTO_MISMATCH');
-    assertClose(record.header.valorLiquido ?? 0, itemsLiquido, 'O Valor Liquido Total deve ser igual a soma do Valor Liquido dos itens.', 'HEADER_VALORLIQUIDO_MISMATCH');
+    assertClose(record.header.valorLiquido ?? 0, totalFinanceiro, 'O Valor Liquido Total deve ser igual aos itens somados com frete, despesa, outros e desconto.', 'HEADER_VALORLIQUIDO_MISMATCH');
 }
 function validateEntryRecord(record, mode) {
     if (mode === 'draft') {
@@ -171,6 +184,6 @@ function validateEntryRecord(record, mode) {
     validateTaxes(record.taxes);
     validateEntryTotals(record);
     if (record.header.financeiro) {
-        validatePayments(record.payments, record.header.valorLiquido ?? 0);
+        validatePayments(record.payments, calculateFinancialTotal(record.header, record.items));
     }
 }
