@@ -159,7 +159,7 @@ function mapItems(items: EntryRecordInput['items']): EntryItem[] {
     descNat: toNullableString(item?.descNat),
     codColTborcamento: toNullableString(item?.codColTborcamento),
     codTborcamento: toNullableString(item?.codTborcamento),
-    descTborcamento: toNullableString(item?.descTborcamento),
+    descTborcamento: toNullableString(item?.descTborcamento) ?? toNullableString(item?.codTborcamento),
     idMovOc: toNullableString(item?.idMovOc),
     nseqItmMovOc: toNullableString(item?.nseqItmMovOc),
     quantidade: toNullableNumber(item?.quantidade),

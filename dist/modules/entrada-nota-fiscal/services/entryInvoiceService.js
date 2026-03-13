@@ -122,7 +122,7 @@ function mapItems(items) {
         descNat: (0, normalize_1.toNullableString)(item?.descNat),
         codColTborcamento: (0, normalize_1.toNullableString)(item?.codColTborcamento),
         codTborcamento: (0, normalize_1.toNullableString)(item?.codTborcamento),
-        descTborcamento: (0, normalize_1.toNullableString)(item?.descTborcamento),
+        descTborcamento: (0, normalize_1.toNullableString)(item?.descTborcamento) ?? (0, normalize_1.toNullableString)(item?.codTborcamento),
         idMovOc: (0, normalize_1.toNullableString)(item?.idMovOc),
         nseqItmMovOc: (0, normalize_1.toNullableString)(item?.nseqItmMovOc),
         quantidade: (0, normalize_1.toNullableNumber)(item?.quantidade),
