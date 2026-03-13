@@ -43,6 +43,18 @@ function xmlOptionalTag(tag, value) {
 function joinXml(nodes) {
     return nodes.filter(Boolean).join('');
 }
+function normalizeRows(value) {
+    if (Array.isArray(value)) {
+        return value.filter((item) => typeof item === 'object' && item !== null);
+    }
+    if (typeof value === 'object' && value !== null) {
+        return [value];
+    }
+    return [];
+}
+function buildOriginItemKey(idMov, nseqItmMov) {
+    return `${String(idMov ?? '').trim()}::${String(nseqItmMov ?? '').trim()}`;
+}
 function safePreview(value) {
     try {
         const serialized = typeof value === 'string' ? value : JSON.stringify(value);
@@ -182,7 +194,7 @@ class RmEntryInvoiceMovementService {
         if (!entry.header.codColigada) {
             throw new Error('CODCOLIGADA obrigatorio para integrar a nota no RM.');
         }
-        const xml = this.buildMovementXml(entry);
+        const xml = await this.buildMovementXml(entry);
         const context = `CODCOLIGADA=${entry.header.codColigada};CODUSUARIO=${env_1.env.READVIEW_USER};CODSISTEMA=G`;
         const raw = await this.rmService.execute({
             operation: 'SaveRecord',
@@ -204,9 +216,75 @@ class RmEntryInvoiceMovementService {
             raw,
         };
     }
-    buildMovementXml(entry) {
+    async loadSourceFiscalContext(entry) {
+        const sourceMovementIds = Array.from(new Set([
+            ...entry.purchaseOrders.map((purchaseOrder) => toCompactString(purchaseOrder.idMov)),
+            ...entry.items.map((item) => toCompactString(item.idMovOc)),
+        ].filter((value) => Boolean(value))));
+        const context = `CODCOLIGADA=${entry.header.codColigada};CODUSUARIO=${env_1.env.READVIEW_USER};CODSISTEMA=G`;
+        const sourceRecords = await Promise.all(sourceMovementIds.map((idMov) => this.rmService
+            .execute({
+            operation: 'ReadRecord',
+            dataserver: 'MOVMOVIMENTOTBCDATA',
+            context,
+            primaryKey: `${entry.header.codColigada};${idMov}`,
+        })
+            .catch(() => null)));
+        const firstRecord = sourceRecords.find((record) => typeof record === 'object' && record !== null) ?? null;
+        const itemFiscalByOriginKey = new Map();
+        sourceRecords.forEach((record, index) => {
+            if (!record || typeof record !== 'object') {
+                return;
+            }
+            const currentSourceMovementId = sourceMovementIds[index] ?? '';
+            normalizeRows(record.TITMMOVFISCAL).forEach((itemFiscal) => {
+                const itemSequence = toCompactString(itemFiscal.NSEQITMMOV);
+                if (!itemSequence) {
+                    return;
+                }
+                itemFiscalByOriginKey.set(buildOriginItemKey(currentSourceMovementId, itemSequence), itemFiscal);
+            });
+        });
+        return {
+            movementHeader: firstRecord
+                ? normalizeRows(firstRecord.TMOV)[0] ?? null
+                : null,
+            movementFiscal: firstRecord
+                ? normalizeRows(firstRecord.TMOVFISCAL)[0] ?? null
+                : null,
+            itemFiscalByOriginKey,
+        };
+    }
+    buildCopiedXmlFields(row, excludedFields = []) {
+        if (!row) {
+            return '';
+        }
+        const excluded = new Set(excludedFields.map((field) => field.toUpperCase()));
+        return Object.entries(row)
+            .filter(([key, value]) => {
+            const upperKey = key.toUpperCase();
+            if (excluded.has(upperKey) ||
+                upperKey.startsWith('REC') ||
+                value === null ||
+                value === undefined) {
+                return false;
+            }
+            return String(value).trim().length > 0;
+        })
+            .map(([key, value]) => xmlTag(key, String(value)))
+            .join('');
+    }
+    async buildMovementXml(entry) {
         const movementIdPlaceholder = '-1';
         const generatedLink = `entrada-nota-fiscal/${entry.id}`;
+        const sourceFiscalContext = await this.loadSourceFiscalContext(entry);
+        const rawHeader = entry.header;
+        const codUfOper = toCompactString(rawHeader.codUfOper) ??
+            toCompactString(sourceFiscalContext.movementHeader?.CODUFOPER);
+        const codMunOper = toCompactString(rawHeader.codMunOper) ??
+            toCompactString(sourceFiscalContext.movementHeader?.CODMUNOPER);
+        const idOperacao = toCompactString(rawHeader.idOperacao) ??
+            toCompactString(sourceFiscalContext.movementHeader?.IDOPERACAO);
         const movementXml = joinXml([
             '<TMOV>',
             xmlTag('CODCOLIGADA', entry.header.codColigada),
@@ -232,6 +310,9 @@ class RmEntryInvoiceMovementService {
             xmlTag('CODTDO', entry.header.codTdo),
             xmlTag('IDNAT', entry.header.idNat),
             xmlTag('CODNAT', entry.header.codNat),
+            xmlOptionalTag('CODUFOPER', codUfOper),
+            xmlOptionalTag('CODMUNOPER', codMunOper),
+            xmlOptionalTag('IDOPERACAO', idOperacao),
             xmlTag('HISTORICOCURTO', entry.header.historico),
             xmlTag('HISTORICOLONGO', entry.header.observacaoAvaliacao),
             '</TMOV>',
@@ -249,6 +330,13 @@ class RmEntryInvoiceMovementService {
             xmlTag('PRAZO', entry.header.prazo?.toString() ?? null),
             xmlTag('QUALIDADE', entry.header.qualidade?.toString() ?? null),
             '</TMOVCOMPL>',
+        ]);
+        const movementFiscalXml = joinXml([
+            '<TMOVFISCAL>',
+            xmlTag('CODCOLIGADA', entry.header.codColigada),
+            xmlTag('IDMOV', movementIdPlaceholder),
+            this.buildCopiedXmlFields(sourceFiscalContext.movementFiscal, ['CODCOLIGADA', 'IDMOV']),
+            '</TMOVFISCAL>',
         ]);
         const itemTotals = new Map(entry.items.map((item) => [
             item.seqF ?? item.nseqItmMov ?? String(item.lineNumber),
@@ -334,6 +422,39 @@ class RmEntryInvoiceMovementService {
             '</TTRBITMMOV>',
         ]))
             .join('');
+        const itemTaxesByKey = new Map();
+        entry.taxes.forEach((tax) => {
+            const itemKey = tax.itemSeqF ?? tax.nseqItmMov ?? '';
+            const currentValue = itemTaxesByKey.get(itemKey) ?? 0;
+            itemTaxesByKey.set(itemKey, currentValue + Number(tax.valor ?? 0));
+        });
+        const itemFiscalXml = entry.items
+            .map((item) => {
+            const itemSequence = item.nseqItmMov ?? String(item.lineNumber);
+            const sourceItemFiscal = sourceFiscalContext.itemFiscalByOriginKey.get(buildOriginItemKey(item.idMovOc, item.nseqItmMovOc));
+            const itemTaxTotal = itemTaxesByKey.get(item.seqF ?? itemSequence) ??
+                itemTaxesByKey.get(itemSequence) ??
+                0;
+            return joinXml([
+                '<TITMMOVFISCAL>',
+                xmlTag('CODCOLIGADA', entry.header.codColigada),
+                xmlTag('IDMOV', movementIdPlaceholder),
+                xmlTag('NSEQITMMOV', itemSequence),
+                xmlTag('QTDECONTRATADA', formatDecimal(Number(sourceItemFiscal?.QTDECONTRATADA ?? 0))),
+                xmlTag('VLRTOTTRIB', formatDecimal(Number(sourceItemFiscal?.VLRTOTTRIB ?? 0) > 0
+                    ? Number(sourceItemFiscal?.VLRTOTTRIB ?? 0)
+                    : itemTaxTotal)),
+                this.buildCopiedXmlFields(sourceItemFiscal, [
+                    'CODCOLIGADA',
+                    'IDMOV',
+                    'NSEQITMMOV',
+                    'QTDECONTRATADA',
+                    'VLRTOTTRIB',
+                ]),
+                '</TITMMOVFISCAL>',
+            ]);
+        })
+            .join('');
         const paymentsXml = entry.payments
             .map((payment, index) => joinXml([
             '<TMOVPAGTO>',
@@ -360,9 +481,11 @@ class RmEntryInvoiceMovementService {
             '<MovMovimento>',
             movementXml,
             movementComplXml,
+            movementFiscalXml,
             itemsXml,
             itemsComplXml,
             apportionmentsXml,
+            itemFiscalXml,
             taxesXml,
             paymentsXml,
             '</MovMovimento>',
