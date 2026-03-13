@@ -93,6 +93,22 @@ class EntryInvoiceLookupService {
             normalizeLookupError(error);
         }
     }
+    async getEstados(query) {
+        try {
+            return await rmLookupService.getEstados(query);
+        }
+        catch (error) {
+            normalizeLookupError(error);
+        }
+    }
+    async getMunicipios(query) {
+        try {
+            return await rmLookupService.getMunicipios(query);
+        }
+        catch (error) {
+            normalizeLookupError(error);
+        }
+    }
     async getCentrosCusto(query) {
         try {
             return await rmLookupService.getCentrosCusto(query);

@@ -64,6 +64,11 @@ BEGIN
     [cod_tdo] NVARCHAR(50) NULL,
     [movimento_description] NVARCHAR(255) NULL,
     [serie_nf] NVARCHAR(50) NULL,
+    [cod_uf_oper] NVARCHAR(10) NULL,
+    [desc_uf_oper] NVARCHAR(100) NULL,
+    [cod_mun_oper] NVARCHAR(20) NULL,
+    [desc_mun_oper] NVARCHAR(255) NULL,
+    [id_operacao] NVARCHAR(50) NULL,
     [id_nat] NVARCHAR(50) NULL,
     [cod_nat] NVARCHAR(50) NULL,
     [natureza_description] NVARCHAR(255) NULL,
@@ -118,6 +123,31 @@ END;
 IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'cod_tdo') IS NULL
 BEGIN
   ALTER TABLE ${entriesTable} ADD [cod_tdo] NVARCHAR(50) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'cod_uf_oper') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [cod_uf_oper] NVARCHAR(10) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'desc_uf_oper') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [desc_uf_oper] NVARCHAR(100) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'cod_mun_oper') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [cod_mun_oper] NVARCHAR(20) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'desc_mun_oper') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [desc_mun_oper] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'id_operacao') IS NULL
+BEGIN
+  ALTER TABLE ${entriesTable} ADD [id_operacao] NVARCHAR(50) NULL;
 END;
 
 IF COL_LENGTH('${schemaName}.${env.TABLE_PREFIX}_entries', 'review_comment') IS NULL

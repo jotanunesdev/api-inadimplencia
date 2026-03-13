@@ -78,6 +78,11 @@ function mapHeader(input) {
         filialDescription: (0, normalize_1.toNullableString)(input?.filialDescription),
         codColigada: (0, normalize_1.toNullableString)(input?.codColigada),
         codFilial: (0, normalize_1.toNullableString)(input?.codFilial),
+        codUfOper: (0, normalize_1.toNullableString)(input?.codUfOper),
+        descUfOper: (0, normalize_1.toNullableString)(input?.descUfOper),
+        codMunOper: (0, normalize_1.toNullableString)(input?.codMunOper),
+        descMunOper: (0, normalize_1.toNullableString)(input?.descMunOper),
+        idOperacao: (0, normalize_1.toNullableString)(input?.idOperacao),
         numeroMov: (0, normalize_1.toNullableString)(input?.numeroMov),
         fornecedorDescription: (0, normalize_1.toNullableString)(input?.fornecedorDescription),
         codCfo: (0, normalize_1.toNullableString)(input?.codCfo),
@@ -426,6 +431,11 @@ class EntryInvoiceService {
                 filialDescription: (0, normalize_1.toNullableString)(headerRow.filial_description),
                 codColigada: (0, normalize_1.toNullableString)(headerRow.cod_coligada),
                 codFilial: (0, normalize_1.toNullableString)(headerRow.cod_filial),
+                codUfOper: (0, normalize_1.toNullableString)(headerRow.cod_uf_oper),
+                descUfOper: (0, normalize_1.toNullableString)(headerRow.desc_uf_oper),
+                codMunOper: (0, normalize_1.toNullableString)(headerRow.cod_mun_oper),
+                descMunOper: (0, normalize_1.toNullableString)(headerRow.desc_mun_oper),
+                idOperacao: (0, normalize_1.toNullableString)(headerRow.id_operacao),
                 numeroMov: (0, normalize_1.toNullableString)(headerRow.numero_mov),
                 fornecedorDescription: (0, normalize_1.toNullableString)(headerRow.fornecedor_description),
                 codCfo: (0, normalize_1.toNullableString)(headerRow.cod_cfo),
@@ -836,6 +846,11 @@ class EntryInvoiceService {
             request.input('serie', entry.header.serie);
             request.input('codColigada', entry.header.codColigada);
             request.input('codFilial', entry.header.codFilial);
+            request.input('codUfOper', entry.header.codUfOper);
+            request.input('descUfOper', entry.header.descUfOper);
+            request.input('codMunOper', entry.header.codMunOper);
+            request.input('descMunOper', entry.header.descMunOper);
+            request.input('idOperacao', entry.header.idOperacao);
             request.input('filialDescription', entry.header.filialDescription);
             request.input('codColCfo', entry.header.codColCfo);
             request.input('codCfo', entry.header.codCfo);
@@ -896,6 +911,11 @@ class EntryInvoiceService {
             serie = @serie,
             cod_coligada = @codColigada,
             cod_filial = @codFilial,
+            cod_uf_oper = @codUfOper,
+            desc_uf_oper = @descUfOper,
+            cod_mun_oper = @codMunOper,
+            desc_mun_oper = @descMunOper,
+            id_operacao = @idOperacao,
             filial_description = @filialDescription,
             cod_col_cfo = @codColCfo,
             cod_cfo = @codCfo,
@@ -957,7 +977,7 @@ class EntryInvoiceService {
             else {
                 await request.query(`
           INSERT INTO ${tableName('entries')} (
-            id, status, numero_mov, serie, cod_coligada, cod_filial, filial_description,
+            id, status, numero_mov, serie, cod_coligada, cod_filial, cod_uf_oper, desc_uf_oper, cod_mun_oper, desc_mun_oper, id_operacao, filial_description,
             cod_col_cfo, cod_cfo, fornecedor_description, cnpj_cpf, data_emissao, data_saida,
             local_estoque_description, cod_loc, cod_tmv, cod_tdo, movimento_description, serie_nf, id_nat, cod_nat, natureza_description,
             qualidade, prazo, atendimento, valor_bruto, valor_liquido, valor_frete, valor_desc,
@@ -967,7 +987,7 @@ class EntryInvoiceService {
             approved_by, approved_at, rejected_by, rejected_at, rm_movement_id, rm_primary_key,
             rm_integration_status, rm_integration_message
           ) VALUES (
-            @id, @status, @numeroMov, @serie, @codColigada, @codFilial, @filialDescription,
+            @id, @status, @numeroMov, @serie, @codColigada, @codFilial, @codUfOper, @descUfOper, @codMunOper, @descMunOper, @idOperacao, @filialDescription,
             @codColCfo, @codCfo, @fornecedorDescription, @cnpjCpf, @dataEmissao, @dataSaida,
             @localEstoqueDescription, @codLoc, @codTmv, @codTdo, @movimentoDescription, @serieNf, @idNat, @codNat, @naturezaDescription,
             @qualidade, @prazo, @atendimento, @valorBruto, @valorLiquido, @valorFrete, @valorDesc,

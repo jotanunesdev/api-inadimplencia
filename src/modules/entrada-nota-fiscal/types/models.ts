@@ -12,6 +12,11 @@ export interface EntryHeaderInput {
   filialDescription?: string | null;
   codColigada?: string | null;
   codFilial?: string | null;
+  codUfOper?: string | null;
+  descUfOper?: string | null;
+  codMunOper?: string | null;
+  descMunOper?: string | null;
+  idOperacao?: string | null;
   numeroMov?: string | null;
   fornecedorDescription?: string | null;
   codCfo?: string | null;
@@ -155,6 +160,11 @@ export interface EntryHeader {
   filialDescription: string | null;
   codColigada: string | null;
   codFilial: string | null;
+  codUfOper: string | null;
+  descUfOper: string | null;
+  codMunOper: string | null;
+  descMunOper: string | null;
+  idOperacao: string | null;
   numeroMov: string | null;
   fornecedorDescription: string | null;
   codCfo: string | null;

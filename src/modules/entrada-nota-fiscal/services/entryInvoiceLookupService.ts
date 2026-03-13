@@ -104,6 +104,22 @@ export class EntryInvoiceLookupService {
     }
   }
 
+  public async getEstados(query: LookupQuery): Promise<LookupRow[]> {
+    try {
+      return await rmLookupService.getEstados(query);
+    } catch (error) {
+      normalizeLookupError(error);
+    }
+  }
+
+  public async getMunicipios(query: LookupQuery): Promise<LookupRow[]> {
+    try {
+      return await rmLookupService.getMunicipios(query);
+    } catch (error) {
+      normalizeLookupError(error);
+    }
+  }
+
   public async getCentrosCusto(query: LookupQuery): Promise<LookupRow[]> {
     try {
       return await rmLookupService.getCentrosCusto(query);

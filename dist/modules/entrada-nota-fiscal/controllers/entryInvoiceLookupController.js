@@ -35,6 +35,8 @@ class EntryInvoiceLookupController {
     naturezasFiscais = this.respond((query) => this.service.getNaturezasFiscais(query));
     condicoesPagamento = this.respond((query) => this.service.getCondicoesPagamento(query));
     parcelamento = this.respond((query) => this.service.getParcelamento(query));
+    estados = this.respond((query) => this.service.getEstados(query));
+    municipios = this.respond((query) => this.service.getMunicipios(query));
     centrosCusto = this.respond((query) => this.service.getCentrosCusto(query));
     formasPagamento = this.respond((query) => this.service.getFormasPagamento(query));
     taxRates = this.respond((query) => this.service.getTaxRates(query));

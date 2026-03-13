@@ -18,6 +18,8 @@ router.get('/lookups/locais-estoque', lookupController.locaisEstoque);
 router.get('/lookups/naturezas-fiscais', lookupController.naturezasFiscais);
 router.get('/lookups/condicoes-pagamento', lookupController.condicoesPagamento);
 router.get('/lookups/parcelamento', lookupController.parcelamento);
+router.get('/lookups/estados', lookupController.estados);
+router.get('/lookups/municipios', lookupController.municipios);
 router.get('/lookups/centros-custo', lookupController.centrosCusto);
 router.get('/lookups/formas-pagamento', lookupController.formasPagamento);
 router.get('/lookups/tax-rates', lookupController.taxRates);
