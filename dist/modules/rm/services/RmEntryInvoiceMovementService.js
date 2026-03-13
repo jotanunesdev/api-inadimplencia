@@ -249,40 +249,46 @@ class RmEntryInvoiceMovementService {
             Number(item.valorLiquido ?? 0),
         ]));
         const itemsXml = entry.items
-            .map((item) => joinXml([
-            '<TITMMOV>',
-            xmlTag('CODCOLIGADA', entry.header.codColigada),
-            xmlTag('IDMOV', movementIdPlaceholder),
-            xmlTag('NSEQITMMOV', item.nseqItmMov ?? String(item.lineNumber)),
-            xmlTag('NUMEROSEQUENCIAL', String(item.lineNumber)),
-            xmlTag('CODFILIAL', entry.header.codFilial),
-            xmlTag('IDPRD', item.idPrd),
-            xmlTag('CODIGOPRD', item.codigoPrd),
-            xmlTag('CODUND', item.codUnd),
-            xmlTag('CODLOC', entry.header.codLoc),
-            xmlTag('DATAEMISSAO', formatDateTime(entry.header.dataEmissao)),
-            xmlTag('IDNAT', item.idNat),
-            xmlTag('CODNAT', item.codNat),
-            xmlTag('CODTBORCAMENTO', item.codTborcamento),
-            xmlTag('CODCOLTBORCAMENTO', item.codColTborcamento),
-            xmlTag('QUANTIDADE', formatDecimal(item.quantidade)),
-            xmlTag('PRECOUNITARIO', formatDecimal(item.precoUnitario)),
-            xmlTag('VALORBRUTOITEM', formatDecimal(item.valorBrutoItem)),
-            xmlTag('VALORLIQUIDO', formatDecimal(item.valorLiquido)),
-            xmlTag('HISTORICOCURTO', item.nomeFantasia),
-            '</TITMMOV>',
-        ]))
+            .map((item) => {
+            const itemSequence = item.nseqItmMov ?? String(item.lineNumber);
+            return joinXml([
+                '<TITMMOV>',
+                xmlTag('CODCOLIGADA', entry.header.codColigada),
+                xmlTag('IDMOV', movementIdPlaceholder),
+                xmlTag('IDMOVHST', '-1'),
+                xmlTag('NSEQITMMOV', itemSequence),
+                xmlTag('CODFILIAL', entry.header.codFilial),
+                xmlTag('NUMEROSEQUENCIAL', itemSequence),
+                xmlTag('IDPRD', item.idPrd),
+                xmlTag('CODIGOPRD', item.codigoPrd),
+                xmlTag('CODUND', item.codUnd),
+                xmlTag('CODLOC', entry.header.codLoc),
+                xmlTag('DATAEMISSAO', formatDateTime(entry.header.dataEmissao)),
+                xmlTag('IDNAT', item.idNat),
+                xmlTag('CODNAT', item.codNat),
+                xmlTag('CODTBORCAMENTO', item.codTborcamento),
+                xmlTag('CODCOLTBORCAMENTO', item.codColTborcamento),
+                xmlTag('QUANTIDADE', formatDecimal(item.quantidade)),
+                xmlTag('PRECOUNITARIO', formatDecimal(item.precoUnitario)),
+                xmlTag('VALORBRUTOITEM', formatDecimal(item.valorBrutoItem)),
+                xmlTag('HISTORICOCURTO', item.nomeFantasia),
+                '</TITMMOV>',
+            ]);
+        })
             .join('');
         const itemsComplXml = entry.items
-            .map((item) => joinXml([
-            '<TITMMOVCOMPL>',
-            xmlTag('CODCOLIGADA', entry.header.codColigada),
-            xmlTag('IDMOV', movementIdPlaceholder),
-            xmlTag('NSEQITMMOV', item.nseqItmMov ?? String(item.lineNumber)),
-            xmlTag('IDMOVOC', item.idMovOc),
-            xmlTag('NSEQITMMOVOC', item.nseqItmMovOc),
-            '</TITMMOVCOMPL>',
-        ]))
+            .map((item) => {
+            const itemSequence = item.nseqItmMov ?? String(item.lineNumber);
+            return joinXml([
+                '<TITMMOVCOMPL>',
+                xmlTag('CODCOLIGADA', entry.header.codColigada),
+                xmlTag('IDMOV', movementIdPlaceholder),
+                xmlTag('NSEQITMMOV', itemSequence),
+                xmlTag('IDMOVOC', item.idMovOc),
+                xmlTag('NSEQITMMOVOC', item.nseqItmMovOc),
+                '</TITMMOVCOMPL>',
+            ]);
+        })
             .join('');
         const apportionmentsXml = entry.apportionments
             .map((apportionment, index) => {
