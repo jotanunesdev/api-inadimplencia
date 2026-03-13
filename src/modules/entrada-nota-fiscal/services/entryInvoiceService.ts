@@ -796,9 +796,7 @@ export class EntryInvoiceService {
       for (const row of lookupRows) {
         const idMovOc = toNullableString(row.TITMMOV_T_IDMOV);
         const nseqItmMovOc = toNullableString(row.TITMMOV_T_NSEQITMMOV);
-        const inferredIdentifier =
-          toNullableString(row.TITMMOV_T_NUMNOFABRIC) ??
-          toNullableString(row.TITMMOV_T_CODNOFORN);
+        const inferredIdentifier = toNullableString(row.TITMMOV_T_NUMNOFABRIC);
 
         if (!idMovOc || !nseqItmMovOc || !inferredIdentifier) {
           continue;

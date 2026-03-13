@@ -673,8 +673,7 @@ class EntryInvoiceService {
             for (const row of lookupRows) {
                 const idMovOc = (0, normalize_1.toNullableString)(row.TITMMOV_T_IDMOV);
                 const nseqItmMovOc = (0, normalize_1.toNullableString)(row.TITMMOV_T_NSEQITMMOV);
-                const inferredIdentifier = (0, normalize_1.toNullableString)(row.TITMMOV_T_NUMNOFABRIC) ??
-                    (0, normalize_1.toNullableString)(row.TITMMOV_T_CODNOFORN);
+                const inferredIdentifier = (0, normalize_1.toNullableString)(row.TITMMOV_T_NUMNOFABRIC);
                 if (!idMovOc || !nseqItmMovOc || !inferredIdentifier) {
                     continue;
                 }
