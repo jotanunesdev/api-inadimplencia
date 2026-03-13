@@ -186,6 +186,7 @@ function mapItems(items: EntryRecordInput['items'], header?: EntryHeader): Entry
     nomeFantasia: toNullableString(item?.nomeFantasia),
     codigoPrd: toNullableString(item?.codigoPrd),
     idPrd: toNullableString(item?.idPrd),
+    numNoFabric: toNullableString(item?.numNoFabric),
     codUnd: toNullableString(item?.codUnd),
     nseqItmMov: toNullableString(item?.nseqItmMov),
     idNat: toNullableString(item?.idNat) ?? fallbackIdNat,
@@ -525,6 +526,7 @@ export class EntryInvoiceService {
         nomeFantasia: toNullableString(row.nome_fantasia),
         codigoPrd: toNullableString(row.codigo_prd),
         idPrd: toNullableString(row.id_prd),
+        numNoFabric: toNullableString(row.num_no_fabric),
         codUnd: toNullableString(row.cod_und),
         nseqItmMov: toNullableString(row.nseq_itm_mov),
         idNat: toNullableString(row.id_nat),
@@ -689,6 +691,13 @@ export class EntryInvoiceService {
       return this.getEntryById(entryId);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Falha desconhecida na integracao RM.';
+      const details: Record<string, string> = { message };
+
+      if (message.includes('Número Identificador inválido') || message.includes('Numero Identificador invalido')) {
+        details.hint =
+          'O produto exige Numero Identificador no item. Preencha o campo Numero Identificador antes de aprovar a nota.';
+      }
+
       await this.updateReviewMetadata(entryId, {
         reviewComment: toNullableString(review.comment),
         rmIntegrationStatus: 'error',
@@ -699,7 +708,7 @@ export class EntryInvoiceService {
         502,
         'Nao foi possivel integrar a nota no RM durante a aprovacao.',
         'ENTRY_RM_INTEGRATION_ERROR',
-        { message }
+        details
       );
     }
   }
@@ -1026,6 +1035,7 @@ export class EntryInvoiceService {
           nome_fantasia: row.nomeFantasia,
           codigo_prd: row.codigoPrd,
           id_prd: row.idPrd,
+          num_no_fabric: row.numNoFabric,
           cod_und: row.codUnd,
           nseq_itm_mov: row.nseqItmMov,
           id_nat: row.idNat,

@@ -326,6 +326,7 @@ export class RmEntryInvoiceMovementService {
           xmlTag('NUMEROSEQUENCIAL', itemSequence),
           xmlTag('IDPRD', item.idPrd),
           xmlTag('CODIGOPRD', item.codigoPrd),
+          xmlTag('NUMNOFABRIC', item.numNoFabric),
           xmlTag('CODUND', item.codUnd),
           xmlTag('CODLOC', entry.header.codLoc),
           xmlTag('DATAEMISSAO', formatDateTime(entry.header.dataEmissao)),

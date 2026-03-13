@@ -71,6 +71,7 @@ export interface EntryItemInput {
   nomeFantasia?: string | null;
   codigoPrd?: string | null;
   idPrd?: string | null;
+  numNoFabric?: string | null;
   codUnd?: string | null;
   nseqItmMov?: string | null;
   idNat?: string | null;
@@ -212,6 +213,7 @@ export interface EntryItem {
   nomeFantasia: string | null;
   codigoPrd: string | null;
   idPrd: string | null;
+  numNoFabric: string | null;
   codUnd: string | null;
   nseqItmMov: string | null;
   idNat: string | null;

@@ -141,6 +141,7 @@ function mapItems(items, header) {
         nomeFantasia: (0, normalize_1.toNullableString)(item?.nomeFantasia),
         codigoPrd: (0, normalize_1.toNullableString)(item?.codigoPrd),
         idPrd: (0, normalize_1.toNullableString)(item?.idPrd),
+        numNoFabric: (0, normalize_1.toNullableString)(item?.numNoFabric),
         codUnd: (0, normalize_1.toNullableString)(item?.codUnd),
         nseqItmMov: (0, normalize_1.toNullableString)(item?.nseqItmMov),
         idNat: (0, normalize_1.toNullableString)(item?.idNat) ?? fallbackIdNat,
@@ -452,6 +453,7 @@ class EntryInvoiceService {
                 nomeFantasia: (0, normalize_1.toNullableString)(row.nome_fantasia),
                 codigoPrd: (0, normalize_1.toNullableString)(row.codigo_prd),
                 idPrd: (0, normalize_1.toNullableString)(row.id_prd),
+                numNoFabric: (0, normalize_1.toNullableString)(row.num_no_fabric),
                 codUnd: (0, normalize_1.toNullableString)(row.cod_und),
                 nseqItmMov: (0, normalize_1.toNullableString)(row.nseq_itm_mov),
                 idNat: (0, normalize_1.toNullableString)(row.id_nat),
@@ -594,13 +596,18 @@ class EntryInvoiceService {
         }
         catch (error) {
             const message = error instanceof Error ? error.message : 'Falha desconhecida na integracao RM.';
+            const details = { message };
+            if (message.includes('Número Identificador inválido') || message.includes('Numero Identificador invalido')) {
+                details.hint =
+                    'O produto exige Numero Identificador no item. Preencha o campo Numero Identificador antes de aprovar a nota.';
+            }
             await this.updateReviewMetadata(entryId, {
                 reviewComment: (0, normalize_1.toNullableString)(review.comment),
                 rmIntegrationStatus: 'error',
                 rmIntegrationMessage: message,
                 updatedBy: (0, normalize_1.toNullableString)(review.reviewedBy) ?? sourceRecord.updatedBy,
             });
-            throw new errors_1.AppError(502, 'Nao foi possivel integrar a nota no RM durante a aprovacao.', 'ENTRY_RM_INTEGRATION_ERROR', { message });
+            throw new errors_1.AppError(502, 'Nao foi possivel integrar a nota no RM durante a aprovacao.', 'ENTRY_RM_INTEGRATION_ERROR', details);
         }
     }
     async rejectEntry(entryId, review) {
@@ -875,6 +882,7 @@ class EntryInvoiceService {
                 nome_fantasia: row.nomeFantasia,
                 codigo_prd: row.codigoPrd,
                 id_prd: row.idPrd,
+                num_no_fabric: row.numNoFabric,
                 cod_und: row.codUnd,
                 nseq_itm_mov: row.nseqItmMov,
                 id_nat: row.idNat,
