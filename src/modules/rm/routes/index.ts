@@ -1,8 +1,11 @@
 import { Router } from 'express';
 import { env } from '../config/env';
 import { RmDataServerClient } from '../clients/RmDataServerClient';
+import { RmEntryInvoiceLookupController } from '../controllers/RmEntryInvoiceLookupController';
 import { RmController } from '../controllers/RmController';
+import { createRmEntryInvoiceLookupRoutes } from './entryInvoiceLookup.routes';
 import { createRmRoutes } from './rm.routes';
+import { RmEntryInvoiceLookupService } from '../services/RmEntryInvoiceLookupService';
 import { RmService } from '../services/RmService';
 
 const controller = new RmController(
@@ -20,9 +23,16 @@ const controller = new RmController(
     })
   )
 );
+const entryInvoiceLookupController = new RmEntryInvoiceLookupController(
+  new RmEntryInvoiceLookupService()
+);
 
 const router = Router();
 
 router.use(createRmRoutes(controller));
+router.use(
+  '/entrada-nota-fiscal/lookups',
+  createRmEntryInvoiceLookupRoutes(entryInvoiceLookupController)
+);
 
 export default router;

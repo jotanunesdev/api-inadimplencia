@@ -12,6 +12,18 @@ const errorResponse = {
     description: 'Erro',
     content: jsonContent,
 };
+function buildLookupGet(summary) {
+    return {
+        tags: ['EntradaNotaFiscal'],
+        summary,
+        responses: {
+            '200': { description: 'Lookup retornado com sucesso', content: jsonContent },
+            '400': errorResponse,
+            '502': errorResponse,
+            '500': errorResponse,
+        },
+    };
+}
 const openapi = {
     openapi: '3.0.3',
     info: {
@@ -43,6 +55,40 @@ const openapi = {
                     '200': { description: 'Metadata retornada com sucesso', content: jsonContent },
                 },
             },
+        },
+        '/lookups/filiais': { get: buildLookupGet('Lista filiais para o formulario') },
+        '/lookups/fornecedores': { get: buildLookupGet('Lista fornecedores para o formulario') },
+        '/lookups/movimentos': { get: buildLookupGet('Lista movimentos para o formulario') },
+        '/lookups/param-movimento': {
+            get: buildLookupGet('Retorna os parametros do movimento selecionado'),
+        },
+        '/lookups/series': { get: buildLookupGet('Lista series para o formulario') },
+        '/lookups/locais-estoque': {
+            get: buildLookupGet('Lista locais de estoque para o formulario'),
+        },
+        '/lookups/naturezas-fiscais': {
+            get: buildLookupGet('Lista naturezas fiscais para o formulario'),
+        },
+        '/lookups/condicoes-pagamento': {
+            get: buildLookupGet('Lista condicoes de pagamento para o formulario'),
+        },
+        '/lookups/parcelamento': {
+            get: buildLookupGet('Gera o parcelamento financeiro para o formulario'),
+        },
+        '/lookups/centros-custo': {
+            get: buildLookupGet('Lista centros de custo para o formulario'),
+        },
+        '/lookups/formas-pagamento': {
+            get: buildLookupGet('Lista formas de pagamento para o formulario'),
+        },
+        '/lookups/purchase-orders': {
+            get: buildLookupGet('Lista ordens de compra para o formulario'),
+        },
+        '/lookups/purchase-order-items': {
+            get: buildLookupGet('Lista itens das ordens de compra selecionadas'),
+        },
+        '/lookups/purchase-order-apportionments': {
+            get: buildLookupGet('Lista rateios das ordens de compra selecionadas'),
         },
         '/entries': {
             get: {
