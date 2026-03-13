@@ -449,7 +449,7 @@ export class EntryInvoiceService {
     const payload = parsePayloadJson(headerRow);
     const mode = normalizeMode(payload.mode ?? headerRow.status);
 
-    return {
+    const entryRecord: EntryRecord = {
       id: String(headerRow.id),
       status: normalizePersistedStatus(headerRow.status),
       mode,
@@ -588,6 +588,8 @@ export class EntryInvoiceService {
         linhaDigitavel: toNullableString(row.linha_digitavel),
       })),
     };
+
+    return this.applyAutomaticItemIdentifiers(entryRecord);
   }
 
   public async createEntry(payload: EntryRecordInput): Promise<EntryRecord> {

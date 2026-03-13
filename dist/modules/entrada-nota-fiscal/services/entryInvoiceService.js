@@ -376,7 +376,7 @@ class EntryInvoiceService {
         }
         const payload = parsePayloadJson(headerRow);
         const mode = normalizeMode(payload.mode ?? headerRow.status);
-        return {
+        const entryRecord = {
             id: String(headerRow.id),
             status: normalizePersistedStatus(headerRow.status),
             mode,
@@ -515,6 +515,7 @@ class EntryInvoiceService {
                 linhaDigitavel: (0, normalize_1.toNullableString)(row.linha_digitavel),
             })),
         };
+        return this.applyAutomaticItemIdentifiers(entryRecord);
     }
     async createEntry(payload) {
         const now = new Date().toISOString();
