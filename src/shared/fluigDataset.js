@@ -15,8 +15,12 @@ function normalizeEnvPrefix(prefix) {
   return normalized ? `${normalized}_` : '';
 }
 
+function resolveEnvKeyName(key, prefix = '') {
+  return `${normalizeEnvPrefix(prefix)}${key}` || key;
+}
+
 function resolveEnvValue(key, prefix = '') {
-  const prefixedKey = `${normalizeEnvPrefix(prefix)}${key}`;
+  const prefixedKey = resolveEnvKeyName(key, prefix);
   return process.env[prefixedKey] ?? process.env[key];
 }
 
@@ -41,7 +45,7 @@ function buildRequestOptions(url, prefix) {
 function resolveFluigUrl(prefix) {
   const url = resolveEnvValue('FLUIG_URL', prefix);
   if (!url) {
-    throw new Error('FLUIG_URL nao configurado.');
+    throw new Error(`${resolveEnvKeyName('FLUIG_URL', prefix)} nao configurado.`);
   }
 
   return url.replace(/\/$/, '');
@@ -61,7 +65,12 @@ async function createFluigSession(prefix = '') {
   const password = resolveEnvValue('FLUIG_PASSWORD', prefix);
 
   if (!user || !password) {
-    throw new Error('FLUIG_USER e FLUIG_PASSWORD nao configurados.');
+    throw new Error(
+      `${resolveEnvKeyName('FLUIG_USER', prefix)} e ${resolveEnvKeyName(
+        'FLUIG_PASSWORD',
+        prefix
+      )} nao configurados.`
+    );
   }
 
   const baseUrl = resolveFluigUrl(prefix);
