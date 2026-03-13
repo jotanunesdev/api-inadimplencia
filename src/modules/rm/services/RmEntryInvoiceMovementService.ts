@@ -10,6 +10,15 @@ interface IntegrationResult {
   raw: unknown;
 }
 
+function toCompactString(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  const normalized = String(value).trim();
+  return normalized.length > 0 ? normalized : null;
+}
+
 function formatDecimal(value: number | null | undefined): string | null {
   if (value === null || value === undefined || Number.isNaN(Number(value))) {
     return null;
@@ -43,21 +52,154 @@ function joinXml(nodes: Array<string | null | undefined>): string {
   return nodes.filter(Boolean).join('');
 }
 
-function buildPrimaryKeyCandidate(value: unknown): string | null {
-  if (typeof value === 'string' && value.includes(';')) {
-    return value;
+function safePreview(value: unknown): string {
+  try {
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value);
+    if (!serialized || serialized.trim().length === 0) {
+      return '<vazio>';
+    }
+
+    return serialized.length > 500 ? `${serialized.slice(0, 500)}...` : serialized;
+  } catch {
+    return '<nao serializavel>';
+  }
+}
+
+function normalizePrimaryKey(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
   }
 
-  if (typeof value === 'object' && value !== null) {
-    for (const nestedValue of Object.values(value)) {
-      const found = buildPrimaryKeyCandidate(nestedValue);
-      if (found) {
-        return found;
-      }
+  const semicolonCandidate = trimmed
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s*;\s*/g, ';');
+
+  if (semicolonCandidate.includes(';')) {
+    const parts = semicolonCandidate
+      .split(';')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    if (parts.length >= 2) {
+      return `${parts[0]};${parts[1]}`;
+    }
+  }
+
+  const keyedCandidate =
+    /CODCOLIGADA\s*=?\s*([A-Za-z0-9_-]+)[^\w]+IDMOV\s*=?\s*([A-Za-z0-9_-]+)/i.exec(trimmed) ??
+    /IDMOV\s*=?\s*([A-Za-z0-9_-]+)[^\w]+CODCOLIGADA\s*=?\s*([A-Za-z0-9_-]+)/i.exec(trimmed);
+
+  if (keyedCandidate) {
+    const keyedText = keyedCandidate[0] ?? '';
+    const firstValue = keyedCandidate[1]?.trim();
+    const secondValue = keyedCandidate[2]?.trim();
+
+    if (firstValue && secondValue) {
+      return keyedText.toUpperCase().indexOf('CODCOLIGADA') < keyedText.toUpperCase().indexOf('IDMOV')
+        ? `${firstValue};${secondValue}`
+        : `${secondValue};${firstValue}`;
+    }
+  }
+
+  const xmlCandidate =
+    /<CODCOLIGADA>([^<]+)<\/CODCOLIGADA>[\s\S]*?<IDMOV>([^<]+)<\/IDMOV>/i.exec(trimmed) ??
+    /<IDMOV>([^<]+)<\/IDMOV>[\s\S]*?<CODCOLIGADA>([^<]+)<\/CODCOLIGADA>/i.exec(trimmed);
+
+  if (xmlCandidate) {
+    const firstValue = xmlCandidate[1]?.trim();
+    const secondValue = xmlCandidate[2]?.trim();
+
+    if (firstValue && secondValue) {
+      return trimmed.indexOf('<CODCOLIGADA>') <= trimmed.indexOf('<IDMOV>')
+        ? `${firstValue};${secondValue}`
+        : `${secondValue};${firstValue}`;
     }
   }
 
   return null;
+}
+
+function findValueByKey(value: unknown, fieldName: string): string | null {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findValueByKey(item, fieldName);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (key.toUpperCase() === fieldName.toUpperCase()) {
+      const directValue = toCompactString(nestedValue);
+      if (directValue) {
+        return directValue;
+      }
+    }
+
+    const nestedFound = findValueByKey(nestedValue, fieldName);
+    if (nestedFound) {
+      return nestedFound;
+    }
+  }
+
+  return null;
+}
+
+function buildPrimaryKeyCandidate(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return normalizePrimaryKey(value);
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = buildPrimaryKeyCandidate(item);
+      if (found) {
+        return found;
+      }
+    }
+
+    return null;
+  }
+
+  if (typeof value !== 'object' || value === null) {
+    return null;
+  }
+
+  const codColigada = findValueByKey(value, 'CODCOLIGADA');
+  const movementId = findValueByKey(value, 'IDMOV');
+  if (codColigada && movementId) {
+    return `${codColigada};${movementId}`;
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const found = buildPrimaryKeyCandidate(nestedValue);
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function extractMovementId(value: unknown, primaryKey: string): string | null {
+  const keyParts = primaryKey
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (keyParts.length >= 2) {
+    return keyParts[keyParts.length - 1] ?? null;
+  }
+
+  return findValueByKey(value, 'IDMOV');
 }
 
 export class RmEntryInvoiceMovementService {
@@ -95,12 +237,16 @@ export class RmEntryInvoiceMovementService {
 
     const primaryKey = buildPrimaryKeyCandidate(raw);
     if (!primaryKey) {
-      throw new Error('RM nao retornou a primary key do movimento integrado.');
+      throw new Error(
+        `RM nao retornou a primary key do movimento integrado. Retorno: ${safePreview(raw)}`
+      );
     }
 
-    const movementId = primaryKey.split(';')[1] ?? '';
+    const movementId = extractMovementId(raw, primaryKey) ?? '';
     if (!movementId) {
-      throw new Error('RM nao retornou o IDMOV do movimento integrado.');
+      throw new Error(
+        `RM nao retornou o IDMOV do movimento integrado. Retorno: ${safePreview(raw)}`
+      );
     }
 
     return {
