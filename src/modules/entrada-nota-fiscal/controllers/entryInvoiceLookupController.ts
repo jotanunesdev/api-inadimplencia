@@ -38,6 +38,7 @@ export class EntryInvoiceLookupController {
   public parcelamento = this.respond((query) => this.service.getParcelamento(query));
   public centrosCusto = this.respond((query) => this.service.getCentrosCusto(query));
   public formasPagamento = this.respond((query) => this.service.getFormasPagamento(query));
+  public taxRates = this.respond((query) => this.service.getTaxRates(query));
   public purchaseOrders = this.respond((query) => this.service.getPurchaseOrders(query));
   public purchaseOrderItems = this.respond((query) => this.service.getPurchaseOrderItems(query));
   public purchaseOrderApportionments = this.respond((query) =>

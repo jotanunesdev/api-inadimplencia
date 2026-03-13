@@ -20,6 +20,7 @@ router.get('/lookups/condicoes-pagamento', lookupController.condicoesPagamento);
 router.get('/lookups/parcelamento', lookupController.parcelamento);
 router.get('/lookups/centros-custo', lookupController.centrosCusto);
 router.get('/lookups/formas-pagamento', lookupController.formasPagamento);
+router.get('/lookups/tax-rates', lookupController.taxRates);
 router.get('/lookups/purchase-orders', lookupController.purchaseOrders);
 router.get('/lookups/purchase-order-items', lookupController.purchaseOrderItems);
 router.get(

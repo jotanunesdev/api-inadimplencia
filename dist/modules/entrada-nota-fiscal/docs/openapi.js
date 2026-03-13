@@ -81,6 +81,9 @@ const openapi = {
         '/lookups/formas-pagamento': {
             get: buildLookupGet('Lista formas de pagamento para o formulario'),
         },
+        '/lookups/tax-rates': {
+            get: buildLookupGet('Lista as aliquotas de tributos dos itens importados'),
+        },
         '/lookups/purchase-orders': {
             get: buildLookupGet('Lista ordens de compra para o formulario'),
         },

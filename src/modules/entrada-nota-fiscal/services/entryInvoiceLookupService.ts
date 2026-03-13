@@ -114,7 +114,15 @@ export class EntryInvoiceLookupService {
 
   public async getFormasPagamento(query: LookupQuery): Promise<LookupRow[]> {
     try {
-      return await rmLookupService.getFormasPagamento(query);
+      return await rmLookupService.getFormasPagamentoResumo(query);
+    } catch (error) {
+      normalizeLookupError(error);
+    }
+  }
+
+  public async getTaxRates(query: LookupQuery): Promise<LookupRow[]> {
+    try {
+      return await rmLookupService.getTaxRates(query);
     } catch (error) {
       normalizeLookupError(error);
     }

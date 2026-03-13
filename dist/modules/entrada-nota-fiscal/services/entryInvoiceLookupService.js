@@ -103,7 +103,15 @@ class EntryInvoiceLookupService {
     }
     async getFormasPagamento(query) {
         try {
-            return await rmLookupService.getFormasPagamento(query);
+            return await rmLookupService.getFormasPagamentoResumo(query);
+        }
+        catch (error) {
+            normalizeLookupError(error);
+        }
+    }
+    async getTaxRates(query) {
+        try {
+            return await rmLookupService.getTaxRates(query);
         }
         catch (error) {
             normalizeLookupError(error);
