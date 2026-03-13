@@ -175,6 +175,16 @@ function extractMovementId(value, primaryKey) {
     }
     return findValueByKey(value, 'IDMOV');
 }
+function buildEntryItemKey(seqF, nseqItmMov) {
+    const keys = new Set();
+    if (seqF && String(seqF).trim()) {
+        keys.add(`seq:${String(seqF).trim()}`);
+    }
+    if (nseqItmMov && String(nseqItmMov).trim()) {
+        keys.add(`nseq:${String(nseqItmMov).trim()}`);
+    }
+    return Array.from(keys);
+}
 class RmEntryInvoiceMovementService {
     rmService = new RmService_1.RmService(new RmDataServerClient_1.RmDataServerClient({
         dbTrustCert: env_1.env.DB_TRUST_CERT,
@@ -338,13 +348,35 @@ class RmEntryInvoiceMovementService {
             this.buildCopiedXmlFields(sourceFiscalContext.movementFiscal, ['CODCOLIGADA', 'IDMOV']),
             '</TMOVFISCAL>',
         ]);
-        const itemTotals = new Map(entry.items.map((item) => [
-            item.seqF ?? item.nseqItmMov ?? String(item.lineNumber),
-            Number(item.valorLiquido ?? 0),
-        ]));
+        const itemTotals = new Map();
+        entry.items.forEach((item) => {
+            const itemValue = Number(item.valorLiquido ?? 0);
+            buildEntryItemKey(item.seqF, item.nseqItmMov).forEach((key) => {
+                itemTotals.set(key, itemValue);
+            });
+        });
+        const itemCostCenters = new Map();
+        entry.items.forEach((item) => {
+            const relatedApportionments = entry.apportionments.filter((apportionment) => {
+                const itemKeys = buildEntryItemKey(item.seqF, item.nseqItmMov);
+                const apportionmentKeys = buildEntryItemKey(apportionment.itemSeqF, apportionment.nseqItmMov);
+                return apportionmentKeys.some((key) => itemKeys.includes(key));
+            });
+            const uniqueCodes = Array.from(new Set(relatedApportionments
+                .map((apportionment) => toCompactString(apportionment.codCcusto))
+                .filter((value) => Boolean(value))));
+            const costCenterCode = uniqueCodes.length === 1 ? uniqueCodes[0] : null;
+            buildEntryItemKey(item.seqF, item.nseqItmMov).forEach((key) => {
+                itemCostCenters.set(key, costCenterCode);
+            });
+        });
         const itemsXml = entry.items
             .map((item) => {
             const itemSequence = item.nseqItmMov ?? String(item.lineNumber);
+            const itemKey = buildEntryItemKey(item.seqF, itemSequence)[0] ?? `nseq:${itemSequence}`;
+            const itemTotalValue = item.valorTotalItem ?? item.valorBrutoItem;
+            const itemLiquidValue = item.valorLiquido ?? itemTotalValue ?? item.valorBrutoItem;
+            const costCenterCode = itemCostCenters.get(itemKey) ?? null;
             return joinXml([
                 '<TITMMOV>',
                 xmlTag('CODCOLIGADA', entry.header.codColigada),
@@ -364,9 +396,12 @@ class RmEntryInvoiceMovementService {
                 xmlTag('CODNAT', item.codNat),
                 xmlTag('CODTBORCAMENTO', item.codTborcamento),
                 xmlTag('CODCOLTBORCAMENTO', item.codColTborcamento),
+                xmlOptionalTag('CODCCUSTO', costCenterCode),
                 xmlTag('QUANTIDADE', formatDecimal(item.quantidade)),
                 xmlTag('PRECOUNITARIO', formatDecimal(item.precoUnitario)),
                 xmlTag('VALORBRUTOITEM', formatDecimal(item.valorBrutoItem)),
+                xmlTag('VALORTOTALITEM', formatDecimal(itemTotalValue)),
+                xmlTag('VALORLIQUIDO', formatDecimal(itemLiquidValue)),
                 xmlTag('HISTORICOCURTO', item.nomeFantasia),
                 '</TITMMOV>',
             ]);
@@ -388,7 +423,7 @@ class RmEntryInvoiceMovementService {
             .join('');
         const apportionmentsXml = entry.apportionments
             .map((apportionment, index) => {
-            const itemKey = apportionment.itemSeqF ?? apportionment.nseqItmMov ?? '';
+            const itemKey = buildEntryItemKey(apportionment.itemSeqF, apportionment.nseqItmMov)[0] ?? '';
             const itemValue = itemTotals.get(itemKey) ?? 0;
             const amount = Number(apportionment.valor ?? 0);
             const percentage = itemValue > 0 ? (amount / itemValue) * 100 : 0;
@@ -424,16 +459,18 @@ class RmEntryInvoiceMovementService {
             .join('');
         const itemTaxesByKey = new Map();
         entry.taxes.forEach((tax) => {
-            const itemKey = tax.itemSeqF ?? tax.nseqItmMov ?? '';
-            const currentValue = itemTaxesByKey.get(itemKey) ?? 0;
-            itemTaxesByKey.set(itemKey, currentValue + Number(tax.valor ?? 0));
+            buildEntryItemKey(tax.itemSeqF, tax.nseqItmMov).forEach((itemKey) => {
+                const currentValue = itemTaxesByKey.get(itemKey) ?? 0;
+                itemTaxesByKey.set(itemKey, currentValue + Number(tax.valor ?? 0));
+            });
         });
         const itemFiscalXml = entry.items
             .map((item) => {
             const itemSequence = item.nseqItmMov ?? String(item.lineNumber);
             const sourceItemFiscal = sourceFiscalContext.itemFiscalByOriginKey.get(buildOriginItemKey(item.idMovOc, item.nseqItmMovOc));
-            const itemTaxTotal = itemTaxesByKey.get(item.seqF ?? itemSequence) ??
-                itemTaxesByKey.get(itemSequence) ??
+            const itemTaxTotal = itemTaxesByKey.get(`seq:${item.seqF ?? ''}`) ??
+                itemTaxesByKey.get(`nseq:${itemSequence}`) ??
+                itemTaxesByKey.get(item.seqF ?? itemSequence) ??
                 0;
             return joinXml([
                 '<TITMMOVFISCAL>',
@@ -455,28 +492,30 @@ class RmEntryInvoiceMovementService {
             ]);
         })
             .join('');
-        const paymentsXml = entry.payments
-            .map((payment, index) => joinXml([
-            '<TMOVPAGTO>',
-            xmlTag('CODCOLIGADA', payment.codColigada ?? entry.header.codColigada),
-            xmlTag('IDMOV', movementIdPlaceholder),
-            xmlTag('IDSEQPAGTO', payment.idSeqPagto ?? String(index + 1)),
-            xmlTag('DATAVENCIMENTO', formatDateTime(payment.dataVencimento)),
-            xmlTag('VALOR', formatDecimal(payment.valor)),
-            xmlTag('IDFORMAPAGTO', payment.idFormaPagto),
-            xmlTag('DESCFORMAPAGTO', payment.descFormaPagto),
-            xmlTag('TIPOPFORMAPAGTO', payment.tipoFormaPagto),
-            xmlTag('CODCXA', payment.codCxa),
-            xmlTag('CODCOLCXA', payment.codColCxa ?? entry.header.codColigada),
-            xmlTag('TIPOPAGAMENTO', payment.tipoPagamento ?? '1'),
-            xmlTag('DEBITOCREDITO', payment.debitoCredito ?? 'C'),
-            xmlTag('TAXAADM', formatDecimal(payment.taxaAdm)),
-            xmlTag('IDLAN', payment.idLan),
-            xmlTag('ADTINTEGRADO', payment.adtIntegrado ?? 'nao'),
-            xmlTag('LINHADIGITAVEL', payment.linhaDigitavel),
-            '</TMOVPAGTO>',
-        ]))
-            .join('');
+        const paymentsXml = entry.header.financeiro
+            ? entry.payments
+                .map((payment, index) => joinXml([
+                '<TMOVPAGTO>',
+                xmlTag('CODCOLIGADA', payment.codColigada ?? entry.header.codColigada),
+                xmlTag('IDMOV', movementIdPlaceholder),
+                xmlTag('IDSEQPAGTO', payment.idSeqPagto ?? String(index + 1)),
+                xmlTag('DATAVENCIMENTO', formatDateTime(payment.dataVencimento)),
+                xmlTag('VALOR', formatDecimal(payment.valor)),
+                xmlTag('IDFORMAPAGTO', payment.idFormaPagto),
+                xmlTag('DESCFORMAPAGTO', payment.descFormaPagto),
+                xmlTag('TIPOPFORMAPAGTO', payment.tipoFormaPagto),
+                xmlTag('CODCXA', payment.codCxa),
+                xmlTag('CODCOLCXA', payment.codColCxa ?? entry.header.codColigada),
+                xmlTag('TIPOPAGAMENTO', payment.tipoPagamento ?? '1'),
+                xmlTag('DEBITOCREDITO', payment.debitoCredito ?? 'C'),
+                xmlTag('TAXAADM', formatDecimal(payment.taxaAdm)),
+                xmlTag('IDLAN', payment.idLan),
+                xmlTag('ADTINTEGRADO', payment.adtIntegrado ?? 'nao'),
+                xmlTag('LINHADIGITAVEL', payment.linhaDigitavel),
+                '</TMOVPAGTO>',
+            ]))
+                .join('')
+            : '';
         return joinXml([
             '<MovMovimento>',
             movementXml,
