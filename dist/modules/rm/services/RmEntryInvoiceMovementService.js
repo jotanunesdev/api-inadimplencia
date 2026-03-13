@@ -34,6 +34,12 @@ function xmlTag(tag, value) {
     }
     return `<${tag}>${Xml_1.Xml.escape(String(value))}</${tag}>`;
 }
+function xmlOptionalTag(tag, value) {
+    if (value === null || value === undefined || String(value).trim().length === 0) {
+        return '';
+    }
+    return `<${tag}>${Xml_1.Xml.escape(String(value))}</${tag}>`;
+}
 function joinXml(nodes) {
     return nodes.filter(Boolean).join('');
 }
@@ -261,7 +267,8 @@ class RmEntryInvoiceMovementService {
                 xmlTag('NUMEROSEQUENCIAL', itemSequence),
                 xmlTag('IDPRD', item.idPrd),
                 xmlTag('CODIGOPRD', item.codigoPrd),
-                xmlTag('NUMNOFABRIC', item.numNoFabric),
+                xmlOptionalTag('NUMNOFABRIC', item.numNoFabric),
+                xmlOptionalTag('TIPO', item.tipo),
                 xmlTag('CODUND', item.codUnd),
                 xmlTag('CODLOC', entry.header.codLoc),
                 xmlTag('DATAEMISSAO', formatDateTime(entry.header.dataEmissao)),

@@ -201,6 +201,7 @@ BEGIN
     [codigo_prd] NVARCHAR(100) NULL,
     [id_prd] NVARCHAR(100) NULL,
     [num_no_fabric] NVARCHAR(255) NULL,
+    [tipo] NVARCHAR(20) NULL,
     [cod_und] NVARCHAR(20) NULL,
     [nseq_itm_mov] NVARCHAR(50) NULL,
     [id_nat] NVARCHAR(50) NULL,
@@ -224,6 +225,11 @@ END;
 IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_items', 'num_no_fabric') IS NULL
 BEGIN
   ALTER TABLE ${itemsTable} ADD [num_no_fabric] NVARCHAR(255) NULL;
+END;
+
+IF COL_LENGTH('${schemaName}.${env_1.env.TABLE_PREFIX}_items', 'tipo') IS NULL
+BEGIN
+  ALTER TABLE ${itemsTable} ADD [tipo] NVARCHAR(20) NULL;
 END;
 
 IF OBJECT_ID('${schemaName}.${env_1.env.TABLE_PREFIX}_apportionments', 'U') IS NULL

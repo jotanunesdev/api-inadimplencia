@@ -188,6 +188,7 @@ function mapItems(items: EntryRecordInput['items'], header?: EntryHeader): Entry
     codigoPrd: toNullableString(item?.codigoPrd),
     idPrd: toNullableString(item?.idPrd),
     numNoFabric: toNullableString(item?.numNoFabric),
+    tipo: toNullableString(item?.tipo),
     codUnd: toNullableString(item?.codUnd),
     nseqItmMov: toNullableString(item?.nseqItmMov),
     idNat: toNullableString(item?.idNat) ?? fallbackIdNat,
@@ -268,7 +269,7 @@ function mapRecordFromInput(
   const requestedBy = toNullableString(payload.requestedBy);
   const normalizedHeader = mapHeader(payload.header);
 
-  return {
+  return normalizeItemSequences({
     id,
     status: normalizeStatus(mode),
     mode,
@@ -292,6 +293,42 @@ function mapRecordFromInput(
     apportionments: mapApportionments(payload.apportionments),
     taxes: mapTaxes(payload.taxes),
     payments: mapPayments(payload.payments),
+  });
+}
+
+function normalizeItemSequences(record: EntryRecord): EntryRecord {
+  const nextItems = record.items.map((item, index) => ({
+    ...item,
+    nseqItmMov: String(index + 1),
+  }));
+
+  const nseqBySeqF = new Map(
+    nextItems
+      .filter((item) => item.seqF)
+      .map((item) => [String(item.seqF), String(item.nseqItmMov ?? item.lineNumber)])
+  );
+
+  const nextApportionments = record.apportionments.map((apportionment) => ({
+    ...apportionment,
+    nseqItmMov:
+      (apportionment.itemSeqF ? nseqBySeqF.get(String(apportionment.itemSeqF)) : null) ??
+      toNullableString(apportionment.nseqItmMov) ??
+      null,
+  }));
+
+  const nextTaxes = record.taxes.map((tax) => ({
+    ...tax,
+    nseqItmMov:
+      (tax.itemSeqF ? nseqBySeqF.get(String(tax.itemSeqF)) : null) ??
+      toNullableString(tax.nseqItmMov) ??
+      null,
+  }));
+
+  return {
+    ...record,
+    items: nextItems,
+    apportionments: nextApportionments,
+    taxes: nextTaxes,
   };
 }
 
@@ -529,6 +566,7 @@ export class EntryInvoiceService {
         codigoPrd: toNullableString(row.codigo_prd),
         idPrd: toNullableString(row.id_prd),
         numNoFabric: toNullableString(row.num_no_fabric),
+        tipo: toNullableString(row.tipo),
         codUnd: toNullableString(row.cod_und),
         nseqItmMov: toNullableString(row.nseq_itm_mov),
         idNat: toNullableString(row.id_nat),
@@ -589,7 +627,7 @@ export class EntryInvoiceService {
       })),
     };
 
-    return this.applyAutomaticItemIdentifiers(entryRecord);
+    return this.applyAutomaticItemIdentifiers(normalizeItemSequences(entryRecord));
   }
 
   public async createEntry(payload: EntryRecordInput): Promise<EntryRecord> {
@@ -767,7 +805,7 @@ export class EntryInvoiceService {
 
     const itemsToResolve = entry.items.filter(
       (item) =>
-        !hasValue(item.numNoFabric) &&
+        (!hasValue(item.numNoFabric) || !hasValue(item.tipo)) &&
         hasValue(item.idMovOc) &&
         hasValue(item.nseqItmMovOc)
     );
@@ -792,37 +830,58 @@ export class EntryInvoiceService {
         IDMOVDESTEXCEP: '',
       });
 
-      const identifierByItemKey = new Map<string, string>();
+      const itemDetailsByKey = new Map<
+        string,
+        {
+          numNoFabric: string | null;
+          tipo: string | null;
+        }
+      >();
       for (const row of lookupRows) {
         const idMovOc = toNullableString(row.TITMMOV_T_IDMOV);
         const nseqItmMovOc = toNullableString(row.TITMMOV_T_NSEQITMMOV);
         const inferredIdentifier = toNullableString(row.TITMMOV_T_NUMNOFABRIC);
+        const inferredType = toNullableString(row.TITMMOV_T_TIPO);
 
-        if (!idMovOc || !nseqItmMovOc || !inferredIdentifier) {
+        if (!idMovOc || !nseqItmMovOc) {
           continue;
         }
 
-        identifierByItemKey.set(`${idMovOc}_${nseqItmMovOc}`, inferredIdentifier);
+        itemDetailsByKey.set(`${idMovOc}_${nseqItmMovOc}`, {
+          numNoFabric: inferredIdentifier,
+          tipo: inferredType,
+        });
       }
 
       let changed = false;
       const items = entry.items.map((item) => {
-        if (hasValue(item.numNoFabric) || !item.idMovOc || !item.nseqItmMovOc) {
+        if (!item.idMovOc || !item.nseqItmMovOc) {
           return item;
         }
 
-        const inferredIdentifier = identifierByItemKey.get(
+        const inferredItemDetails = itemDetailsByKey.get(
           `${String(item.idMovOc).trim()}_${String(item.nseqItmMovOc).trim()}`
         );
 
-        if (!inferredIdentifier) {
+        if (!inferredItemDetails) {
+          return item;
+        }
+
+        if (
+          hasValue(item.numNoFabric) === hasValue(inferredItemDetails.numNoFabric) &&
+          toNullableString(item.numNoFabric) === inferredItemDetails.numNoFabric &&
+          toNullableString(item.tipo) === inferredItemDetails.tipo
+        ) {
           return item;
         }
 
         changed = true;
         return {
           ...item,
-          numNoFabric: inferredIdentifier,
+          numNoFabric: hasValue(item.numNoFabric)
+            ? item.numNoFabric
+            : inferredItemDetails.numNoFabric,
+          tipo: hasValue(item.tipo) ? item.tipo : inferredItemDetails.tipo,
         };
       });
 
@@ -1134,6 +1193,7 @@ export class EntryInvoiceService {
           codigo_prd: row.codigoPrd,
           id_prd: row.idPrd,
           num_no_fabric: row.numNoFabric,
+          tipo: row.tipo,
           cod_und: row.codUnd,
           nseq_itm_mov: row.nseqItmMov,
           id_nat: row.idNat,
