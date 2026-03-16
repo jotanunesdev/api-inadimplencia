@@ -3,6 +3,7 @@ const { getPool, sql } = require('../config/db');
 const TABLE_FAT = 'DW.fat_analise_inadimplencia_v2';
 const COL_SALDO = 'VALOR_TOTAL';
 const COL_INADIMPLENTE = 'VALOR_INADIMPLENTE';
+const COL_STATUS_INADIMPLENCIA = 'INADIMPLENTE';
 const TABLE_OC = 'dbo.OCORRENCIAS';
 const TABLE_USU = 'dbo.USUARIO';
 const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
@@ -15,6 +16,16 @@ const LATEST_ACAO_APPLY = `
       AND o.PROXIMA_ACAO IS NOT NULL
     ORDER BY o.DT_OCORRENCIA DESC, o.HORA_OCORRENCIA DESC, o.PROXIMA_ACAO DESC
   ) AS ultima_acao
+`;
+
+function buildInadimplenteCondition(alias = 'f') {
+  return `UPPER(LTRIM(RTRIM(COALESCE(${alias}.${COL_STATUS_INADIMPLENCIA}, '')))) = 'SIM'`;
+}
+
+const FILTERED_SALES_SUBQUERY = `
+  SELECT DISTINCT fat.NUM_VENDA
+  FROM ${TABLE_FAT} fat
+  WHERE ${buildInadimplenteCondition('fat')}
 `;
 
 async function kpis() {
@@ -30,7 +41,8 @@ async function kpis() {
           ELSE (100.0 * SUM(CAST(${COL_INADIMPLENTE} AS float)) / SUM(CAST(${COL_SALDO} AS float)))
           END AS decimal(10,2)
         ) AS PERC_INADIMPLENTE
-     FROM ${TABLE_FAT}`
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}`
   );
 
   return result.recordset[0];
@@ -41,10 +53,15 @@ async function vendasPorResponsavel() {
   const result = await pool.request().query(
     `SELECT
         u.NOME AS RESPONSAVEL,
-        COUNT(vr.NUM_VENDA_FK) AS TOTAL_VENDAS,
+        COUNT(vr_inad.NUM_VENDA_FK) AS TOTAL_VENDAS,
         u.COR_HEX
      FROM ${TABLE_USU} u
-     LEFT JOIN ${TABLE_RESP} vr ON vr.NOME_USUARIO_FK = u.NOME
+     LEFT JOIN (
+       SELECT DISTINCT vr.NUM_VENDA_FK, vr.NOME_USUARIO_FK
+       FROM ${TABLE_RESP} vr
+       INNER JOIN ${TABLE_FAT} fat ON fat.NUM_VENDA = vr.NUM_VENDA_FK
+       WHERE ${buildInadimplenteCondition('fat')}
+     ) vr_inad ON vr_inad.NOME_USUARIO_FK = u.NOME
      GROUP BY u.NOME, u.COR_HEX
      ORDER BY TOTAL_VENDAS DESC`
   );
@@ -60,7 +77,8 @@ async function inadimplenciaPorEmpreendimento() {
         COUNT(*) AS TOTAL_VENDAS,
         SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO,
         SUM(CAST(${COL_INADIMPLENTE} AS float)) AS TOTAL_INADIMPLENTE
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado')
      ORDER BY TOTAL_SALDO DESC`
   );
@@ -74,7 +92,8 @@ async function clientesPorEmpreendimento() {
     `SELECT
         COALESCE(EMPREENDIMENTO, 'Nao informado') AS EMPREENDIMENTO,
         COUNT(DISTINCT CPF_CNPJ) AS TOTAL_CLIENTES
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado')
      ORDER BY TOTAL_CLIENTES DESC`
   );
@@ -88,7 +107,8 @@ async function statusRepasse() {
     `SELECT
         COALESCE(STATUS_REPASSE, 'Nao informado') AS STATUS_REPASSE,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(STATUS_REPASSE, 'Nao informado')
      ORDER BY TOTAL DESC`
   );
@@ -103,7 +123,8 @@ async function blocos() {
         COALESCE(EMPREENDIMENTO, 'Nao informado') AS EMPREENDIMENTO,
         COALESCE(BLOCO, 'Nao informado') AS BLOCO,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado'), COALESCE(BLOCO, 'Nao informado')
      ORDER BY TOTAL DESC`
   );
@@ -118,7 +139,8 @@ async function unidades() {
         COALESCE(EMPREENDIMENTO, 'Nao informado') AS EMPREENDIMENTO,
         COALESCE(UNIDADE, 'Nao informado') AS UNIDADE,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado'), COALESCE(UNIDADE, 'Nao informado')
      ORDER BY TOTAL DESC`
   );
@@ -147,6 +169,9 @@ async function ocorrenciasPorUsuario() {
         COUNT(*) AS TOTAL,
         MAX(u.COR_HEX) AS COR_HEX
      FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      LEFT JOIN ${TABLE_USU} u ON u.NOME = o.NOME_USUARIO_FK
      GROUP BY COALESCE(o.NOME_USUARIO_FK, 'Nao informado')
      ORDER BY TOTAL DESC`
@@ -162,7 +187,10 @@ async function ocorrenciasPorVenda(limit) {
     `SELECT ${topClause}
         NUM_VENDA_FK,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_OC}
+     FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      GROUP BY NUM_VENDA_FK
      ORDER BY TOTAL DESC`
   );
@@ -176,7 +204,10 @@ async function ocorrenciasPorDia() {
     `SELECT
         DT_OCORRENCIA AS DATA,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_OC}
+     FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      GROUP BY DT_OCORRENCIA
      ORDER BY DATA`
   );
@@ -190,7 +221,10 @@ async function ocorrenciasPorHora() {
     `SELECT
         DATEPART(HOUR, HORA_OCORRENCIA) AS HORA,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_OC}
+     FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      GROUP BY DATEPART(HOUR, HORA_OCORRENCIA)
      ORDER BY HORA`
   );
@@ -205,7 +239,10 @@ async function ocorrenciasPorDiaHora() {
         DT_OCORRENCIA AS DATA,
         DATEPART(HOUR, HORA_OCORRENCIA) AS HORA,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_OC}
+     FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      GROUP BY DT_OCORRENCIA, DATEPART(HOUR, HORA_OCORRENCIA)
      ORDER BY DATA, HORA`
   );
@@ -222,6 +259,7 @@ async function proximasAcoesPorDia() {
      FROM ${TABLE_FAT} f
      ${LATEST_ACAO_APPLY}
      WHERE ultima_acao.PROXIMA_ACAO IS NOT NULL
+       AND ${buildInadimplenteCondition('f')}
      GROUP BY CONVERT(date, ultima_acao.PROXIMA_ACAO)
      ORDER BY DATA`
   );
@@ -242,7 +280,8 @@ async function acoesDefinidas() {
           END AS decimal(10,2)
         ) AS PERC_COM_ACAO
      FROM ${TABLE_FAT} f
-     ${LATEST_ACAO_APPLY}`
+     ${LATEST_ACAO_APPLY}
+     WHERE ${buildInadimplenteCondition('f')}`
   );
 
   return result.recordset[0];
@@ -260,8 +299,9 @@ async function aging() {
           ELSE '0-30'
         END AS FAIXA,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
      WHERE VENCIMENTO_MAIS_ANTIGO IS NOT NULL
+       AND ${buildInadimplenteCondition('f')}
        AND DATEDIFF(day, VENCIMENTO_MAIS_ANTIGO, GETDATE()) >= 0
      GROUP BY
         CASE
@@ -283,7 +323,8 @@ async function parcelasInadimplentes() {
     `SELECT
         COALESCE(CAST(QTD_PARCELAS_INADIMPLENTES AS varchar(20)), 'Nao informado') AS QTD_PARCELAS,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY QTD_PARCELAS_INADIMPLENTES
      ORDER BY
         CASE WHEN QTD_PARCELAS_INADIMPLENTES IS NULL THEN 1 ELSE 0 END,
@@ -323,7 +364,8 @@ async function parcelasDetalhes(qtdParcelas, isNull, limit) {
         SUGESTAO
      FROM ${TABLE_FAT} f
      ${LATEST_ACAO_APPLY}
-     WHERE ${whereClause}
+     WHERE ${buildInadimplenteCondition('f')}
+       AND ${whereClause}
      ORDER BY CAST(${COL_SALDO} AS float) DESC`
   );
 
@@ -337,8 +379,9 @@ async function scoreSaldo() {
         SCORE,
         AVG(CAST(${COL_SALDO} AS float)) AS MEDIA_SALDO,
         COUNT(*) AS TOTAL
-     FROM ${TABLE_FAT}
-     WHERE SCORE IS NOT NULL
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
+       AND SCORE IS NOT NULL
      GROUP BY SCORE
      ORDER BY SCORE`
   );
@@ -372,7 +415,8 @@ async function scoreSaldoDetalhes(score, limit) {
           SUGESTAO
        FROM ${TABLE_FAT} f
        ${LATEST_ACAO_APPLY}
-       WHERE SCORE = @score
+       WHERE ${buildInadimplenteCondition('f')}
+         AND SCORE = @score
        ORDER BY CAST(${COL_SALDO} AS float) DESC`
     );
 
@@ -385,8 +429,9 @@ async function saldoPorMesVencimento() {
     `SELECT
         DATEFROMPARTS(YEAR(VENCIMENTO_MAIS_ANTIGO), MONTH(VENCIMENTO_MAIS_ANTIGO), 1) AS MES,
         SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
      WHERE VENCIMENTO_MAIS_ANTIGO IS NOT NULL
+       AND ${buildInadimplenteCondition('f')}
      GROUP BY YEAR(VENCIMENTO_MAIS_ANTIGO), MONTH(VENCIMENTO_MAIS_ANTIGO)
      ORDER BY MES`
   );
@@ -405,7 +450,8 @@ async function perfilRiscoEmpreendimento() {
         AVG(CAST(QTD_PARCELAS_INADIMPLENTES AS float)) AS MEDIA_PARCELAS,
         SUM(CAST(${COL_SALDO} AS float)) AS TOTAL_SALDO,
         SUM(CAST(${COL_INADIMPLENTE} AS float)) AS TOTAL_INADIMPLENTE
-     FROM ${TABLE_FAT}
+     FROM ${TABLE_FAT} f
+     WHERE ${buildInadimplenteCondition('f')}
      GROUP BY COALESCE(EMPREENDIMENTO, 'Nao informado')
      ORDER BY EMPREENDIMENTO`
   );
@@ -425,6 +471,9 @@ async function atendentesProximaAcao() {
         SUM(CASE WHEN o.PROXIMA_ACAO IS NOT NULL AND o.DT_OCORRENCIA >= DATEADD(month, -6, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS ULT_6_MESES,
         SUM(CASE WHEN o.PROXIMA_ACAO IS NOT NULL AND o.DT_OCORRENCIA >= DATEADD(year, -1, CAST(GETDATE() AS date)) THEN 1 ELSE 0 END) AS ULT_1_ANO
      FROM ${TABLE_OC} o
+     INNER JOIN (
+       ${FILTERED_SALES_SUBQUERY}
+     ) vendas_inad ON vendas_inad.NUM_VENDA = o.NUM_VENDA_FK
      LEFT JOIN ${TABLE_USU} u ON u.NOME = o.NOME_USUARIO_FK
      GROUP BY COALESCE(o.NOME_USUARIO_FK, 'Nao informado')
      ORDER BY ULT_7_DIAS DESC, ULT_15_DIAS DESC, ULT_30_DIAS DESC`
@@ -471,8 +520,9 @@ async function agingDetalhes(faixa, limit) {
           DATEDIFF(day, VENCIMENTO_MAIS_ANTIGO, GETDATE()) AS DIAS_ATRASO,
           CAST(${COL_SALDO} AS float) AS SALDO,
           CAST(${COL_INADIMPLENTE} AS float) AS VALOR_SOMENTE_INADIMPLENTE
-       FROM ${TABLE_FAT}
-       WHERE ${whereClause}
+       FROM ${TABLE_FAT} f
+       WHERE ${buildInadimplenteCondition('f')}
+         AND ${whereClause}
        ORDER BY DIAS_ATRASO DESC, VENCIMENTO_MAIS_ANTIGO ASC`
     );
 
