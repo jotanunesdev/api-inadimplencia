@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
 import { getPool, sql } from "../config/db"
+import { getTrilhaColumnState } from "./trilhaModel"
 
 export type UserTrainingInput = {
   cpf: string
@@ -70,6 +71,7 @@ export async function archiveExpiredNormaTrainings(
   },
 ) {
   const pool = await getPool()
+  const trilhaColumnState = await getTrilhaColumnState()
   const validityColumns = await pool.request().query(`
     SELECT
       COL_LENGTH('dbo.TNORMAS', 'VALIDADE_MESES') AS HAS_VALIDADE_MESES,
@@ -138,10 +140,28 @@ export async function archiveExpiredNormaTrainings(
           END,
           pp.VERSAO DESC
       ) pdf_ref
+      OUTER APPLY (
+        SELECT TOP 1
+          ${trilhaColumnState.hasNormaId ? "tr_rel.NORMA_ID" : "CAST(NULL AS UNIQUEIDENTIFIER)"} AS NORMA_ID
+        FROM dbo.TPROVAS pr
+        JOIN dbo.TTRILHAS tr_rel ON tr_rel.ID = pr.TRILHA_FK_ID
+        WHERE ut.TIPO = 'prova'
+          AND pr.ID = ut.MATERIAL_ID
+          AND (
+            (ut.MATERIAL_VERSAO IS NOT NULL AND pr.VERSAO = ut.MATERIAL_VERSAO)
+            OR ut.MATERIAL_VERSAO IS NULL
+          )
+        ORDER BY
+          CASE
+            WHEN ut.MATERIAL_VERSAO IS NOT NULL AND pr.VERSAO = ut.MATERIAL_VERSAO THEN 0
+            ELSE 1
+          END,
+          pr.VERSAO DESC
+      ) prova_ref
       LEFT JOIN NORMA_LATEST norma
-        ON norma.ID = COALESCE(video_ref.NORMA_ID, pdf_ref.NORMA_ID)
+        ON norma.ID = COALESCE(video_ref.NORMA_ID, pdf_ref.NORMA_ID, prova_ref.NORMA_ID)
       WHERE ut.ARQUIVADO_EM IS NULL
-        AND ut.TIPO IN ('video', 'pdf')
+        AND ut.TIPO IN ('video', 'pdf', 'prova')
         AND (@FILTER_CPF IS NULL OR ut.USUARIO_CPF = @FILTER_CPF)
         AND (@FILTER_TIPO IS NULL OR ut.TIPO = @FILTER_TIPO)
         AND (@FILTER_MATERIAL_ID IS NULL OR ut.MATERIAL_ID = @FILTER_MATERIAL_ID)
@@ -1043,6 +1063,7 @@ export async function archiveTrainingsByProcedimentoId(
   archivedAt: Date = new Date(),
 ) {
   const pool = await getPool()
+  const trilhaColumnState = await getTrilhaColumnState()
 
   const materialsResult = await pool
     .request()
@@ -1116,6 +1137,15 @@ export async function archiveTrainingsByProcedimentoId(
         FROM P_LATEST p
         WHERE p.RN = 1
           AND p.PROCEDIMENTO_ID = @PROCEDIMENTO_ID
+        ${trilhaColumnState.hasProcedimentoId
+          ? `
+
+        UNION
+
+        SELECT DISTINCT tr.ID AS TRILHA_ID
+        FROM dbo.TTRILHAS tr
+        WHERE tr.PROCEDIMENTO_ID = @PROCEDIMENTO_ID`
+          : ""}
       )
       UPDATE ut
       SET ARQUIVADO_EM = @ARQUIVADO_EM
@@ -1141,6 +1171,7 @@ export async function archiveTrainingsByNormaId(
   archivedAt: Date = new Date(),
 ) {
   const pool = await getPool()
+  const trilhaColumnState = await getTrilhaColumnState()
 
   const materialsResult = await pool
     .request()
@@ -1214,6 +1245,15 @@ export async function archiveTrainingsByNormaId(
         FROM P_LATEST p
         WHERE p.RN = 1
           AND p.NORMA_ID = @NORMA_ID
+        ${trilhaColumnState.hasNormaId
+          ? `
+
+        UNION
+
+        SELECT DISTINCT tr.ID AS TRILHA_ID
+        FROM dbo.TTRILHAS tr
+        WHERE tr.NORMA_ID = @NORMA_ID`
+          : ""}
       )
       UPDATE ut
       SET ARQUIVADO_EM = @ARQUIVADO_EM

@@ -11,6 +11,7 @@ import {
   upsertTrilhaEficaciaConfig,
   updateTrilha,
 } from "../models/trilhaModel"
+import { listTrilhaSharesByTrilha, syncTrilhaShares } from "../models/trilhaShareModel"
 import { getModuleById } from "../models/moduleModel"
 import { normalizeCpf } from "../utils/normalizeCpf"
 import {
@@ -43,11 +44,14 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { id, moduloId, titulo, criadoPor, atualizadoEm, path } = req.body as {
+  const { id, moduloId, titulo, criadoPor, descricao, procedimentoId, normaId, atualizadoEm, path } = req.body as {
     id?: string
     moduloId?: string
     titulo?: string
     criadoPor?: string
+    descricao?: string
+    procedimentoId?: string | null
+    normaId?: string | null
     atualizadoEm?: string
     path?: string
   }
@@ -71,6 +75,9 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     moduloId,
     titulo,
     criadoPor,
+    descricao,
+    procedimentoId: procedimentoId === undefined ? undefined : procedimentoId,
+    normaId: normaId === undefined ? undefined : normaId,
     atualizadoEm: atualizadoEm ? new Date(atualizadoEm) : null,
     path: path ?? trilhaPath,
   })
@@ -79,10 +86,13 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { moduloId, titulo, criadoPor, atualizadoEm, path } = req.body as {
+  const { moduloId, titulo, criadoPor, descricao, procedimentoId, normaId, atualizadoEm, path } = req.body as {
     moduloId?: string
     titulo?: string
     criadoPor?: string
+    descricao?: string
+    procedimentoId?: string | null
+    normaId?: string | null
     atualizadoEm?: string
     path?: string
   }
@@ -91,6 +101,9 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     moduloId === undefined &&
     titulo === undefined &&
     criadoPor === undefined &&
+    descricao === undefined &&
+    procedimentoId === undefined &&
+    normaId === undefined &&
     atualizadoEm === undefined &&
     path === undefined
   ) {
@@ -142,6 +155,9 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     moduloId,
     titulo,
     criadoPor,
+    descricao,
+    procedimentoId: procedimentoId === undefined ? undefined : procedimentoId,
+    normaId: normaId === undefined ? undefined : normaId,
     atualizadoEm: atualizadoEm ? new Date(atualizadoEm) : null,
     path: shouldUpdatePath ? targetPath : undefined,
   })
@@ -236,6 +252,80 @@ export const clearEficaciaConfig = asyncHandler(async (req: Request, res: Respon
       throw new HttpError(
         400,
         "Banco sem suporte a configuracao de avaliacao de eficacia por trilha. Execute a migration de TTRILHAS.",
+      )
+    }
+    throw error
+  }
+})
+
+const GUID_REGEX =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+export const listShares = asyncHandler(async (req: Request, res: Response) => {
+  const trilha = await getTrilhaById(req.params.id)
+  if (!trilha) {
+    throw new HttpError(404, "Trilha nao encontrada")
+  }
+
+  try {
+    const shares = await listTrilhaSharesByTrilha(req.params.id)
+    res.json({ shares })
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : ""
+    if (code === "TRILHA_SHARE_TABLE_MISSING") {
+      res.json({ shares: [] })
+      return
+    }
+    throw error
+  }
+})
+
+export const updateShares = asyncHandler(async (req: Request, res: Response) => {
+  const { moduloIds, compartilhadoPor } = req.body as {
+    moduloIds?: string[]
+    compartilhadoPor?: string
+  }
+
+  const trilha = await getTrilhaById(req.params.id)
+  if (!trilha) {
+    throw new HttpError(404, "Trilha nao encontrada")
+  }
+
+  if (!Array.isArray(moduloIds)) {
+    throw new HttpError(400, "moduloIds deve ser uma lista")
+  }
+
+  const normalizedModuleIds = Array.from(
+    new Set(
+      moduloIds
+        .map((item) => String(item ?? "").trim())
+        .filter((item) => item && GUID_REGEX.test(item) && item !== trilha.MODULO_FK_ID),
+    ),
+  )
+
+  for (const moduloId of normalizedModuleIds) {
+    // eslint-disable-next-line no-await-in-loop
+    const module = await getModuleById(moduloId)
+    if (!module) {
+      throw new HttpError(404, "Modulo de destino nao encontrado")
+    }
+  }
+
+  try {
+    const shares = await syncTrilhaShares(req.params.id, normalizedModuleIds, compartilhadoPor?.trim() || null)
+    res.json({ shares })
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : ""
+    if (code === "TRILHA_SHARE_TABLE_MISSING") {
+      throw new HttpError(
+        400,
+        "Banco sem suporte a compartilhamento de trilhas entre setores. Execute a migration de compartilhamento.",
       )
     }
     throw error

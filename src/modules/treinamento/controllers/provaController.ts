@@ -1011,10 +1011,11 @@ function parseDateRangeBoundary(raw: string | undefined, endOfDay = false) {
 }
 
 export const listAttemptsReport = asyncHandler(async (req: Request, res: Response) => {
-  const { status, dateFrom, dateTo } = req.query as {
+  const { status, dateFrom, dateTo, trilhaId } = req.query as {
     status?: string
     dateFrom?: string
     dateTo?: string
+    trilhaId?: string
   }
 
   let normalizedStatus: ProvaAttemptStatus | undefined
@@ -1044,6 +1045,7 @@ export const listAttemptsReport = asyncHandler(async (req: Request, res: Respons
     status: normalizedStatus,
     dateFrom: parsedDateFrom ?? undefined,
     dateTo: parsedDateTo ?? undefined,
+    trilhaId: trilhaId?.trim() || undefined,
   })
 
   res.json({ report })

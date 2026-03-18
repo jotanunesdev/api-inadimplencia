@@ -13,13 +13,40 @@ type DriveContext = {
   driveId: string
 }
 
-type DriveItemResponse = {
+export type SharePointDriveIdentity = {
+  id?: string
+  displayName?: string
+  email?: string
+  userPrincipalName?: string
+}
+
+export type SharePointDriveIdentitySet = {
+  user?: SharePointDriveIdentity
+  application?: {
+    id?: string
+    displayName?: string
+  }
+}
+
+export type SharePointDriveItem = {
   id: string
   name: string
   webUrl?: string
+  size?: number
+  createdDateTime?: string
   lastModifiedDateTime?: string
-  file?: Record<string, unknown>
-  folder?: Record<string, unknown>
+  createdBy?: SharePointDriveIdentitySet
+  lastModifiedBy?: SharePointDriveIdentitySet
+  parentReference?: {
+    path?: string
+  }
+  file?: {
+    mimeType?: string
+    [key: string]: unknown
+  }
+  folder?: {
+    childCount?: number
+  }
 }
 
 type UploadSessionResponse = {
@@ -228,7 +255,7 @@ async function uploadChunkToUploadUrl(params: {
     return null
   }
 
-  return (await response.json()) as DriveItemResponse
+  return (await response.json()) as SharePointDriveItem
 }
 
 async function getDriveContext() {
@@ -321,6 +348,22 @@ async function createFolderIfMissing(parentPath: string, name: string) {
     }
     throw error
   }
+}
+
+function buildDriveItemSelect() {
+  return [
+    "id",
+    "name",
+    "webUrl",
+    "size",
+    "createdDateTime",
+    "lastModifiedDateTime",
+    "createdBy",
+    "lastModifiedBy",
+    "parentReference",
+    "file",
+    "folder",
+  ].join(",")
 }
 
 export async function ensureSharePointFolder(relativeFolderPath: string) {
@@ -418,8 +461,20 @@ export async function getSharePointFileByPath(fullPath: string) {
   }
 
   const { driveId } = await getDriveContext()
-  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}?$select=id,name,webUrl`
-  return graphRequest<DriveItemResponse>(endpoint, {}, [200])
+  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}?$select=${buildDriveItemSelect()}`
+  return graphRequest<SharePointDriveItem>(endpoint, {}, [200])
+}
+
+export async function getSharePointItemByPath(relativePath: string) {
+  const config = getSharePointConfig()
+  if (!config) {
+    throw new Error("SharePoint nao habilitado")
+  }
+
+  const { driveId } = await getDriveContext()
+  const fullPath = joinPaths(config.rootFolder, relativePath)
+  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}?$select=${buildDriveItemSelect()}`
+  return graphRequest<SharePointDriveItem>(endpoint, {}, [200])
 }
 
 export async function listSharePointFolderChildren(relativeFolderPath: string) {
@@ -430,9 +485,93 @@ export async function listSharePointFolderChildren(relativeFolderPath: string) {
 
   const { driveId } = await getDriveContext()
   const fullPath = joinPaths(config.rootFolder, relativeFolderPath)
-  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}:/children?$select=id,name,webUrl,lastModifiedDateTime,file,folder`
-  const response = await graphRequest<{ value: DriveItemResponse[] }>(endpoint, {}, [200])
+  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}:/children?$select=${buildDriveItemSelect()}`
+  const response = await graphRequest<{ value: SharePointDriveItem[] }>(
+    endpoint,
+    {},
+    [200],
+  )
   return response.value ?? []
+}
+
+export async function getSharePointItemById(itemId: string) {
+  const config = getSharePointConfig()
+  if (!config) {
+    throw new Error("SharePoint nao habilitado")
+  }
+
+  const { driveId } = await getDriveContext()
+  const endpoint = `/drives/${driveId}/items/${encodeURIComponent(itemId)}?$select=${buildDriveItemSelect()}`
+  return graphRequest<SharePointDriveItem>(endpoint, {}, [200])
+}
+
+export async function listSharePointFolderChildrenByItemId(itemId: string) {
+  const config = getSharePointConfig()
+  if (!config) {
+    throw new Error("SharePoint nao habilitado")
+  }
+
+  const { driveId } = await getDriveContext()
+  const endpoint = `/drives/${driveId}/items/${encodeURIComponent(itemId)}/children?$select=${buildDriveItemSelect()}`
+  const response = await graphRequest<{ value: SharePointDriveItem[] }>(
+    endpoint,
+    {},
+    [200],
+  )
+
+  return response.value ?? []
+}
+
+export async function createSharePointFolder(params: {
+  relativeParentFolderPath: string
+  name: string
+}) {
+  const config = getSharePointConfig()
+  if (!config) {
+    throw new Error("SharePoint nao habilitado")
+  }
+
+  const { driveId } = await getDriveContext()
+  await ensureSharePointFolder(params.relativeParentFolderPath)
+
+  const fullParentPath = joinPaths(config.rootFolder, params.relativeParentFolderPath)
+  const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullParentPath)}:/children`
+
+  return graphRequest<SharePointDriveItem>(
+    endpoint,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        name: params.name,
+        folder: {},
+        "@microsoft.graph.conflictBehavior": "fail",
+      }),
+    },
+    [200, 201],
+  )
+}
+
+export async function updateSharePointItemName(params: {
+  itemId: string
+  name: string
+}) {
+  const config = getSharePointConfig()
+  if (!config) {
+    throw new Error("SharePoint nao habilitado")
+  }
+
+  const { driveId } = await getDriveContext()
+  const endpoint = `/drives/${driveId}/items/${encodeURIComponent(params.itemId)}`
+  return graphRequest<SharePointDriveItem>(
+    endpoint,
+    {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: params.name,
+      }),
+    },
+    [200],
+  )
 }
 
 export async function downloadSharePointFileContentByPath(params: {
@@ -489,7 +628,7 @@ export async function uploadFileToSharePoint(params: {
   }
 
   const fileHandle = await fs.open(params.tempFilePath, "r")
-  let uploaded: DriveItemResponse | null = null
+  let uploaded: SharePointDriveItem | null = null
   try {
     let offset = 0
     while (offset < totalSize) {
@@ -667,6 +806,26 @@ export async function deleteSharePointFileByPath(fullPath: string) {
 
   const { driveId } = await getDriveContext()
   const endpoint = `/drives/${driveId}/root:/${encodeDrivePath(fullPath)}`
+
+  try {
+    await graphRequest(endpoint, { method: "DELETE" }, [204, 404])
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("(404)")) {
+      return
+    }
+    throw error
+  }
+}
+
+export async function deleteSharePointItemById(itemId: string) {
+  const config = getSharePointConfig()
+  if (!config) {
+    return
+  }
+
+  const { driveId } = await getDriveContext()
+  const endpoint = `/drives/${driveId}/items/${encodeURIComponent(itemId)}`
 
   try {
     await graphRequest(endpoint, { method: "DELETE" }, [204, 404])

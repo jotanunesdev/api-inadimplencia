@@ -21,6 +21,7 @@ import notificationRoutes from "./notificationRoutes"
 import dossieRoutes from "./dossieRoutes"
 import feedbackRoutes from "./feedbackRoutes"
 import reportRoutes from "./reportRoutes"
+import sectorFolderRoutes from "./sectorFolderRoutes"
 
 const router = Router()
 
@@ -46,5 +47,6 @@ router.use("/notificacoes", notificationRoutes)
 router.use("/dossies", dossieRoutes)
 router.use("/feedbacks", feedbackRoutes)
 router.use("/reports", reportRoutes)
+router.use("/sector-file-manager", sectorFolderRoutes)
 
 export default router

@@ -43,6 +43,7 @@ export type ProvaAttemptReportFilter = {
   status?: ProvaAttemptStatus
   dateFrom?: Date
   dateTo?: Date
+  trilhaId?: string
 }
 
 export async function createProvaAttempt(input: ProvaAttemptInput) {
@@ -125,6 +126,11 @@ export async function listProvaAttemptsReport(filters?: ProvaAttemptReportFilter
   const pool = await getPool()
   const request = pool.request()
   const conditions: string[] = []
+
+  if (filters?.trilhaId) {
+    request.input("TRILHA_ID", sql.UniqueIdentifier, filters.trilhaId)
+    conditions.push("a.TRILHA_ID = @TRILHA_ID")
+  }
 
   if (filters?.status) {
     request.input("STATUS", sql.VarChar(20), filters.status)

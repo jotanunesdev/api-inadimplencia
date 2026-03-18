@@ -2,6 +2,7 @@ import { getPool, sql } from "../config/db"
 import { archiveExpiredNormaTrainings } from "./userTrainingModel"
 import { getLatestUserFaceByCpf } from "./userFaceModel"
 import { getUserByCpf } from "./userModel"
+import { getTrilhaColumnState } from "./trilhaModel"
 
 export type DossieIdentificacao = {
   cpf: string
@@ -62,6 +63,7 @@ async function listDossieRowsByType(params: {
     Boolean(trainingFaceColumns.recordset[0]?.HAS_FACE_BASE64) &&
     Boolean(trainingFaceColumns.recordset[0]?.HAS_FACE_URL) &&
     Boolean(trainingFaceColumns.recordset[0]?.HAS_FACE_AT)
+  const trilhaColumnState = await getTrilhaColumnState()
 
   const treinoFaceColumns = hasFaceEvidenceColumns
     ? `,
@@ -72,6 +74,12 @@ async function listDossieRowsByType(params: {
         CAST(NULL AS NVARCHAR(MAX)) AS FACE_CONFIRMACAO_FOTO_BASE64,
         CAST(NULL AS NVARCHAR(2000)) AS FACE_CONFIRMACAO_FOTO_URL,
         CAST(NULL AS DATETIME2) AS FACE_CONFIRMACAO_EM`
+  const trilhaProcedimentoFragment = trilhaColumnState.hasProcedimentoId
+    ? "tr_rel.PROCEDIMENTO_ID"
+    : "CAST(NULL AS UNIQUEIDENTIFIER)"
+  const trilhaNormaFragment = trilhaColumnState.hasNormaId
+    ? "tr_rel.NORMA_ID"
+    : "CAST(NULL AS UNIQUEIDENTIFIER)"
 
   const request = pool
     .request()
@@ -98,6 +106,14 @@ async function listDossieRowsByType(params: {
         p.VERSAO,
         ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
       FROM dbo.TPDFS p
+    ),
+    PROVA_LATEST AS (
+      SELECT
+        pr.ID,
+        pr.TRILHA_FK_ID,
+        pr.VERSAO,
+        ROW_NUMBER() OVER (PARTITION BY pr.ID ORDER BY pr.VERSAO DESC) AS RN
+      FROM dbo.TPROVAS pr
     ),
     PROCEDIMENTO_LATEST AS (
       SELECT x.ID, x.NOME
@@ -145,7 +161,7 @@ async function listDossieRowsByType(params: {
       FROM dbo.TUSUARIO_TREINAMENTOS ut
       WHERE ut.USUARIO_CPF = @USUARIO_CPF
         AND ut.ARQUIVADO_EM IS NULL
-        AND ut.TIPO IN ('video', 'pdf')
+        AND ut.TIPO IN ('video', 'pdf', 'prova')
     ),
     MATERIAIS_ATUAIS AS (
       SELECT
@@ -185,6 +201,27 @@ async function listDossieRowsByType(params: {
          (ut.MATERIAL_VERSAO IS NOT NULL AND pl.VERSAO = ut.MATERIAL_VERSAO)
          OR ut.MATERIAL_VERSAO IS NULL
        )
+
+      UNION ALL
+
+      SELECT
+        ut.DT_CONCLUSAO,
+        prova.TRILHA_FK_ID AS TRILHA_ID,
+        ${trilhaProcedimentoFragment} AS PROCEDIMENTO_ID,
+        ${trilhaNormaFragment} AS NORMA_ID,
+        ut.FACE_CONFIRMACAO_FOTO_BASE64,
+        ut.FACE_CONFIRMACAO_FOTO_URL,
+        ut.FACE_CONFIRMACAO_EM
+      FROM TREINOS_ATIVOS ut
+      JOIN PROVA_LATEST prova
+        ON ut.TIPO = 'prova'
+       AND prova.RN = 1
+       AND prova.ID = ut.MATERIAL_ID
+       AND (
+         (ut.MATERIAL_VERSAO IS NOT NULL AND prova.VERSAO = ut.MATERIAL_VERSAO)
+         OR ut.MATERIAL_VERSAO IS NULL
+       )
+      JOIN dbo.TTRILHAS tr_rel ON tr_rel.ID = prova.TRILHA_FK_ID
     )
     ,
     MATERIAIS_RELACIONADOS AS (

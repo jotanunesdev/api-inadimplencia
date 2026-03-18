@@ -6,9 +6,10 @@ const config: sql.config = {
   password: env.DB_PASSWORD,
   server: env.DB_SERVER,
   database: env.DB_DATABASE,
-  port: env.DB_PORT,
+  port: env.DB_INSTANCE ? undefined : env.DB_PORT,
   options: {
     encrypt: env.DB_ENCRYPT,
+    instanceName: env.DB_INSTANCE,
     trustServerCertificate: env.DB_TRUST_CERT,
   },
 }

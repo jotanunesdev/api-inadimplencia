@@ -1,6 +1,13 @@
 import path from "path"
 import dotenv from "dotenv"
 
+const { resolvePrefixedEnv } = require("../../../shared/moduleEnv") as {
+  resolvePrefixedEnv: (
+    prefix: string,
+    source?: NodeJS.ProcessEnv,
+  ) => Record<string, string | undefined>
+}
+
 dotenv.config({
   path: path.resolve(__dirname, "..", "..", "..", "..", ".env"),
 })
@@ -9,20 +16,8 @@ dotenv.config({
   path: path.resolve(__dirname, "..", ".env"),
 })
 
-const envSource: Record<string, string> = {}
-
-for (const [key, value] of Object.entries(process.env)) {
-  if (!key.startsWith("TREIN_") || value === undefined) {
-    continue
-  }
-
-  const cleanKey = key.slice("TREIN_".length)
-  if (!cleanKey) {
-    continue
-  }
-
-  envSource[cleanKey] = value
-}
+const envSource = resolvePrefixedEnv("TREIN") as Record<string, string>
+const rmEnvSource = resolvePrefixedEnv("RM") as Record<string, string>
 
 function requireEnv(name: string, fallback?: string) {
   const value = envSource[name] ?? fallback
@@ -31,6 +26,19 @@ function requireEnv(name: string, fallback?: string) {
   }
 
   return value
+}
+
+function requireReadViewEnv(name: string, fallback?: string) {
+  const value = rmEnvSource[name] ?? envSource[name] ?? fallback
+  if (value === undefined || value === "") {
+    throw new Error(`Missing environment variable: ${name}`)
+  }
+
+  return value
+}
+
+function resolveReadViewEnv(name: string, fallback?: string) {
+  return rmEnvSource[name] ?? envSource[name] ?? fallback
 }
 
 function parsePositiveNumber(name: string, fallback: number) {
@@ -47,7 +55,19 @@ function parsePositiveNumber(name: string, fallback: number) {
   return value
 }
 
+function parseServerAndInstance(rawValue: string) {
+  const normalized = rawValue.trim()
+  const splitChar = normalized.includes("\\") ? "\\" : "/"
+  const [server, instance] = normalized.split(splitChar)
+
+  return {
+    instance: instance?.trim() || undefined,
+    server: server?.trim() ?? "",
+  }
+}
+
 const corsOrigin = process.env.CORS_ORIGIN ?? envSource.CORS_ORIGIN ?? "*"
+const parsedDbServer = parseServerAndInstance(requireEnv("DB_SERVER"))
 
 export const env = {
   NODE_ENV: envSource.NODE_ENV ?? "development",
@@ -64,7 +84,8 @@ export const env = {
     .map((origin) => origin.trim().toLowerCase())
     .filter(Boolean)
     .includes("*"),
-  DB_SERVER: requireEnv("DB_SERVER"),
+  DB_SERVER: parsedDbServer.server,
+  DB_INSTANCE: envSource.DB_INSTANCE ?? parsedDbServer.instance,
   DB_PORT: Number(envSource.DB_PORT ?? 1433),
   DB_DATABASE: requireEnv("DB_DATABASE"),
   DB_USER: requireEnv("DB_USER"),
@@ -74,11 +95,14 @@ export const env = {
   PUBLIC_ASSETS_ROOT:
     envSource.PUBLIC_ASSETS_ROOT ??
     "C:\\gestao-trienamento\\gestao-treinamento\\public",
-  READVIEW_URL: requireEnv("READVIEW_URL"),
-  READVIEW_USER: requireEnv("READVIEW_USER"),
-  READVIEW_PASSWORD: requireEnv("READVIEW_PASSWORD"),
-  READVIEW_ACTION: envSource.READVIEW_ACTION,
-  READVIEW_NAMESPACE: envSource.READVIEW_NAMESPACE ?? "http://www.totvs.com/",
+  READVIEW_URL: requireReadViewEnv("READVIEW_URL"),
+  READVIEW_USER: requireReadViewEnv("READVIEW_USER"),
+  READVIEW_PASSWORD: requireReadViewEnv("READVIEW_PASSWORD"),
+  READVIEW_ACTION: resolveReadViewEnv("READVIEW_ACTION"),
+  READVIEW_NAMESPACE: resolveReadViewEnv(
+    "READVIEW_NAMESPACE",
+    "http://www.totvs.com/",
+  ),
   SHAREPOINT_ENABLED:
     (envSource.SHAREPOINT_ENABLED ?? "false").toLowerCase() === "true",
   SHAREPOINT_TENANT_ID: envSource.SP_TENANT_ID,
