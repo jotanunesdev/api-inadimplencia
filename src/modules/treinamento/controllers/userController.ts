@@ -32,6 +32,14 @@ type CompanyEmployeeWithLocation = CompanyEmployee & {
   SETOR_OBRA: string | null
 }
 
+type CompanyObraRecord = {
+  codigo: string | null
+  nome: string
+  cidade: string | null
+  estado: string | null
+  endereco: string | null
+}
+
 type SectionRecord = Record<string, string>
 
 const COMPANY_EMPLOYEES_CACHE_TTL_MS = 5 * 60 * 1000
@@ -140,6 +148,47 @@ const splitObraAndSetor = (value: string | null | undefined) => {
   const left = text.slice(0, separatorIndex).trim() || text
   const right = text.slice(separatorIndex + 3).trim() || null
   return { obra: left, setor: right, left, right }
+}
+
+const firstNonEmptyValue = (...values: Array<string | null | undefined>) => {
+  for (const value of values) {
+    const normalized = String(value ?? "").trim()
+    if (normalized) {
+      return normalized
+    }
+  }
+
+  return null
+}
+
+const buildSectionAddress = (section: SectionRecord | null | undefined) => {
+  if (!section) return null
+
+  const street = firstNonEmptyValue(
+    section.ENDERECO,
+    section.ENDEREÇO,
+    section.LOGRADOURO,
+    section.RUA,
+  )
+  const number = firstNonEmptyValue(section.NUMERO, section.NNUMERO, section.NUM)
+  const complement = firstNonEmptyValue(
+    section.COMPLEMENTO,
+    section.COMPL,
+    section.COMPLEMENTOENDERECO,
+  )
+  const district = firstNonEmptyValue(section.BAIRRO)
+  const cep = firstNonEmptyValue(section.CEP)
+
+  const addressParts = [
+    [street, number].filter(Boolean).join(", "),
+    complement,
+    district,
+    cep ? `CEP ${cep}` : null,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+
+  return addressParts.length ? addressParts.join(" | ") : null
 }
 
 const toStringRecord = (value: unknown): SectionRecord | null => {
@@ -613,6 +662,8 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
   const obraFilterRaw = (req.query.obra as string | undefined)?.trim()
   const obraCodigoFilterRaw = (req.query.obraCodigo as string | undefined)?.trim()
   const includeLocation = parseBoolean((req.query.includeLocation as string | undefined)?.trim()) === true
+  const cpfFilter = normalizeCpf(String(req.query.cpf ?? ""))
+  const nomeFilter = normalizeText(String(req.query.nome ?? ""))
 
   const sections = await getCompanySectionsNormalized(forceRefresh)
 
@@ -637,6 +688,14 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
   } else if (obraFilterRaw) {
     const obraFilter = normalizeText(obraFilterRaw)
     enrichedEmployees = enrichedEmployees.filter((item) => normalizeText(item.OBRA_NOME) === obraFilter)
+  }
+
+  if (cpfFilter) {
+    enrichedEmployees = enrichedEmployees.filter((item) => normalizeCpf(item.CPF) === cpfFilter)
+  }
+
+  if (nomeFilter) {
+    enrichedEmployees = enrichedEmployees.filter((item) => normalizeText(item.NOME).includes(nomeFilter))
   }
 
   if (!includeLocation) {
@@ -667,7 +726,7 @@ export const listCompanyEmployeeObras = asyncHandler(async (req: Request, res: R
     sectionByHierarchyKey.set(`${codColigadaCompact}|${codigo}`, section)
   }
 
-  const byKey = new Map<string, { codigo: string | null; nome: string }>()
+  const byKey = new Map<string, CompanyObraRecord>()
 
   for (const section of sections) {
     const sectionCode = normalizeCode(section.CODIGO)
@@ -689,6 +748,15 @@ export const listCompanyEmployeeObras = asyncHandler(async (req: Request, res: R
       byKey.set(key, {
         codigo,
         nome,
+        cidade: firstNonEmptyValue(section.CIDADE, section.CIDADESECAO, section.CIDADE_SECAO),
+        estado: firstNonEmptyValue(
+          section.ESTADO,
+          section.UF,
+          section.ESTADOSECAO,
+          section.ESTADO_SECAO,
+          section.UFSECAO,
+        ),
+        endereco: buildSectionAddress(section),
       })
     }
   }

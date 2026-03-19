@@ -1,5 +1,6 @@
 import { getPool, sql } from "../config/db"
 import { archiveVideoCompletionsByVideoId } from "./userTrainingModel"
+import { hasPdfOrderColumn } from "./pdfModel"
 
 export type VideoRecord = {
   ID: string
@@ -16,6 +17,7 @@ export type VideoRecord = {
 }
 
 export async function listVideos(trilhaId?: string, cpf?: string, includePdf = false) {
+  const hasPdfOrder = includePdf ? await hasPdfOrderColumn() : false
   const pool = await getPool()
   const request = pool.request()
   const conditions: string[] = []
@@ -79,7 +81,7 @@ export async function listVideos(trilhaId?: string, cpf?: string, includePdf = f
         p.NORMA_ID,
         p.VERSAO,
         CAST(0 AS INT) AS DURACAO_SEGUNDOS,
-        CAST(NULL AS INT) AS ORDEM
+        ${hasPdfOrder ? "p.ORDEM" : "CAST(NULL AS INT) AS ORDEM"}
       FROM (
         SELECT
           p.ID,
@@ -87,6 +89,7 @@ export async function listVideos(trilhaId?: string, cpf?: string, includePdf = f
           p.PDF_PATH,
           p.PROCEDIMENTO_ID,
           p.NORMA_ID,
+          ${hasPdfOrder ? "p.ORDEM," : ""}
           p.VERSAO,
           ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
         FROM dbo.TPDFS p

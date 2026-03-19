@@ -105,12 +105,13 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { id, trilhaId, pdfPath, procedimentoId, normaId } = req.body as {
+  const { id, trilhaId, pdfPath, procedimentoId, normaId, ordem } = req.body as {
     id?: string
     trilhaId?: string
     pdfPath?: string
     procedimentoId?: string
     normaId?: string
+    ordem?: number
   }
 
   if (!id || !trilhaId || !pdfPath) {
@@ -119,6 +120,10 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 
   const procedimento = parseOptionalProcedimentoId(procedimentoId)
   const norma = parseOptionalNormaId(normaId)
+  const order = ordem !== undefined ? Number(ordem) : undefined
+  if (order !== undefined && (!Number.isFinite(order) || order <= 0)) {
+    throw new HttpError(400, "ordem invalida")
+  }
 
   const pdf = await createPdf({
     id,
@@ -126,6 +131,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     pdfPath,
     procedimentoId: procedimento,
     normaId: norma,
+    ordem: order,
   })
 
   res.status(201).json({ pdf })
@@ -170,11 +176,12 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
 })
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { trilhaId, pdfPath, procedimentoId, normaId } = req.body as {
+  const { trilhaId, pdfPath, procedimentoId, normaId, ordem } = req.body as {
     trilhaId?: string
     pdfPath?: string
     procedimentoId?: string
     normaId?: string
+    ordem?: number
   }
 
   if (
@@ -187,12 +194,17 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   }
   const procedimento = parseOptionalProcedimentoId(procedimentoId)
   const norma = parseOptionalNormaId(normaId)
+  const order = ordem !== undefined ? Number(ordem) : undefined
+  if (order !== undefined && (!Number.isFinite(order) || order <= 0)) {
+    throw new HttpError(400, "ordem invalida")
+  }
 
   const pdf = await updatePdf(req.params.id, {
     trilhaId,
     pdfPath,
     procedimentoId: procedimento,
     normaId: norma,
+    ordem: order,
   })
 
   if (!pdf) {

@@ -1,10 +1,15 @@
 import { Router } from "express"
 import {
   create,
+  listFolderShares,
   listFolderContents,
   list,
+  permanentlyDeleteTrashedItem,
   remove,
   removeItem,
+  restoreTrashedItem,
+  shareFolder,
+  toggleFavoriteFolder,
   uploadFile,
   update,
 } from "../controllers/sectorFolderController"
@@ -14,9 +19,14 @@ const router = Router()
 
 router.get("/folders", list)
 router.get("/contents", listFolderContents)
+router.get("/folders/:itemId/shares", listFolderShares)
 router.post("/folders", create)
 router.post("/files/upload", upload.single("file"), uploadFile)
+router.patch("/folders/:itemId/favorite", toggleFavoriteFolder)
 router.patch("/folders/:itemId", update)
+router.post("/trash/:itemId/restore", restoreTrashedItem)
+router.put("/folders/:itemId/shares", shareFolder)
+router.delete("/trash/:itemId/permanent", permanentlyDeleteTrashedItem)
 router.delete("/folders/:itemId", remove)
 router.delete("/items/:itemId", removeItem)
 

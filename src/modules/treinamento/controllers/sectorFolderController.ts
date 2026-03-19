@@ -9,6 +9,33 @@ import {
   upsertSectorFolderMetadata,
 } from "../models/sectorFolderModel"
 import {
+  deleteSectorFolderSharesByItemIds,
+  getSectorFolderShareByTargetAndItem,
+  isSectorFolderShareTableMissingError,
+  listSectorFolderSharesByItemId,
+  listSectorFolderSharesByTargetSector,
+  syncSectorFolderShares,
+  type SectorFolderShareRecord,
+} from "../models/sectorFolderShareModel"
+import {
+  deleteSectorFolderTrashByItemIds,
+  getSectorFolderTrashByItemId,
+  isSectorFolderTrashTableMissingError,
+  listSectorFolderTrashItems,
+  upsertSectorFolderTrashItem,
+  type SectorFolderTrashRecord,
+} from "../models/sectorFolderTrashModel"
+import {
+  deleteSectorFolderUserItemsByItemIds,
+  isSectorFolderUserItemTableMissingError,
+  listFavoriteSectorFolderUserItems,
+  listRecentSectorFolderUserItems,
+  listSectorFolderUserItemRelationsByItemIds,
+  registerSectorFolderAccess,
+  setSectorFolderFavorite,
+  type SectorFolderUserItemRecord,
+} from "../models/sectorFolderUserItemModel"
+import {
   createSharePointFolder,
   deleteSharePointItemById,
   ensureSharePointFolder,
@@ -30,6 +57,13 @@ type SectorDefinition = {
   label: string
   folderPath: string
   aliases: string[]
+  fixedFolders?: SectorFixedFolderDefinition[]
+}
+
+type SectorFixedFolderDefinition = {
+  key: string
+  label: string
+  requiresValidityForFiles?: boolean
 }
 
 type UserProfile = {
@@ -43,6 +77,30 @@ type BreadcrumbItem = {
   label: string
   path: string
 }
+
+type SharedFolderSummary = {
+  rootItemId: string
+  sourceSectorKey: string
+  sourceSectorLabel: string
+  sharedByName: string | null
+  sharedByEmail: string | null
+  sharedByUsername: string | null
+  sharedAt: string | null
+}
+
+type ResolvedFolderContext = {
+  currentFolder: SharePointDriveItem | null
+  currentFolderPath: string
+  pathSector: SectorDefinition
+  sharedFolder: SharedFolderSummary | null
+}
+
+type DirectoryView =
+  | "all"
+  | "shared"
+  | "recent"
+  | "favorites"
+  | "deleted"
 
 const MAX_FOLDER_MEMBERS = 8
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([
@@ -78,6 +136,30 @@ const SECTORS: SectorDefinition[] = [
       "saude e seguranca",
       "saude e seguranca do trabalho",
     ],
+    fixedFolders: [
+      {
+        key: "normas",
+        label: "Normas",
+        requiresValidityForFiles: true,
+      },
+    ],
+  },
+  {
+    key: "qualidade",
+    label: "Qualidade",
+    folderPath: "Qualidade",
+    aliases: [
+      "qualidade",
+      "gestao da qualidade",
+      "qualidade e processos",
+      "processos e qualidade",
+    ],
+    fixedFolders: [
+      {
+        key: "procedimentos",
+        label: "Procedimentos",
+      },
+    ],
   },
   {
     key: "recursos-humanos",
@@ -100,6 +182,9 @@ const SECTORS: SectorDefinition[] = [
 ]
 
 let metadataSchemaWarningDisplayed = false
+let shareSchemaWarningDisplayed = false
+let userItemSchemaWarningDisplayed = false
+let trashSchemaWarningDisplayed = false
 
 function normalizeText(value: unknown) {
   return String(value ?? "")
@@ -149,6 +234,61 @@ function resolveSector(value: unknown) {
         ),
     ) ?? null
   )
+}
+
+function listSectorFixedFolders(sector: SectorDefinition) {
+  return sector.fixedFolders ?? []
+}
+
+function buildSectorFixedFolderPath(
+  sector: SectorDefinition,
+  folder: SectorFixedFolderDefinition,
+) {
+  return joinPaths(sector.folderPath, folder.label)
+}
+
+function findSectorFixedFolderByPath(
+  sector: SectorDefinition,
+  itemPath: string,
+) {
+  const normalizedItemPath = normalizeComparablePath(itemPath)
+
+  return (
+    listSectorFixedFolders(sector).find((folder) => {
+      const fixedFolderPath = normalizeComparablePath(
+        buildSectorFixedFolderPath(sector, folder),
+      )
+      return normalizedItemPath === fixedFolderPath
+    }) ?? null
+  )
+}
+
+function findSectorFixedFolderAncestor(
+  sector: SectorDefinition,
+  itemPath: string,
+) {
+  const normalizedItemPath = normalizeComparablePath(itemPath)
+
+  return (
+    listSectorFixedFolders(sector).find((folder) => {
+      const fixedFolderPath = normalizeComparablePath(
+        buildSectorFixedFolderPath(sector, folder),
+      )
+      return (
+        normalizedItemPath === fixedFolderPath ||
+        normalizedItemPath.startsWith(`${fixedFolderPath}/`)
+      )
+    }) ?? null
+  )
+}
+
+async function ensureSectorStructure(sector: SectorDefinition) {
+  await ensureSharePointFolder(sector.folderPath)
+
+  for (const fixedFolder of listSectorFixedFolders(sector)) {
+    // eslint-disable-next-line no-await-in-loop
+    await ensureSharePointFolder(buildSectorFixedFolderPath(sector, fixedFolder))
+  }
 }
 
 function ensureSharePointIsAvailable() {
@@ -209,6 +349,56 @@ function parseParentItemId(value: unknown) {
   return itemId || null
 }
 
+function parseOptionalUsername(value: unknown) {
+  const username = String(value ?? "").trim()
+  return username || null
+}
+
+function parseDirectoryView(value: unknown): DirectoryView {
+  const normalizedValue = String(value ?? "").trim().toLowerCase()
+
+  switch (normalizedValue) {
+    case "shared":
+    case "recent":
+    case "favorites":
+    case "deleted":
+      return normalizedValue
+    default:
+      return "all"
+  }
+}
+
+function parseOptionalSector(value: unknown) {
+  const rawValue = String(value ?? "").trim()
+  if (!rawValue) {
+    return null
+  }
+
+  const sector = resolveSector(rawValue)
+  if (!sector) {
+    throw new HttpError(400, "Informe um setor valido.")
+  }
+
+  return sector
+}
+
+function parseTargetSectorKeys(value: unknown) {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : []
+
+  return Array.from(
+    new Set(
+      rawValues
+        .map((item) => parseOptionalSector(item))
+        .filter((item): item is SectorDefinition => Boolean(item))
+        .map((item) => item.key),
+    ),
+  )
+}
+
 function parseActor(body: Record<string, unknown>) {
   const rawActor =
     typeof body.actor === "object" && body.actor !== null
@@ -234,6 +424,55 @@ function assertAllowedUploadFile(file: Express.Multer.File | undefined) {
   const extension = path.extname(file.originalname || "").toLowerCase()
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
     throw new HttpError(400, "Apenas arquivos PDF ou de video sao permitidos.")
+  }
+}
+
+function parseOptionalIntegerInRange(
+  value: unknown,
+  min: number,
+  max: number,
+  fieldLabel: string,
+) {
+  const rawValue = String(value ?? "").trim()
+  if (!rawValue) {
+    return null
+  }
+
+  const parsed = Number(rawValue)
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    throw new HttpError(400, `Informe ${fieldLabel} entre ${min} e ${max}.`)
+  }
+
+  return parsed
+}
+
+function parseNormasFileValidity(
+  body: Record<string, unknown>,
+  required: boolean,
+) {
+  const validityMonths = parseOptionalIntegerInRange(
+    body.validadeMeses ?? body.validityMonths,
+    1,
+    11,
+    "os meses de validade",
+  )
+  const validityYears = parseOptionalIntegerInRange(
+    body.validadeAnos ?? body.validityYears,
+    1,
+    3,
+    "os anos de validade",
+  )
+
+  if (required && !validityMonths && !validityYears) {
+    throw new HttpError(
+      400,
+      "Arquivos enviados na pasta Normas exigem um prazo: meses (1-11), anos (1-3) ou ambos.",
+    )
+  }
+
+  return {
+    validityMonths,
+    validityYears,
   }
 }
 
@@ -367,7 +606,7 @@ function buildItemPathFromSector(
   return joinPaths(relativeParentSegments.join("/"), item.name)
 }
 
-function assertItemBelongsToSector(
+function itemBelongsToSector(
   item: SharePointDriveItem,
   sector: SectorDefinition,
 ) {
@@ -375,13 +614,42 @@ function assertItemBelongsToSector(
   const normalizedItemPath = normalizeComparablePath(itemPath)
   const normalizedSectorPath = normalizeComparablePath(sector.folderPath)
 
-  const belongsToSector =
+  return (
     normalizedItemPath === normalizedSectorPath ||
     normalizedItemPath.startsWith(`${normalizedSectorPath}/`)
+  )
+}
+
+function assertItemBelongsToSector(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+) {
+  const belongsToSector = itemBelongsToSector(item, sector)
 
   if (!belongsToSector) {
     throw new HttpError(404, "Item do setor nao encontrado.")
   }
+}
+
+function assertItemIsNotFixedSectorFolder(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+) {
+  if (!item.folder) {
+    return
+  }
+
+  const itemPath = buildItemPathFromSector(item, sector)
+  const fixedFolder = findSectorFixedFolderByPath(sector, itemPath)
+
+  if (!fixedFolder) {
+    return
+  }
+
+  throw new HttpError(
+    403,
+    `A pasta ${fixedFolder.label} e fixa neste setor e nao pode ser renomeada ou excluida.`,
+  )
 }
 
 function parseDateOrNull(value: string | Date | null | undefined) {
@@ -429,12 +697,89 @@ function addUniqueProfile(
   profiles.set(key, profile)
 }
 
+function buildSharedFolderSummary(
+  sourceSector: SectorDefinition,
+  share: SectorFolderShareRecord,
+): SharedFolderSummary {
+  return {
+    rootItemId: share.SHAREPOINT_ITEM_ID,
+    sourceSectorKey: sourceSector.key,
+    sourceSectorLabel: sourceSector.label,
+    sharedByName: share.COMPARTILHADO_POR_NOME ?? null,
+    sharedByEmail: share.COMPARTILHADO_POR_EMAIL ?? null,
+    sharedByUsername: share.COMPARTILHADO_POR_USUARIO ?? null,
+    sharedAt: parseDateOrNull(share.COMPARTILHADO_EM)?.toISOString() ?? null,
+  }
+}
+
+function buildUserRelationKey(itemId: string) {
+  return String(itemId ?? "").trim()
+}
+
+function buildDeletedItemResponse(params: {
+  trash: SectorFolderTrashRecord
+  metadata: SectorFolderMetadata | null
+  sourceSector: SectorDefinition
+  sharedFolder?: SharedFolderSummary | null
+  isFavorite?: boolean
+}) {
+  const createdBy = profileFromMetadata(params.metadata)
+  return {
+    id: params.trash.SHAREPOINT_ITEM_ID,
+    name: params.trash.NOME,
+    path: params.trash.CAMINHO,
+    webUrl: params.trash.WEB_URL ?? null,
+    itemType: params.trash.TIPO_ITEM === "folder" ? "folder" : "file",
+    itemCount: 0,
+    size:
+      params.trash.TAMANHO == null ? null : Number(params.trash.TAMANHO),
+    extension: params.trash.EXTENSAO ?? null,
+    contentType: null,
+    createdAt: params.metadata?.createdAt?.toISOString() ?? null,
+    lastUpdatedAt: params.metadata?.updatedAt?.toISOString() ?? null,
+    createdBy: toUserProfile(createdBy),
+    members: [],
+    canDelete: false,
+    canRename: false,
+    canShare: false,
+    canFavorite: false,
+    isFavorite: Boolean(params.isFavorite),
+    fixedFolderKey: null,
+    isFixedFolder: false,
+    requiresValidityForFiles: false,
+    validityMonths: params.metadata?.validityMonths ?? null,
+    validityYears: params.metadata?.validityYears ?? null,
+    isShared: Boolean(params.sharedFolder),
+    sharedFolder: params.sharedFolder ?? null,
+    isDeleted: true,
+    deletedAt: parseDateOrNull(params.trash.EXCLUIDO_EM)?.toISOString() ?? null,
+    deletedBy: {
+      displayName: params.trash.EXCLUIDO_POR_NOME ?? null,
+      email: params.trash.EXCLUIDO_POR_EMAIL ?? null,
+      username: params.trash.EXCLUIDO_POR_USUARIO ?? null,
+    },
+    sourceSectorKey: params.sourceSector.key,
+    sourceSectorLabel: params.sourceSector.label,
+  }
+}
+
 function buildItemResponse(params: {
   item: SharePointDriveItem
   sector: SectorDefinition
   metadata: SectorFolderMetadata | null
   members: UserProfile[]
+  sharedFolder?: SharedFolderSummary | null
+  readOnly?: boolean
+  isFavorite?: boolean
 }) {
+  const itemPath = buildItemPathFromSector(params.item, params.sector)
+  const fixedFolder = params.item.folder
+    ? findSectorFixedFolderByPath(params.sector, itemPath)
+    : null
+  const fixedFolderAncestor = findSectorFixedFolderAncestor(
+    params.sector,
+    itemPath,
+  )
   const createdBy =
     profileFromMetadata(params.metadata) ??
     extractProfileFromIdentity(params.item.createdBy, true)
@@ -449,7 +794,7 @@ function buildItemResponse(params: {
   return {
     id: params.item.id,
     name: params.item.name,
-    path: buildItemPathFromSector(params.item, params.sector),
+    path: itemPath,
     webUrl: params.item.webUrl ?? null,
     itemType: params.item.folder ? "folder" : "file",
     itemCount: Number(params.item.folder?.childCount ?? 0),
@@ -465,22 +810,52 @@ function buildItemResponse(params: {
     lastUpdatedAt: lastUpdatedAt?.toISOString() ?? null,
     createdBy: toUserProfile(createdBy),
     members: params.members.map((member) => toUserProfile(member)),
+    canDelete: !fixedFolder && !params.readOnly,
+    canRename: !fixedFolder && !params.readOnly,
+    canShare: Boolean(params.item.folder) && !params.readOnly,
+    canFavorite: Boolean(params.item.folder),
+    isFavorite: Boolean(params.isFavorite),
+    fixedFolderKey: fixedFolder?.key ?? null,
+    isFixedFolder: Boolean(fixedFolder),
+    requiresValidityForFiles: Boolean(
+      fixedFolderAncestor?.requiresValidityForFiles,
+    ),
+    validityMonths: params.metadata?.validityMonths ?? null,
+    validityYears: params.metadata?.validityYears ?? null,
+    isShared: Boolean(params.sharedFolder),
+    sharedFolder: params.sharedFolder ?? null,
+    isDeleted: false,
   }
 }
 
 function buildCurrentFolderResponse(
   item: SharePointDriveItem | null,
   sector: SectorDefinition,
+  sharedFolder: SharedFolderSummary | null = null,
 ) {
   if (!item) {
     return null
   }
 
+  const itemPath = buildItemPathFromSector(item, sector)
+  const fixedFolder = findSectorFixedFolderByPath(sector, itemPath)
+  const fixedFolderAncestor = findSectorFixedFolderAncestor(sector, itemPath)
+
   return {
     id: item.id,
     name: item.name,
-    path: buildItemPathFromSector(item, sector),
+    path: itemPath,
     webUrl: item.webUrl ?? null,
+    canDelete: !fixedFolder && !sharedFolder,
+    canRename: !fixedFolder && !sharedFolder,
+    canShare: !sharedFolder,
+    fixedFolderKey: fixedFolder?.key ?? null,
+    isFixedFolder: Boolean(fixedFolder),
+    requiresValidityForFiles: Boolean(
+      fixedFolderAncestor?.requiresValidityForFiles,
+    ),
+    isShared: Boolean(sharedFolder),
+    sharedFolder,
   }
 }
 
@@ -506,6 +881,39 @@ function warnMissingMetadataSchemaOnce() {
   metadataSchemaWarningDisplayed = true
   console.warn(
     "[SetorPastas] Tabela T GESTAO_ARQUIVOS_SETOR_PASTAS nao encontrada. Metadados de criador real nao serao persistidos ate a migration ser aplicada.",
+  )
+}
+
+function warnMissingShareSchemaOnce() {
+  if (shareSchemaWarningDisplayed) {
+    return
+  }
+
+  shareSchemaWarningDisplayed = true
+  console.warn(
+    "[SetorPastas] Tabela TGESTAO_ARQUIVOS_SETOR_COMPARTILHAMENTOS nao encontrada. Pastas compartilhadas nao serao listadas ate a migration ser aplicada.",
+  )
+}
+
+function warnMissingUserItemSchemaOnce() {
+  if (userItemSchemaWarningDisplayed) {
+    return
+  }
+
+  userItemSchemaWarningDisplayed = true
+  console.warn(
+    "[SetorPastas] Tabela TGESTAO_ARQUIVOS_SETOR_USUARIO_ITENS nao encontrada. Favoritos e recentes nao serao persistidos ate a migration ser aplicada.",
+  )
+}
+
+function warnMissingTrashSchemaOnce() {
+  if (trashSchemaWarningDisplayed) {
+    return
+  }
+
+  trashSchemaWarningDisplayed = true
+  console.warn(
+    "[SetorPastas] Tabela TGESTAO_ARQUIVOS_SETOR_LIXEIRA nao encontrada. A lixeira do gerenciador nao funcionara ate a migration ser aplicada.",
   )
 }
 
@@ -563,14 +971,209 @@ async function deleteSectorMetadataSafely(itemId: string) {
   }
 }
 
-async function resolveParentContext(params: {
-  sector: SectorDefinition
-  parentItemId: string | null
+async function listSectorFolderSharesByItemSafely(itemId: string) {
+  try {
+    return await listSectorFolderSharesByItemId(itemId)
+  } catch (error) {
+    if (isSectorFolderShareTableMissingError(error)) {
+      warnMissingShareSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderSharesByTargetSafely(targetSectorKey: string) {
+  try {
+    return await listSectorFolderSharesByTargetSector(targetSectorKey)
+  } catch (error) {
+    if (isSectorFolderShareTableMissingError(error)) {
+      warnMissingShareSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function deleteSectorFolderSharesSafely(itemIds: string[]) {
+  try {
+    await deleteSectorFolderSharesByItemIds(itemIds)
+  } catch (error) {
+    if (isSectorFolderShareTableMissingError(error)) {
+      warnMissingShareSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderTrashItemsSafely(sectorKey: string) {
+  try {
+    return await listSectorFolderTrashItems(sectorKey)
+  } catch (error) {
+    if (isSectorFolderTrashTableMissingError(error)) {
+      warnMissingTrashSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function getSectorFolderTrashByItemIdSafely(itemId: string) {
+  try {
+    return await getSectorFolderTrashByItemId(itemId)
+  } catch (error) {
+    if (isSectorFolderTrashTableMissingError(error)) {
+      warnMissingTrashSchemaOnce()
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function upsertSectorFolderTrashItemSafely(
+  input: Parameters<typeof upsertSectorFolderTrashItem>[0],
+) {
+  try {
+    return await upsertSectorFolderTrashItem(input)
+  } catch (error) {
+    if (isSectorFolderTrashTableMissingError(error)) {
+      warnMissingTrashSchemaOnce()
+      throw new HttpError(
+        503,
+        "Banco sem suporte a lixeira do gerenciador. Execute a migration de listas laterais.",
+      )
+    }
+
+    throw error
+  }
+}
+
+async function deleteSectorFolderTrashByItemIdsSafely(itemIds: string[]) {
+  try {
+    await deleteSectorFolderTrashByItemIds(itemIds)
+  } catch (error) {
+    if (isSectorFolderTrashTableMissingError(error)) {
+      warnMissingTrashSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function listFavoriteSectorFolderUserItemsSafely(params: {
+  viewerSectorKey: string
+  username: string
 }) {
+  try {
+    return await listFavoriteSectorFolderUserItems(params)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function listRecentSectorFolderUserItemsSafely(params: {
+  viewerSectorKey: string
+  username: string
+}) {
+  try {
+    return await listRecentSectorFolderUserItems(params)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderUserRelationsByItemIdsSafely(params: {
+  viewerSectorKey: string
+  username: string
+  itemIds: string[]
+}) {
+  try {
+    return await listSectorFolderUserItemRelationsByItemIds(params)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      return []
+    }
+
+    throw error
+  }
+}
+
+async function registerSectorFolderAccessSafely(
+  input: Parameters<typeof registerSectorFolderAccess>[0],
+) {
+  try {
+    await registerSectorFolderAccess(input)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function setSectorFolderFavoriteSafely(
+  input: Parameters<typeof setSectorFolderFavorite>[0],
+) {
+  try {
+    await setSectorFolderFavorite(input)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      throw new HttpError(
+        503,
+        "Banco sem suporte a favoritos e recentes do gerenciador. Execute a migration de listas laterais.",
+      )
+    }
+
+    throw error
+  }
+}
+
+async function deleteSectorFolderUserItemsByItemIdsSafely(itemIds: string[]) {
+  try {
+    await deleteSectorFolderUserItemsByItemIds(itemIds)
+  } catch (error) {
+    if (isSectorFolderUserItemTableMissingError(error)) {
+      warnMissingUserItemSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function resolveParentContext(params: {
+  requestedSector: SectorDefinition
+  parentItemId: string | null
+  sourceSector: SectorDefinition | null
+  sharedRootItemId: string | null
+}): Promise<ResolvedFolderContext> {
   if (!params.parentItemId) {
     return {
       currentFolder: null,
-      currentFolderPath: params.sector.folderPath,
+      currentFolderPath: params.requestedSector.folderPath,
+      pathSector: params.requestedSector,
+      sharedFolder: null,
     }
   }
 
@@ -579,36 +1182,129 @@ async function resolveParentContext(params: {
     throw new HttpError(400, "Selecione uma pasta valida.")
   }
 
-  assertItemBelongsToSector(currentFolder, params.sector)
+  if (!params.sourceSector || !params.sharedRootItemId) {
+    assertItemBelongsToSector(currentFolder, params.requestedSector)
+
+    return {
+      currentFolder,
+      currentFolderPath: buildItemPathFromSector(
+        currentFolder,
+        params.requestedSector,
+      ),
+      pathSector: params.requestedSector,
+      sharedFolder: null,
+    }
+  }
+
+  const share = await getSectorFolderShareByTargetAndItem({
+    itemId: params.sharedRootItemId,
+    targetSectorKey: params.requestedSector.key,
+  })
+  if (!share || share.SETOR_ORIGEM_CHAVE !== params.sourceSector.key) {
+    throw new HttpError(404, "Pasta compartilhada nao encontrada para este setor.")
+  }
+
+  const sharedRootItem = await getSharePointItemById(params.sharedRootItemId)
+  if (!sharedRootItem.folder) {
+    throw new HttpError(404, "Pasta compartilhada nao encontrada para este setor.")
+  }
+
+  assertItemBelongsToSector(sharedRootItem, params.sourceSector)
+  assertItemBelongsToSector(currentFolder, params.sourceSector)
+
+  const sharedRootPath = buildItemPathFromSector(sharedRootItem, params.sourceSector)
+  const currentFolderPath = buildItemPathFromSector(currentFolder, params.sourceSector)
+  const normalizedSharedRootPath = normalizeComparablePath(sharedRootPath)
+  const normalizedCurrentFolderPath = normalizeComparablePath(currentFolderPath)
+
+  if (
+    normalizedCurrentFolderPath !== normalizedSharedRootPath &&
+    !normalizedCurrentFolderPath.startsWith(`${normalizedSharedRootPath}/`)
+  ) {
+    throw new HttpError(403, "A pasta selecionada nao pertence ao compartilhamento informado.")
+  }
 
   return {
     currentFolder,
-    currentFolderPath: buildItemPathFromSector(currentFolder, params.sector),
+    currentFolderPath,
+    pathSector: params.sourceSector,
+    sharedFolder: buildSharedFolderSummary(params.sourceSector, share),
   }
 }
 
-async function buildBreadcrumbs(
-  sector: SectorDefinition,
-  currentFolderPath: string,
-) {
+async function buildBreadcrumbs(params: {
+  requestedSector: SectorDefinition
+  pathSector: SectorDefinition
+  currentFolderPath: string
+  sharedFolder?: SharedFolderSummary | null
+}) {
   const breadcrumbs: BreadcrumbItem[] = [
     {
       id: null,
-      label: sector.label,
-      path: sector.folderPath,
+      label: params.requestedSector.label,
+      path: params.requestedSector.folderPath,
     },
   ]
 
-  const normalizedCurrentFolderPath = normalizePath(currentFolderPath)
-  const normalizedSectorPath = normalizePath(sector.folderPath)
-  if (!normalizedCurrentFolderPath || normalizedCurrentFolderPath === normalizedSectorPath) {
+  const normalizedCurrentFolderPath = normalizePath(params.currentFolderPath)
+  if (!normalizedCurrentFolderPath) {
     return breadcrumbs
   }
 
-  const sectorSegments = normalizedSectorPath.split("/").filter(Boolean)
-  const currentSegments = normalizedCurrentFolderPath.split("/").filter(Boolean)
-  const nestedSegments = currentSegments.slice(sectorSegments.length)
-  let cumulativePath = normalizedSectorPath
+  if (!params.sharedFolder) {
+    const normalizedSectorPath = normalizePath(params.pathSector.folderPath)
+    if (normalizedCurrentFolderPath === normalizedSectorPath) {
+      return breadcrumbs
+    }
+
+    const sectorSegments = normalizedSectorPath.split("/").filter(Boolean)
+    const currentSegments = normalizedCurrentFolderPath.split("/").filter(Boolean)
+    const nestedSegments = currentSegments.slice(sectorSegments.length)
+    let cumulativePath = normalizedSectorPath
+
+    for (const segment of nestedSegments) {
+      cumulativePath = joinPaths(cumulativePath, segment)
+
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        const item = await getSharePointItemByPath(cumulativePath)
+        breadcrumbs.push({
+          id: item.id,
+          label: item.name,
+          path: cumulativePath,
+        })
+      } catch {
+        breadcrumbs.push({
+          id: null,
+          label: segment,
+          path: cumulativePath,
+        })
+      }
+    }
+
+    return breadcrumbs
+  }
+
+  const sharedRootItem = await getSharePointItemById(params.sharedFolder.rootItemId)
+  const sharedRootPath = buildItemPathFromSector(
+    sharedRootItem,
+    params.pathSector,
+  )
+
+  breadcrumbs.push({
+    id: sharedRootItem.id,
+    label: sharedRootItem.name,
+    path: sharedRootPath,
+  })
+
+  if (normalizePath(params.currentFolderPath) === normalizePath(sharedRootPath)) {
+    return breadcrumbs
+  }
+
+  const sharedRootSegments = normalizePath(sharedRootPath).split("/").filter(Boolean)
+  const currentSegments = normalizePath(params.currentFolderPath).split("/").filter(Boolean)
+  const nestedSegments = currentSegments.slice(sharedRootSegments.length)
+  let cumulativePath = sharedRootPath
 
   for (const segment of nestedSegments) {
     cumulativePath = joinPaths(cumulativePath, segment)
@@ -723,13 +1419,14 @@ async function collectNestedItemIds(itemId: string) {
   return Array.from(itemIds)
 }
 
-async function deleteItemAndMetadata(params: {
+async function permanentlyDeleteItemAndMetadata(params: {
   sector: SectorDefinition
   itemId: string
   requireFolder?: boolean
 }) {
   const currentItem = await getSharePointItemById(params.itemId)
   assertItemBelongsToSector(currentItem, params.sector)
+  assertItemIsNotFixedSectorFolder(currentItem, params.sector)
 
   if (params.requireFolder && !currentItem.folder) {
     throw new HttpError(400, "Selecione uma pasta valida.")
@@ -740,8 +1437,70 @@ async function deleteItemAndMetadata(params: {
     : [params.itemId]
 
   await deleteSharePointItemById(params.itemId)
-  await Promise.all(
-    itemIdsToCleanup.map((itemId) => deleteSectorMetadataSafely(itemId)),
+  await Promise.all([
+    Promise.all(itemIdsToCleanup.map((itemId) => deleteSectorMetadataSafely(itemId))),
+    deleteSectorFolderSharesSafely(itemIdsToCleanup),
+    deleteSectorFolderTrashByItemIdsSafely(itemIdsToCleanup),
+    deleteSectorFolderUserItemsByItemIdsSafely(itemIdsToCleanup),
+  ])
+}
+
+async function moveItemToTrash(params: {
+  sector: SectorDefinition
+  itemId: string
+  actor: UserProfile
+  requireFolder?: boolean
+}) {
+  const currentItem = await getSharePointItemById(params.itemId)
+  assertItemBelongsToSector(currentItem, params.sector)
+  assertItemIsNotFixedSectorFolder(currentItem, params.sector)
+
+  if (params.requireFolder && !currentItem.folder) {
+    throw new HttpError(400, "Selecione uma pasta valida.")
+  }
+
+  await upsertSectorFolderTrashItemSafely({
+    itemId: currentItem.id,
+    sectorKey: params.sector.key,
+    name: currentItem.name,
+    path: buildItemPathFromSector(currentItem, params.sector),
+    itemType: currentItem.folder ? "folder" : "file",
+    extension: currentItem.folder
+      ? null
+      : path.extname(currentItem.name).toLowerCase() || null,
+    size: currentItem.folder ? null : Number(currentItem.size ?? 0),
+    webUrl: currentItem.webUrl ?? null,
+    deletedByName: params.actor.displayName,
+    deletedByEmail: params.actor.email,
+    deletedByUsername: params.actor.username,
+    deletedAt: new Date(),
+  })
+}
+
+function buildTrashPathIndex(trashRows: SectorFolderTrashRecord[]) {
+  const pathIndex = new Map<string, string[]>()
+
+  trashRows.forEach((trashRow) => {
+    const sectorPaths = pathIndex.get(trashRow.SETOR_CHAVE) ?? []
+    sectorPaths.push(normalizeComparablePath(trashRow.CAMINHO))
+    pathIndex.set(trashRow.SETOR_CHAVE, sectorPaths)
+  })
+
+  return pathIndex
+}
+
+function isPathHiddenByTrash(
+  sectorKey: string,
+  itemPath: string,
+  trashPathIndex: Map<string, string[]>,
+) {
+  const sectorTrashPaths = trashPathIndex.get(sectorKey) ?? []
+  const normalizedItemPath = normalizeComparablePath(itemPath)
+
+  return sectorTrashPaths.some(
+    (trashPath) =>
+      normalizedItemPath === trashPath ||
+      normalizedItemPath.startsWith(`${trashPath}/`),
   )
 }
 
@@ -749,60 +1508,393 @@ export const listFolderContents = asyncHandler(
   async (req: Request, res: Response) => {
     ensureSharePointIsAvailable()
 
-    const sector = parseSectorFromQuery(req)
+    const requestedSector = parseSectorFromQuery(req)
+    const view = parseDirectoryView(req.query.view)
+    const username = parseOptionalUsername(req.query.username)
     const parentItemId = parseParentItemId(req.query.parentItemId)
-    await ensureSharePointFolder(sector.folderPath)
+    const sourceSector = parseOptionalSector(req.query.sourceSector)
+    const sharedRootItemId = parseParentItemId(req.query.sharedRootItemId)
+    await ensureSectorStructure(requestedSector)
 
-    const [metadataRows, parentContext] = await Promise.all([
-      listSectorMetadataSafely(sector.label),
-      resolveParentContext({
-        sector,
-        parentItemId,
-      }),
+    const parentContext =
+      !parentItemId || view === "deleted"
+        ? {
+            currentFolder: null,
+            currentFolderPath: requestedSector.folderPath,
+            pathSector: requestedSector,
+            sharedFolder: null,
+          }
+        : await resolveParentContext({
+            requestedSector,
+            parentItemId,
+            sourceSector,
+            sharedRootItemId,
+          })
+
+    const targetShares = await listSectorFolderSharesByTargetSafely(
+      requestedSector.key,
+    )
+    const shareByRootItemId = new Map(
+      targetShares.map((share) => [share.SHAREPOINT_ITEM_ID, share]),
+    )
+
+    const trashRowsBySector = new Map<string, SectorFolderTrashRecord[]>()
+    const ensureSectorTrashRows = async (sectorKey: string) => {
+      if (trashRowsBySector.has(sectorKey)) {
+        return trashRowsBySector.get(sectorKey) ?? []
+      }
+
+      const rows = await listSectorFolderTrashItemsSafely(sectorKey)
+      trashRowsBySector.set(sectorKey, rows)
+      return rows
+    }
+
+    await ensureSectorTrashRows(requestedSector.key)
+    if (parentContext.pathSector.key !== requestedSector.key) {
+      await ensureSectorTrashRows(parentContext.pathSector.key)
+    }
+
+    const itemEntries: Array<{
+      item: SharePointDriveItem
+      sector: SectorDefinition
+      sharedFolder: SharedFolderSummary | null
+      readOnly: boolean
+      isFavorite: boolean
+    }> = []
+
+    const deletedItemResponses: Array<Record<string, unknown>> = []
+
+    if (parentContext.currentFolder) {
+      const parentTrashRecord = await getSectorFolderTrashByItemIdSafely(
+        parentContext.currentFolder.id,
+      )
+      if (parentTrashRecord) {
+        throw new HttpError(404, "A pasta selecionada esta na lixeira.")
+      }
+
+      const items = await listSharePointFolderChildrenByItemId(
+        parentContext.currentFolder.id,
+      )
+      const currentTrashRows =
+        trashRowsBySector.get(parentContext.pathSector.key) ?? []
+      const trashPathIndex = buildTrashPathIndex(currentTrashRows)
+      const visibleItems = items.filter((item) => {
+        const itemPath = buildItemPathFromSector(item, parentContext.pathSector)
+        return !isPathHiddenByTrash(
+          parentContext.pathSector.key,
+          itemPath,
+          trashPathIndex,
+        )
+      })
+
+      const favoriteRelations =
+        username && visibleItems.length > 0
+          ? await listSectorFolderUserRelationsByItemIdsSafely({
+              viewerSectorKey: requestedSector.key,
+              username,
+              itemIds: visibleItems.map((item) => item.id),
+            })
+          : []
+      const favoriteItemIds = new Set(
+        favoriteRelations
+          .filter((relation) => Boolean(relation.FAVORITO))
+          .map((relation) => buildUserRelationKey(relation.SHAREPOINT_ITEM_ID)),
+      )
+
+      itemEntries.push(
+        ...visibleItems.map((item) => ({
+          item,
+          sector: parentContext.pathSector,
+          sharedFolder: parentContext.sharedFolder,
+          readOnly: Boolean(parentContext.sharedFolder),
+          isFavorite: favoriteItemIds.has(buildUserRelationKey(item.id)),
+        })),
+      )
+
+      if (username) {
+        await registerSectorFolderAccessSafely({
+          itemId: parentContext.currentFolder.id,
+          viewerSectorKey: requestedSector.key,
+          sourceSectorKey: parentContext.pathSector.key,
+          sharedRootItemId: parentContext.sharedFolder?.rootItemId ?? null,
+          username,
+        })
+      }
+    } else if (view === "deleted") {
+      const trashRows = trashRowsBySector.get(requestedSector.key) ?? []
+      const metadataRows = await listSectorMetadataSafely(requestedSector.label)
+      const metadataByItemId = new Map(
+        metadataRows.map((metadata) => [metadata.itemId, metadata]),
+      )
+
+      deletedItemResponses.push(
+        ...trashRows.map((trashRow) =>
+          buildDeletedItemResponse({
+            trash: trashRow,
+            metadata: metadataByItemId.get(trashRow.SHAREPOINT_ITEM_ID) ?? null,
+            sourceSector: requestedSector,
+            isFavorite: false,
+          }),
+        ),
+      )
+    } else if (view === "recent" || view === "favorites") {
+      const userRecords =
+        username == null
+          ? []
+          : view === "recent"
+            ? await listRecentSectorFolderUserItemsSafely({
+                viewerSectorKey: requestedSector.key,
+                username,
+              })
+            : await listFavoriteSectorFolderUserItemsSafely({
+                viewerSectorKey: requestedSector.key,
+                username,
+              })
+
+      for (const record of userRecords) {
+        const recordSourceSector = resolveSector(record.SETOR_ORIGEM_CHAVE)
+        if (!recordSourceSector) {
+          continue
+        }
+
+        await ensureSectorTrashRows(recordSourceSector.key)
+        const recordTrashIndex = buildTrashPathIndex(
+          trashRowsBySector.get(recordSourceSector.key) ?? [],
+        )
+
+        try {
+          // eslint-disable-next-line no-await-in-loop
+          const item = await getSharePointItemById(record.SHAREPOINT_ITEM_ID)
+          if (!item.folder || !itemBelongsToSector(item, recordSourceSector)) {
+            continue
+          }
+
+          const itemPath = buildItemPathFromSector(item, recordSourceSector)
+          if (
+            isPathHiddenByTrash(
+              recordSourceSector.key,
+              itemPath,
+              recordTrashIndex,
+            )
+          ) {
+            continue
+          }
+
+          let sharedFolder: SharedFolderSummary | null = null
+          let readOnly = false
+
+          if (recordSourceSector.key !== requestedSector.key) {
+            const shareRootId =
+              record.RAIZ_COMPARTILHADA_ITEM_ID ?? record.SHAREPOINT_ITEM_ID
+            const share = shareByRootItemId.get(shareRootId)
+            if (!share) {
+              continue
+            }
+
+            sharedFolder = buildSharedFolderSummary(recordSourceSector, share)
+            readOnly = true
+          }
+
+          itemEntries.push({
+            item,
+            sector: recordSourceSector,
+            sharedFolder,
+            readOnly,
+            isFavorite: Boolean(record.FAVORITO),
+          })
+        } catch (error) {
+          if (isSharePointNotFoundError(error)) {
+            continue
+          }
+
+          throw error
+        }
+      }
+    } else {
+      if (view === "all") {
+        const ownItems = await listSharePointFolderChildren(
+          requestedSector.folderPath,
+        )
+        const ownTrashIndex = buildTrashPathIndex(
+          trashRowsBySector.get(requestedSector.key) ?? [],
+        )
+
+        itemEntries.push(
+          ...ownItems
+            .filter((item) => {
+              const itemPath = buildItemPathFromSector(item, requestedSector)
+              return !isPathHiddenByTrash(
+                requestedSector.key,
+                itemPath,
+                ownTrashIndex,
+              )
+            })
+            .map((item) => ({
+              item,
+              sector: requestedSector,
+              sharedFolder: null,
+              readOnly: false,
+              isFavorite: false,
+            })),
+        )
+      }
+
+      if (view === "all" || view === "shared") {
+        for (const share of targetShares) {
+          const sharedSourceSector = resolveSector(share.SETOR_ORIGEM_CHAVE)
+          if (!sharedSourceSector) {
+            continue
+          }
+
+          await ensureSectorTrashRows(sharedSourceSector.key)
+
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            const sharedItem = await getSharePointItemById(
+              share.SHAREPOINT_ITEM_ID,
+            )
+            if (
+              !sharedItem.folder ||
+              !itemBelongsToSector(sharedItem, sharedSourceSector)
+            ) {
+              // eslint-disable-next-line no-await-in-loop
+              await deleteSectorFolderSharesSafely([share.SHAREPOINT_ITEM_ID])
+              continue
+            }
+
+            const sharedItemPath = buildItemPathFromSector(
+              sharedItem,
+              sharedSourceSector,
+            )
+            const sharedTrashIndex = buildTrashPathIndex(
+              trashRowsBySector.get(sharedSourceSector.key) ?? [],
+            )
+            if (
+              isPathHiddenByTrash(
+                sharedSourceSector.key,
+                sharedItemPath,
+                sharedTrashIndex,
+              )
+            ) {
+              continue
+            }
+
+            itemEntries.push({
+              item: sharedItem,
+              sector: sharedSourceSector,
+              sharedFolder: buildSharedFolderSummary(sharedSourceSector, share),
+              readOnly: true,
+              isFavorite: false,
+            })
+          } catch (error) {
+            if (isSharePointNotFoundError(error)) {
+              // eslint-disable-next-line no-await-in-loop
+              await deleteSectorFolderSharesSafely([share.SHAREPOINT_ITEM_ID])
+              continue
+            }
+
+            throw error
+          }
+        }
+      }
+
+      if (username && itemEntries.length > 0) {
+        const favoriteRelations =
+          await listSectorFolderUserRelationsByItemIdsSafely({
+            viewerSectorKey: requestedSector.key,
+            username,
+            itemIds: itemEntries.map((entry) => entry.item.id),
+          })
+        const favoriteIds = new Set(
+          favoriteRelations
+            .filter((relation) => Boolean(relation.FAVORITO))
+            .map((relation) => buildUserRelationKey(relation.SHAREPOINT_ITEM_ID)),
+        )
+
+        itemEntries.forEach((entry) => {
+          entry.isFavorite = favoriteIds.has(buildUserRelationKey(entry.item.id))
+        })
+      }
+    }
+
+    const metadataSectorLabels = new Set<string>([
+      requestedSector.label,
+      parentContext.pathSector.label,
+      ...itemEntries.map((entry) => entry.sector.label),
     ])
+
+    const metadataRows =
+      deletedItemResponses.length > 0 && itemEntries.length === 0
+        ? await listSectorMetadataSafely(requestedSector.label)
+        : (
+            await Promise.all(
+              Array.from(metadataSectorLabels).map((sectorLabel) =>
+                listSectorMetadataSafely(sectorLabel),
+              ),
+            )
+          ).flat()
     const metadataByItemId = new Map(
       metadataRows.map((metadata) => [metadata.itemId, metadata]),
     )
 
-    const items = parentContext.currentFolder
-      ? await listSharePointFolderChildrenByItemId(parentContext.currentFolder.id)
-      : await listSharePointFolderChildren(sector.folderPath)
-
-    const sortedItems = items.sort((left, right) => {
-      if (Boolean(left.folder) !== Boolean(right.folder)) {
-        return left.folder ? -1 : 1
+    const sortedItems = itemEntries.sort((left, right) => {
+      if (Boolean(left.item.folder) !== Boolean(right.item.folder)) {
+        return left.item.folder ? -1 : 1
       }
 
-      return left.name.localeCompare(right.name, "pt-BR", {
+      return left.item.name.localeCompare(right.item.name, "pt-BR", {
         sensitivity: "base",
       })
     })
 
-    const responseItems = await Promise.all(
-      sortedItems.map(async (item) => {
-        const members = await collectItemMembers(item, metadataByItemId)
-        return buildItemResponse({
-          item,
-          sector,
-          metadata: metadataByItemId.get(item.id) ?? null,
-          members,
-        })
-      }),
-    )
+    const responseItems =
+      deletedItemResponses.length > 0 && itemEntries.length === 0
+        ? deletedItemResponses
+        : await Promise.all(
+            sortedItems.map(async (entry) => {
+              const members = await collectItemMembers(entry.item, metadataByItemId)
+              return buildItemResponse({
+                item: entry.item,
+                sector: entry.sector,
+                metadata: metadataByItemId.get(entry.item.id) ?? null,
+                members,
+                sharedFolder: entry.sharedFolder,
+                readOnly: entry.readOnly,
+                isFavorite: entry.isFavorite,
+              })
+            }),
+          )
 
-    const breadcrumbs = await buildBreadcrumbs(
-      sector,
-      parentContext.currentFolderPath,
-    )
+    const breadcrumbs =
+      view === "deleted" && !parentContext.currentFolder
+        ? [
+            {
+              id: null,
+              label: requestedSector.label,
+              path: requestedSector.folderPath,
+            },
+          ]
+        : await buildBreadcrumbs({
+            requestedSector,
+            pathSector: parentContext.pathSector,
+            currentFolderPath: parentContext.currentFolderPath,
+            sharedFolder: parentContext.sharedFolder,
+          })
 
     res.json({
       sector: {
-        key: sector.key,
-        label: sector.label,
-        folderPath: sector.folderPath,
+        key: requestedSector.key,
+        label: requestedSector.label,
+        folderPath: requestedSector.folderPath,
       },
-      currentFolder: buildCurrentFolderResponse(parentContext.currentFolder, sector),
+      view,
+      currentFolder: buildCurrentFolderResponse(
+        parentContext.currentFolder,
+        parentContext.pathSector,
+        parentContext.sharedFolder,
+      ),
       currentFolderPath: parentContext.currentFolderPath,
+      sharedContext: parentContext.sharedFolder,
       breadcrumbs,
       items: responseItems,
     })
@@ -820,10 +1912,20 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   const name = parseFolderName(body.name)
   const parentItemId = parseParentItemId(body.parentItemId)
   const now = new Date()
+  await ensureSectorStructure(sector)
   const parentContext = await resolveParentContext({
-    sector,
+    requestedSector: sector,
     parentItemId,
+    sourceSector: null,
+    sharedRootItemId: null,
   })
+
+  if (parentContext.sharedFolder) {
+    throw new HttpError(
+      403,
+      "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
+    )
+  }
 
   try {
     const item = await createSharePointFolder({
@@ -875,6 +1977,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   const actor = parseActor(body)
   const name = parseFolderName(body.name)
   const itemId = String(req.params.itemId ?? "").trim()
+  await ensureSectorStructure(sector)
 
   if (!itemId) {
     throw new HttpError(400, "Informe a pasta a ser atualizada.")
@@ -887,6 +1990,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     }
 
     assertItemBelongsToSector(currentItem, sector)
+    assertItemIsNotFixedSectorFolder(currentItem, sector)
 
     const updatedItem = await updateSharePointItemName({
       itemId,
@@ -950,11 +2054,29 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   const file = req.file
 
   assertAllowedUploadFile(file)
+  await ensureSectorStructure(sector)
 
   const parentContext = await resolveParentContext({
-    sector,
+    requestedSector: sector,
     parentItemId,
+    sourceSector: null,
+    sharedRootItemId: null,
   })
+  if (parentContext.sharedFolder) {
+    throw new HttpError(
+      403,
+      "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
+    )
+  }
+  const requiresValidity =
+    Boolean(
+      findSectorFixedFolderAncestor(
+        parentContext.pathSector,
+        parentContext.currentFolderPath,
+      )
+        ?.requiresValidityForFiles,
+    ) && sector.key === "sesmt"
+  const fileValidity = parseNormasFileValidity(body, requiresValidity)
 
   const uploaded = await uploadFileToSharePoint({
     tempFilePath: file.path,
@@ -969,7 +2091,7 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     itemId: uploadedItem.id,
     sector: sector.label,
     name: uploadedItem.name,
-    path: buildItemPathFromSector(uploadedItem, sector),
+    path: buildItemPathFromSector(uploadedItem, parentContext.pathSector),
     createdByName: actor.displayName,
     createdByEmail: actor.email,
     createdByUsername: actor.username,
@@ -978,6 +2100,8 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     updatedByUsername: actor.username,
     createdAt: parseDateOrNull(uploadedItem.createdDateTime) ?? now,
     updatedAt: now,
+    validityMonths: fileValidity.validityMonths,
+    validityYears: fileValidity.validityYears,
   })
   const metadataByItemId = new Map<string, SectorFolderMetadata>()
   if (metadata) {
@@ -997,10 +2121,242 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   })
 })
 
+export const listFolderShares = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const sector = parseSectorFromQuery(req)
+    const itemId = String(req.params.itemId ?? "").trim()
+
+    if (!itemId) {
+      throw new HttpError(400, "Informe a pasta a ser compartilhada.")
+    }
+
+    const currentItem = await getSharePointItemById(itemId)
+    if (!currentItem.folder) {
+      throw new HttpError(400, "Somente pastas podem ser compartilhadas.")
+    }
+
+    assertItemBelongsToSector(currentItem, sector)
+
+    try {
+      const shares = await listSectorFolderSharesByItemId(itemId)
+      const responseShares = shares
+        .filter((share) => share.SETOR_ORIGEM_CHAVE === sector.key)
+        .map((share) => {
+          const targetSector = resolveSector(share.SETOR_DESTINO_CHAVE)
+          if (!targetSector) {
+            return null
+          }
+
+          return {
+            id: share.ID,
+            targetSectorKey: targetSector.key,
+            targetSectorLabel: targetSector.label,
+            sharedAt: parseDateOrNull(share.COMPARTILHADO_EM)?.toISOString() ?? null,
+            sharedBy: {
+              displayName: share.COMPARTILHADO_POR_NOME ?? null,
+              email: share.COMPARTILHADO_POR_EMAIL ?? null,
+              username: share.COMPARTILHADO_POR_USUARIO ?? null,
+            },
+          }
+        })
+        .filter(Boolean)
+
+      res.json({
+        itemId,
+        shares: responseShares,
+      })
+    } catch (error) {
+      if (isSectorFolderShareTableMissingError(error)) {
+        throw new HttpError(
+          503,
+          "Banco sem suporte a compartilhamento de pastas entre setores. Execute a migration de compartilhamento.",
+        )
+      }
+
+      throw error
+    }
+  },
+)
+
+export const shareFolder = asyncHandler(async (req: Request, res: Response) => {
+  ensureSharePointIsAvailable()
+
+  const body = req.body as Record<string, unknown>
+  const sector = parseSectorFromBody(body)
+  const actor = parseActor(body)
+  const itemId = String(req.params.itemId ?? "").trim()
+  const targetSectorKeys = parseTargetSectorKeys(body.targetSectorKeys)
+
+  if (!itemId) {
+    throw new HttpError(400, "Informe a pasta a ser compartilhada.")
+  }
+
+  const currentItem = await getSharePointItemById(itemId)
+  if (!currentItem.folder) {
+    throw new HttpError(400, "Somente pastas podem ser compartilhadas.")
+  }
+
+  assertItemBelongsToSector(currentItem, sector)
+
+  try {
+    const shares = await syncSectorFolderShares({
+      itemId,
+      sourceSectorKey: sector.key,
+      targetSectorKeys,
+      sharedByName: actor.displayName,
+      sharedByEmail: actor.email,
+      sharedByUsername: actor.username,
+    })
+
+    res.json({
+      itemId,
+      shares: shares
+        .map((share) => {
+          const targetSector = resolveSector(share.SETOR_DESTINO_CHAVE)
+          if (!targetSector) {
+            return null
+          }
+
+          return {
+            id: share.ID,
+            targetSectorKey: targetSector.key,
+            targetSectorLabel: targetSector.label,
+            sharedAt: parseDateOrNull(share.COMPARTILHADO_EM)?.toISOString() ?? null,
+          }
+        })
+        .filter(Boolean),
+    })
+  } catch (error) {
+    if (isSectorFolderShareTableMissingError(error)) {
+      throw new HttpError(
+        503,
+        "Banco sem suporte a compartilhamento de pastas entre setores. Execute a migration de compartilhamento.",
+      )
+    }
+
+    throw error
+  }
+})
+
+export const toggleFavoriteFolder = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const body = req.body as Record<string, unknown>
+    const requestedSector = parseSectorFromBody(body)
+    const username = parseOptionalUsername(body.username)
+    const sourceSector = parseOptionalSector(body.sourceSector) ?? requestedSector
+    const sharedRootItemId = parseParentItemId(body.sharedRootItemId)
+    const itemId = String(req.params.itemId ?? "").trim()
+    const favorite = Boolean(body.favorite)
+
+    if (!itemId) {
+      throw new HttpError(400, "Informe a pasta a ser favoritada.")
+    }
+
+    if (!username) {
+      throw new HttpError(400, "Informe o usuario responsavel pelos favoritos.")
+    }
+
+    const context = await resolveParentContext({
+      requestedSector,
+      parentItemId: itemId,
+      sourceSector: sourceSector.key === requestedSector.key ? null : sourceSector,
+      sharedRootItemId:
+        sourceSector.key === requestedSector.key
+          ? null
+          : sharedRootItemId ?? itemId,
+    })
+
+    if (!context.currentFolder?.folder) {
+      throw new HttpError(400, "Somente pastas podem ser marcadas como favoritas.")
+    }
+
+    await setSectorFolderFavoriteSafely({
+      itemId: context.currentFolder.id,
+      viewerSectorKey: requestedSector.key,
+      sourceSectorKey: context.pathSector.key,
+      sharedRootItemId: context.sharedFolder?.rootItemId ?? null,
+      username,
+      favorite,
+    })
+
+    res.json({
+      itemId: context.currentFolder.id,
+      favorite,
+    })
+  },
+)
+
+export const restoreTrashedItem = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const sector = parseSectorFromQuery(req)
+    const itemId = String(req.params.itemId ?? "").trim()
+
+    if (!itemId) {
+      throw new HttpError(400, "Informe o item a ser restaurado.")
+    }
+
+    const trashRecord = await getSectorFolderTrashByItemIdSafely(itemId)
+    if (!trashRecord || trashRecord.SETOR_CHAVE !== sector.key) {
+      throw new HttpError(404, "Item da lixeira nao encontrado para este setor.")
+    }
+
+    await deleteSectorFolderTrashByItemIdsSafely([itemId])
+    res.status(204).send()
+  },
+)
+
+export const permanentlyDeleteTrashedItem = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const sector = parseSectorFromQuery(req)
+    const itemId = String(req.params.itemId ?? "").trim()
+
+    if (!itemId) {
+      throw new HttpError(400, "Informe o item a ser excluido permanentemente.")
+    }
+
+    const trashRecord = await getSectorFolderTrashByItemIdSafely(itemId)
+    if (!trashRecord || trashRecord.SETOR_CHAVE !== sector.key) {
+      throw new HttpError(404, "Item da lixeira nao encontrado para este setor.")
+    }
+
+    try {
+      await permanentlyDeleteItemAndMetadata({
+        sector,
+        itemId,
+        requireFolder: trashRecord.TIPO_ITEM === "folder",
+      })
+    } catch (error) {
+      if (isSharePointNotFoundError(error)) {
+        await Promise.all([
+          deleteSectorMetadataSafely(itemId),
+          deleteSectorFolderSharesSafely([itemId]),
+          deleteSectorFolderTrashByItemIdsSafely([itemId]),
+          deleteSectorFolderUserItemsByItemIdsSafely([itemId]),
+        ])
+        res.status(204).send()
+        return
+      }
+
+      throw error
+    }
+
+    res.status(204).send()
+  },
+)
+
 export const remove = asyncHandler(async (req: Request, res: Response) => {
   ensureSharePointIsAvailable()
 
   const sector = parseSectorFromQuery(req)
+  const actor = parseActor((req.body as Record<string, unknown>) ?? {})
   const itemId = String(req.params.itemId ?? "").trim()
 
   if (!itemId) {
@@ -1008,9 +2364,10 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    await deleteItemAndMetadata({
+    await moveItemToTrash({
       sector,
       itemId,
+      actor,
       requireFolder: true,
     })
 
@@ -1028,6 +2385,7 @@ export const removeItem = asyncHandler(async (req: Request, res: Response) => {
   ensureSharePointIsAvailable()
 
   const sector = parseSectorFromQuery(req)
+  const actor = parseActor((req.body as Record<string, unknown>) ?? {})
   const itemId = String(req.params.itemId ?? "").trim()
 
   if (!itemId) {
@@ -1035,9 +2393,10 @@ export const removeItem = asyncHandler(async (req: Request, res: Response) => {
   }
 
   try {
-    await deleteItemAndMetadata({
+    await moveItemToTrash({
       sector,
       itemId,
+      actor,
     })
 
     res.status(204).send()

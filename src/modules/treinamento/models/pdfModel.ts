@@ -6,10 +6,21 @@ export type PdfRecord = {
   PDF_PATH: string | null
   PROCEDIMENTO_ID: string | null
   NORMA_ID: string | null
+  ORDEM?: number | null
   VERSAO: number
 }
 
+export async function hasPdfOrderColumn() {
+  const pool = await getPool()
+  const result = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.TPDFS', 'ORDEM') AS ORDEM_COL
+  `)
+
+  return Boolean(result.recordset[0]?.ORDEM_COL)
+}
+
 export async function listPdfs(trilhaId?: string, cpf?: string) {
+  const hasOrderColumn = await hasPdfOrderColumn()
   const pool = await getPool()
   const request = pool.request()
   const conditions: string[] = []
@@ -29,7 +40,7 @@ export async function listPdfs(trilhaId?: string, cpf?: string) {
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
   const result = await request.query(`
-    SELECT ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO
+    SELECT ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO
     FROM (
       SELECT
         p.ID,
@@ -37,6 +48,7 @@ export async function listPdfs(trilhaId?: string, cpf?: string) {
         p.PDF_PATH,
         p.PROCEDIMENTO_ID,
         p.NORMA_ID,
+        ${hasOrderColumn ? "p.ORDEM" : "CAST(NULL AS INT) AS ORDEM"},
         p.VERSAO,
         ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
       FROM dbo.TPDFS p
@@ -73,11 +85,25 @@ export type PdfCreateInput = {
   pdfPath: string
   procedimentoId?: string | null
   normaId?: string | null
+  ordem?: number | null
 }
 
 export async function createPdf(input: PdfCreateInput) {
+  const hasOrderColumn = await hasPdfOrderColumn()
   const pool = await getPool()
-  await pool
+  let ordem = hasOrderColumn ? input.ordem ?? null : null
+
+  if (hasOrderColumn && ordem === null) {
+    const maxOrderResult = await pool
+      .request()
+      .input("TRILHA_FK_ID", sql.UniqueIdentifier, input.trilhaId)
+      .query(
+        "SELECT ISNULL(MAX(ORDEM), 0) AS MAX_ORDEM FROM dbo.TPDFS WHERE TRILHA_FK_ID = @TRILHA_FK_ID",
+      )
+    ordem = (maxOrderResult.recordset[0]?.MAX_ORDEM ?? 0) + 1
+  }
+
+  const request = pool
     .request()
     .input("ID", sql.UniqueIdentifier, input.id)
     .input("TRILHA_FK_ID", sql.UniqueIdentifier, input.trilhaId)
@@ -85,9 +111,18 @@ export async function createPdf(input: PdfCreateInput) {
     .input("PROCEDIMENTO_ID", sql.UniqueIdentifier, input.procedimentoId ?? null)
     .input("NORMA_ID", sql.UniqueIdentifier, input.normaId ?? null)
     .input("VERSAO", sql.Int, 1)
-    .query(
+
+  if (hasOrderColumn) {
+    await request
+      .input("ORDEM", sql.Int, ordem)
+      .query(
+        "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)",
+      )
+  } else {
+    await request.query(
       "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)",
     )
+  }
 
   return getPdfById(input.id)
 }
@@ -97,9 +132,11 @@ export type PdfUpdateInput = {
   pdfPath?: string | null
   procedimentoId?: string | null
   normaId?: string | null
+  ordem?: number | null
 }
 
 export async function updatePdf(id: string, input: PdfUpdateInput) {
+  const hasOrderColumn = await hasPdfOrderColumn()
   const pool = await getPool()
   const latestResult = await pool
     .request()
@@ -122,8 +159,11 @@ export async function updatePdf(id: string, input: PdfUpdateInput) {
     input.normaId !== undefined
       ? input.normaId
       : latest.NORMA_ID
+  const ordem = hasOrderColumn
+    ? input.ordem ?? latest.ORDEM ?? 0
+    : null
 
-  await pool
+  const request = pool
     .request()
     .input("ID", sql.UniqueIdentifier, id)
     .input("TRILHA_FK_ID", sql.UniqueIdentifier, trilhaId)
@@ -131,9 +171,18 @@ export async function updatePdf(id: string, input: PdfUpdateInput) {
     .input("PROCEDIMENTO_ID", sql.UniqueIdentifier, procedimentoId ?? null)
     .input("NORMA_ID", sql.UniqueIdentifier, normaId ?? null)
     .input("VERSAO", sql.Int, nextVersion)
-    .query(
+
+  if (hasOrderColumn) {
+    await request
+      .input("ORDEM", sql.Int, ordem)
+      .query(
+        "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)",
+      )
+  } else {
+    await request.query(
       "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)",
     )
+  }
 
   return getPdfById(id)
 }

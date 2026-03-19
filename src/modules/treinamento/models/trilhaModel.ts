@@ -219,8 +219,7 @@ export async function trilhaHasEficaciaConfig(trilhaId: string) {
     .query(`
       SELECT TOP 1
         CASE
-          WHEN ISNULL(AVALIACAO_EFICACIA_OBRIGATORIA, 0) = 1
-               AND NULLIF(LTRIM(RTRIM(ISNULL(AVALIACAO_EFICACIA_PERGUNTA, ''))), '') IS NOT NULL
+          WHEN NULLIF(LTRIM(RTRIM(ISNULL(AVALIACAO_EFICACIA_PERGUNTA, ''))), '') IS NOT NULL
           THEN CAST(1 AS BIT)
           ELSE CAST(0 AS BIT)
         END AS POSSUI

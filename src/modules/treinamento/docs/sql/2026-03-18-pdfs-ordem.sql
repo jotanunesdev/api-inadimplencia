@@ -1,0 +1,31 @@
+IF COL_LENGTH('dbo.TPDFS', 'ORDEM') IS NULL
+BEGIN
+    ALTER TABLE dbo.TPDFS
+        ADD ORDEM INT NULL;
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.check_constraints
+    WHERE name = 'CK_TPDFS_ORDEM'
+      AND parent_object_id = OBJECT_ID('dbo.TPDFS')
+)
+BEGIN
+    ALTER TABLE dbo.TPDFS
+        ADD CONSTRAINT CK_TPDFS_ORDEM
+        CHECK (ORDEM IS NULL OR ORDEM >= 1);
+END;
+GO
+
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IX_TPDFS_TRILHA_FK_ID_ORDEM'
+      AND object_id = OBJECT_ID('dbo.TPDFS')
+)
+BEGIN
+    CREATE INDEX IX_TPDFS_TRILHA_FK_ID_ORDEM
+        ON dbo.TPDFS (TRILHA_FK_ID, ORDEM, ID, VERSAO DESC);
+END;
+GO
