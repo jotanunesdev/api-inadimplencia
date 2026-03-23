@@ -23,6 +23,8 @@ export const PROVA_MODO_APLICACAO = {
   INDIVIDUAL: "individual",
 } as const
 
+let ensureProvaSchemaPromise: Promise<void> | null = null
+
 export type ProvaModoAplicacao =
   (typeof PROVA_MODO_APLICACAO)[keyof typeof PROVA_MODO_APLICACAO]
 
@@ -32,6 +34,62 @@ export function normalizeProvaModoAplicacao(
   return String(value).toLowerCase() === PROVA_MODO_APLICACAO.INDIVIDUAL
     ? PROVA_MODO_APLICACAO.INDIVIDUAL
     : PROVA_MODO_APLICACAO.COLETIVA
+}
+
+async function ensureProvaSchemaSupportsMultipleProofTypes() {
+  if (!ensureProvaSchemaPromise) {
+    ensureProvaSchemaPromise = (async () => {
+      const pool = await getPool()
+      await pool.request().query(`
+        IF EXISTS (
+          SELECT 1
+          FROM sys.indexes
+          WHERE object_id = OBJECT_ID('dbo.TPROVAS')
+            AND name = 'UX_TPROVAS_TRILHA'
+        )
+        BEGIN
+          DROP INDEX UX_TPROVAS_TRILHA ON dbo.TPROVAS
+        END
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM sys.indexes
+          WHERE object_id = OBJECT_ID('dbo.TPROVAS')
+            AND name = 'IX_TPROVAS_ID_VERSAO'
+        )
+        BEGIN
+          CREATE INDEX IX_TPROVAS_ID_VERSAO
+            ON dbo.TPROVAS (ID, VERSAO DESC)
+        END
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM sys.indexes
+          WHERE object_id = OBJECT_ID('dbo.TPROVAS')
+            AND name = 'IX_TPROVAS_TRILHA_FK_ID'
+        )
+        BEGIN
+          CREATE INDEX IX_TPROVAS_TRILHA_FK_ID
+            ON dbo.TPROVAS (TRILHA_FK_ID, VERSAO DESC)
+        END
+
+        IF NOT EXISTS (
+          SELECT 1
+          FROM sys.indexes
+          WHERE object_id = OBJECT_ID('dbo.TPROVAS')
+            AND name = 'IX_TPROVAS_TRILHA_PATH'
+        )
+        BEGIN
+          CREATE INDEX IX_TPROVAS_TRILHA_PATH
+            ON dbo.TPROVAS (TRILHA_FK_ID, PROVA_PATH, VERSAO DESC)
+        END
+      `)
+    })().finally(() => {
+      ensureProvaSchemaPromise = null
+    })
+  }
+
+  await ensureProvaSchemaPromise
 }
 
 export async function listProvas(
@@ -148,6 +206,8 @@ export type ProvaCreateInput = {
 }
 
 export async function createProva(input: ProvaCreateInput) {
+  await ensureProvaSchemaSupportsMultipleProofTypes()
+
   const pool = await getPool()
   await pool
     .request()
@@ -181,6 +241,8 @@ export type ProvaUpdateInput = {
 }
 
 export async function updateProva(id: string, input: ProvaUpdateInput) {
+  await ensureProvaSchemaSupportsMultipleProofTypes()
+
   const pool = await getPool()
   const latest = await getProvaById(id)
   if (!latest) {
@@ -542,6 +604,8 @@ async function createOrVersionStructuredProva(input: {
   modoAplicacao?: ProvaModoAplicacao
   questoes: ObjectiveQuestionInput[]
 }) {
+  await ensureProvaSchemaSupportsMultipleProofTypes()
+
   const pool = await getPool()
   const transaction = new sql.Transaction(pool)
   await transaction.begin()

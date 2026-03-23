@@ -328,6 +328,28 @@ const DEFAULT_EFFICACY_DESTINATION_SECTOR = "recursos-humanos"
 const GUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
 
+function readDatabaseErrorMessage(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return ""
+  }
+
+  const requestError = error as {
+    message?: string
+    originalError?: { info?: { message?: string } }
+  }
+
+  return (
+    requestError.originalError?.info?.message ??
+    requestError.message ??
+    ""
+  )
+}
+
+function isLegacySingleProofIndexError(error: unknown) {
+  const message = readDatabaseErrorMessage(error)
+  return message.includes("UX_TPROVAS_TRILHA")
+}
+
 function buildBalancedWeights(questionCount: number) {
   if (!Number.isFinite(questionCount) || questionCount <= 0) {
     return [] as number[]
@@ -767,13 +789,24 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     ? PROVA_MODO_APLICACAO.COLETIVA
     : requestedModoAplicacao
 
-  const prova = await createOrVersionObjectiveProva({
-    trilhaId,
-    titulo: titulo.trim(),
-    notaTotal: totalScore,
-    modoAplicacao: finalModoAplicacao,
-    questoes: normalizedQuestions,
-  })
+  let prova
+  try {
+    prova = await createOrVersionObjectiveProva({
+      trilhaId,
+      titulo: titulo.trim(),
+      notaTotal: totalScore,
+      modoAplicacao: finalModoAplicacao,
+      questoes: normalizedQuestions,
+    })
+  } catch (error) {
+    if (isLegacySingleProofIndexError(error)) {
+      throw new HttpError(
+        400,
+        "Banco sem suporte a prova objetiva e avaliacao de eficacia na mesma trilha. Atualize os indices de dbo.TPROVAS.",
+      )
+    }
+    throw error
+  }
 
   const hrPendingNotification = await notifyHumanResourcesPendingEfficacy({
     actorName,
@@ -808,13 +841,24 @@ export const createOrVersionEfficacy = asyncHandler(async (req: Request, res: Re
     normalizedQuestions.reduce((total, question) => total + question.peso, 0),
   )
 
-  const prova = await createOrVersionEfficacyProva({
-    trilhaId,
-    titulo: titulo.trim(),
-    notaTotal: totalScore,
-    modoAplicacao: PROVA_MODO_APLICACAO.INDIVIDUAL,
-    questoes: normalizedQuestions,
-  })
+  let prova
+  try {
+    prova = await createOrVersionEfficacyProva({
+      trilhaId,
+      titulo: titulo.trim(),
+      notaTotal: totalScore,
+      modoAplicacao: PROVA_MODO_APLICACAO.INDIVIDUAL,
+      questoes: normalizedQuestions,
+    })
+  } catch (error) {
+    if (isLegacySingleProofIndexError(error)) {
+      throw new HttpError(
+        400,
+        "Banco sem suporte a prova objetiva e avaliacao de eficacia na mesma trilha. Atualize os indices de dbo.TPROVAS.",
+      )
+    }
+    throw error
+  }
 
   const firstQuestion = normalizedQuestions[0]?.enunciado ?? titulo.trim()
   try {
