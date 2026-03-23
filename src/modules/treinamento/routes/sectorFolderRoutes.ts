@@ -1,6 +1,7 @@
 import { Router } from "express"
 import {
   create,
+  createYouTubeLink,
   getItemVersionImpact,
   listFolderShares,
   listFolderContents,
@@ -25,6 +26,7 @@ router.get("/folders/:itemId/shares", listFolderShares)
 router.get("/items/:itemId/version-impact", getItemVersionImpact)
 router.post("/folders", create)
 router.post("/files/upload", upload.single("file"), uploadFile)
+router.post("/links/youtube", createYouTubeLink)
 router.post("/items/:itemId/version", upload.single("file"), versionItem)
 router.patch("/folders/:itemId/favorite", toggleFavoriteFolder)
 router.patch("/folders/:itemId", update)

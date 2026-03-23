@@ -1,6 +1,12 @@
 import { getPool, sql } from "../config/db"
 import { archiveVideoCompletionsByVideoId } from "./userTrainingModel"
 import { hasPdfOrderColumn } from "./pdfModel"
+import {
+  isSectorFolderExternalItemTableMissingError,
+  listSectorFolderExternalItemsByIds,
+  parseYouTubeStoredPathToken,
+  YOUTUBE_EXTERNAL_ITEM_TYPE,
+} from "./sectorFolderExternalItemModel"
 
 export type VideoRecord = {
   ID: string
@@ -14,6 +20,69 @@ export type VideoRecord = {
   VERSAO: number
   DURACAO_SEGUNDOS: number | null
   ORDEM: number | null
+  STORED_PATH?: string | null
+  NOME_EXIBICAO?: string | null
+  FONTE_CONTEUDO?: string | null
+  CAMINHO_EXTERNO?: string | null
+}
+
+async function resolveExternalVideoReferences(records: VideoRecord[]) {
+  const externalItemIds = Array.from(
+    new Set(
+      records
+        .map((record) => parseYouTubeStoredPathToken(record.PATH_VIDEO))
+        .filter(Boolean),
+    ),
+  ) as string[]
+
+  if (externalItemIds.length === 0) {
+    return records.map((record) => ({
+      ...record,
+      STORED_PATH: record.PATH_VIDEO,
+      NOME_EXIBICAO: record.NOME_EXIBICAO ?? null,
+      FONTE_CONTEUDO: record.FONTE_CONTEUDO ?? null,
+    }))
+  }
+
+  let externalItems = []
+
+  try {
+    externalItems = await listSectorFolderExternalItemsByIds(externalItemIds)
+  } catch (error) {
+    if (!isSectorFolderExternalItemTableMissingError(error)) {
+      throw error
+    }
+  }
+
+  const externalItemById = new Map(
+    externalItems.map((item) => [item.id, item]),
+  )
+
+  return records.map((record) => {
+    const externalItemId = parseYouTubeStoredPathToken(record.PATH_VIDEO)
+    const externalItem = externalItemId
+      ? externalItemById.get(externalItemId) ?? null
+      : null
+
+    if (!externalItem) {
+      return {
+        ...record,
+        STORED_PATH: record.PATH_VIDEO,
+        NOME_EXIBICAO: record.NOME_EXIBICAO ?? null,
+        FONTE_CONTEUDO: record.FONTE_CONTEUDO ?? null,
+        CAMINHO_EXTERNO: record.CAMINHO_EXTERNO ?? null,
+      }
+    }
+
+    return {
+      ...record,
+      STORED_PATH: record.PATH_VIDEO,
+      PATH_VIDEO: externalItem.url,
+      NOME_EXIBICAO: externalItem.name,
+      FONTE_CONTEUDO: externalItem.linkType || YOUTUBE_EXTERNAL_ITEM_TYPE,
+      CAMINHO_EXTERNO: externalItem.path,
+    }
+  })
 }
 
 export async function listVideos(trilhaId?: string, cpf?: string, includePdf = false) {
@@ -132,7 +201,7 @@ export async function listVideos(trilhaId?: string, cpf?: string, includePdf = f
     ORDER BY v.TRILHA_FK_ID, ISNULL(v.ORDEM, 2147483647), v.ID
   `)
 
-  return result.recordset as VideoRecord[]
+  return resolveExternalVideoReferences(result.recordset as VideoRecord[])
 }
 
 export async function getVideoById(id: string, versao?: number) {
@@ -144,13 +213,19 @@ export async function getVideoById(id: string, versao?: number) {
     const result = await request.query(
       "SELECT * FROM dbo.TVIDEOS WHERE ID = @ID AND VERSAO = @VERSAO",
     )
-    return result.recordset[0] as VideoRecord | undefined
+    const records = await resolveExternalVideoReferences(
+      result.recordset as VideoRecord[],
+    )
+    return records[0]
   }
 
   const result = await request.query(
     "SELECT TOP 1 * FROM dbo.TVIDEOS WHERE ID = @ID ORDER BY VERSAO DESC",
   )
-  return result.recordset[0] as VideoRecord | undefined
+  const records = await resolveExternalVideoReferences(
+    result.recordset as VideoRecord[],
+  )
+  return records[0]
 }
 
 export type VideoCreateInput = {

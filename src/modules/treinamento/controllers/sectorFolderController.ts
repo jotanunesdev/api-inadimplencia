@@ -39,6 +39,20 @@ import { listTrainingMaterialLinksByStoredPaths } from "../models/trainingMateri
 import { archiveTrainingProgressByTrilhaIds } from "../models/userTrainingModel"
 import { replaceMaterialStoredPathExact } from "../models/pathUpdateModel"
 import {
+  buildYouTubeStoredPathToken,
+  createSectorFolderExternalItem,
+  deleteSectorFolderExternalItemsByIds,
+  getSectorFolderExternalItemById,
+  isSectorFolderExternalItemTableMissingError,
+  listSectorFolderExternalItemsByIds,
+  listSectorFolderExternalItemsByParent,
+  listSectorFolderExternalItemsByPathPrefix,
+  type SectorFolderExternalItem,
+  updateSectorFolderExternalItem,
+  updateSectorFolderExternalItemPathsByPrefix,
+  YOUTUBE_EXTERNAL_ITEM_TYPE,
+} from "../models/sectorFolderExternalItemModel"
+import {
   copySharePointItemToFolder,
   createSharePointFolder,
   deleteSharePointItemById,
@@ -198,6 +212,7 @@ let metadataSchemaWarningDisplayed = false
 let shareSchemaWarningDisplayed = false
 let userItemSchemaWarningDisplayed = false
 let trashSchemaWarningDisplayed = false
+let externalItemSchemaWarningDisplayed = false
 
 function normalizeText(value: unknown) {
   return String(value ?? "")
@@ -361,13 +376,8 @@ function buildVersionHistoryFolderPath(
   )
 }
 
-function buildVersionHistoryFileName(itemName: string, now: Date) {
-  const extension = path.extname(itemName ?? "")
-  const baseName = extension
-    ? itemName.slice(0, itemName.length - extension.length)
-    : itemName
-  const safeBaseName = String(baseName ?? "").trim() || "arquivo"
-  const stamp = [
+function buildVersionHistoryStamp(now: Date) {
+  return [
     now.getFullYear(),
     String(now.getMonth() + 1).padStart(2, "0"),
     String(now.getDate()).padStart(2, "0"),
@@ -376,8 +386,36 @@ function buildVersionHistoryFileName(itemName: string, now: Date) {
     String(now.getSeconds()).padStart(2, "0"),
     String(now.getMilliseconds()).padStart(3, "0"),
   ].join("")
+}
+
+function buildVersionHistoryFileName(itemName: string, now: Date) {
+  const extension = path.extname(itemName ?? "")
+  const baseName = extension
+    ? itemName.slice(0, itemName.length - extension.length)
+    : itemName
+  const safeBaseName = String(baseName ?? "").trim() || "arquivo"
+  const stamp = buildVersionHistoryStamp(now)
 
   return `${safeBaseName} - versao ${stamp}${extension}`
+}
+
+function buildVersionHistoryExternalItemName(itemName: string, now: Date) {
+  const safeName = String(itemName ?? "").trim() || "item"
+  return `${safeName} - versao ${buildVersionHistoryStamp(now)}`
+}
+
+function buildExternalItemVersionHistoryFolderPath(
+  item: SectorFolderExternalItem,
+  sector: SectorDefinition,
+) {
+  const itemSegments = normalizePath(item.path).split("/").filter(Boolean)
+  const sectorSegments = normalizePath(sector.folderPath).split("/").filter(Boolean)
+  const relativeParentSegments = itemSegments.slice(sectorSegments.length, -1)
+
+  return joinPaths(
+    buildSectorVersionHistoryRootPath(sector),
+    relativeParentSegments.join("/"),
+  )
 }
 
 async function ensureSectorStructure(sector: SectorDefinition) {
@@ -437,6 +475,32 @@ function parseFolderName(value: unknown) {
     throw new HttpError(
       400,
       "O nome da pasta nao pode terminar com ponto ou espaco.",
+    )
+  }
+
+  return name
+}
+
+function parseExternalItemDisplayName(value: unknown) {
+  const name = String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim()
+
+  if (!name) {
+    throw new HttpError(400, "Informe o nome exibido do link.")
+  }
+
+  if (/[\\/:*?"<>|]/.test(name)) {
+    throw new HttpError(
+      400,
+      "O nome exibido do link contem caracteres nao permitidos.",
+    )
+  }
+
+  if (name.endsWith(".") || name.endsWith(" ")) {
+    throw new HttpError(
+      400,
+      "O nome exibido do link nao pode terminar com ponto ou espaco.",
     )
   }
 
@@ -514,6 +578,56 @@ function parseActor(body: Record<string, unknown>) {
     email,
     username,
   }
+}
+
+function extractYouTubeVideoId(value: string) {
+  try {
+    const url = new URL(String(value ?? "").trim())
+    const host = url.hostname.replace(/^www\./i, "").toLowerCase()
+    const pathSegments = url.pathname.split("/").filter(Boolean)
+
+    if (host === "youtu.be") {
+      return pathSegments[0] ?? null
+    }
+
+    if (
+      host !== "youtube.com" &&
+      host !== "m.youtube.com" &&
+      host !== "music.youtube.com" &&
+      host !== "youtube-nocookie.com"
+    ) {
+      return null
+    }
+
+    if (pathSegments[0] === "watch") {
+      return url.searchParams.get("v")
+    }
+
+    if (
+      pathSegments[0] === "embed" ||
+      pathSegments[0] === "shorts" ||
+      pathSegments[0] === "live"
+    ) {
+      return pathSegments[1] ?? null
+    }
+
+    return url.searchParams.get("v")
+  } catch {
+    return null
+  }
+}
+
+function parseCanonicalYouTubeUrl(value: unknown) {
+  const videoId = extractYouTubeVideoId(String(value ?? "").trim())
+
+  if (!videoId || !/^[A-Za-z0-9_-]{6,20}$/.test(videoId)) {
+    throw new HttpError(
+      400,
+      "Informe um link valido do YouTube para adicionar ao gerenciador.",
+    )
+  }
+
+  return `https://www.youtube.com/watch?v=${videoId}`
 }
 
 function assertAllowedUploadFile(file: Express.Multer.File | undefined) {
@@ -928,13 +1042,119 @@ function buildUserRelationKey(itemId: string) {
   return String(itemId ?? "").trim()
 }
 
+function buildExternalLinkOpenUrl(item: SectorFolderExternalItem) {
+  return String(item.url ?? "").trim() || null
+}
+
+function buildExternalLinkStoredPath(item: SectorFolderExternalItem) {
+  if (item.linkType === YOUTUBE_EXTERNAL_ITEM_TYPE) {
+    return buildYouTubeStoredPathToken(item.id)
+  }
+
+  return buildExternalLinkOpenUrl(item)
+}
+
+function buildExternalStoredPathCandidates(item: SectorFolderExternalItem) {
+  return Array.from(
+    new Set(
+      [buildExternalLinkStoredPath(item), buildExternalLinkOpenUrl(item)]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  )
+}
+
+function buildExternalItemResponse(params: {
+  item: SectorFolderExternalItem
+  sector: SectorDefinition
+  sharedFolder?: SharedFolderSummary | null
+  readOnly?: boolean
+  isDeleted?: boolean
+  deletedAt?: string | null
+  deletedBy?: {
+    displayName: string | null
+    email: string | null
+    username: string | null
+  } | null
+}) {
+  const createdBy =
+    params.item.createdByName || params.item.createdByEmail || params.item.createdByUsername
+      ? {
+          displayName: params.item.createdByName ?? null,
+          email: params.item.createdByEmail ?? null,
+          username: params.item.createdByUsername ?? null,
+        }
+      : null
+
+  return {
+    id: params.item.id,
+    name: params.item.name,
+    path: params.item.path,
+    webUrl: buildExternalLinkOpenUrl(params.item),
+    contentUrl: buildExternalLinkOpenUrl(params.item),
+    storedPath: buildExternalLinkStoredPath(params.item),
+    itemType: "file",
+    itemCount: 0,
+    size: null,
+    extension:
+      params.item.linkType === YOUTUBE_EXTERNAL_ITEM_TYPE ? ".youtube" : null,
+    contentType:
+      params.item.linkType === YOUTUBE_EXTERNAL_ITEM_TYPE ? "youtube" : null,
+    contentSource: params.item.linkType,
+    linkType: params.item.linkType,
+    itemSource: "external-link",
+    createdAt: params.item.createdAt?.toISOString() ?? null,
+    lastUpdatedAt: params.item.updatedAt?.toISOString() ?? null,
+    createdBy: toUserProfile(createdBy),
+    members: [],
+    canDelete: !params.readOnly,
+    canRename: false,
+    canShare: false,
+    canFavorite: false,
+    canVersion:
+      !params.readOnly &&
+      !params.isDeleted &&
+      !isSectorVersionHistoryPath(params.sector, params.item.path),
+    isFavorite: false,
+    fixedFolderKey: null,
+    isFixedFolder: false,
+    requiresValidityForFiles: false,
+    validityMonths: null,
+    validityYears: null,
+    isShared: Boolean(params.sharedFolder),
+    sharedFolder: params.sharedFolder ?? null,
+    isDeleted: Boolean(params.isDeleted),
+    deletedAt: params.deletedAt ?? null,
+    deletedBy: params.deletedBy ?? null,
+    sourceSectorKey: params.sector.key,
+    sourceSectorLabel: params.sector.label,
+  }
+}
+
 function buildDeletedItemResponse(params: {
   trash: SectorFolderTrashRecord
   metadata: SectorFolderMetadata | null
+  externalItem?: SectorFolderExternalItem | null
   sourceSector: SectorDefinition
   sharedFolder?: SharedFolderSummary | null
   isFavorite?: boolean
 }) {
+  if (params.externalItem) {
+    return buildExternalItemResponse({
+      item: params.externalItem,
+      sector: params.sourceSector,
+      sharedFolder: params.sharedFolder,
+      readOnly: true,
+      isDeleted: true,
+      deletedAt: parseDateOrNull(params.trash.EXCLUIDO_EM)?.toISOString() ?? null,
+      deletedBy: {
+        displayName: params.trash.EXCLUIDO_POR_NOME ?? null,
+        email: params.trash.EXCLUIDO_POR_EMAIL ?? null,
+        username: params.trash.EXCLUIDO_POR_USUARIO ?? null,
+      },
+    })
+  }
+
   const createdBy = profileFromMetadata(params.metadata)
   return {
     id: params.trash.SHAREPOINT_ITEM_ID,
@@ -955,6 +1175,7 @@ function buildDeletedItemResponse(params: {
     canRename: false,
     canShare: false,
     canFavorite: false,
+    canVersion: false,
     isFavorite: Boolean(params.isFavorite),
     fixedFolderKey: null,
     isFixedFolder: false,
@@ -1026,6 +1247,7 @@ function buildItemResponse(params: {
     canRename: !fixedFolder && !params.readOnly,
     canShare: Boolean(params.item.folder) && !params.readOnly,
     canFavorite: Boolean(params.item.folder),
+    canVersion: !params.item.folder && !params.readOnly,
     isFavorite: Boolean(params.isFavorite),
     fixedFolderKey: fixedFolder?.key ?? null,
     isFixedFolder: Boolean(fixedFolder),
@@ -1127,6 +1349,17 @@ function warnMissingTrashSchemaOnce() {
   trashSchemaWarningDisplayed = true
   console.warn(
     "[SetorPastas] Tabela TGESTAO_ARQUIVOS_SETOR_LIXEIRA nao encontrada. A lixeira do gerenciador nao funcionara ate a migration ser aplicada.",
+  )
+}
+
+function warnMissingExternalItemSchemaOnce() {
+  if (externalItemSchemaWarningDisplayed) {
+    return
+  }
+
+  externalItemSchemaWarningDisplayed = true
+  console.warn(
+    "[SetorPastas] Tabela TGESTAO_ARQUIVOS_SETOR_LINKS_EXTERNOS nao encontrada. Links externos do gerenciador nao serao listados ate a migration ser aplicada.",
   )
 }
 
@@ -1368,6 +1601,130 @@ async function deleteSectorFolderUserItemsByItemIdsSafely(itemIds: string[]) {
   } catch (error) {
     if (isSectorFolderUserItemTableMissingError(error)) {
       warnMissingUserItemSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderExternalItemsByParentSafely(params: {
+  sectorKey: string
+  parentItemId?: string | null
+}) {
+  try {
+    return await listSectorFolderExternalItemsByParent(params)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      return [] as SectorFolderExternalItem[]
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderExternalItemsByIdsSafely(itemIds: string[]) {
+  try {
+    return await listSectorFolderExternalItemsByIds(itemIds)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      return [] as SectorFolderExternalItem[]
+    }
+
+    throw error
+  }
+}
+
+async function getSectorFolderExternalItemByIdSafely(itemId: string) {
+  try {
+    return await getSectorFolderExternalItemById(itemId)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      return null
+    }
+
+    throw error
+  }
+}
+
+async function listSectorFolderExternalItemsByPathPrefixSafely(params: {
+  sectorKey: string
+  pathPrefix: string
+}) {
+  try {
+    return await listSectorFolderExternalItemsByPathPrefix(params)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      return [] as SectorFolderExternalItem[]
+    }
+
+    throw error
+  }
+}
+
+async function createSectorFolderExternalItemSafely(
+  input: Parameters<typeof createSectorFolderExternalItem>[0],
+) {
+  try {
+    return await createSectorFolderExternalItem(input)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      throw new HttpError(
+        503,
+        "Banco sem suporte a links externos do gerenciador. Execute a migration de links do YouTube.",
+      )
+    }
+
+    throw error
+  }
+}
+
+async function updateSectorFolderExternalItemSafely(
+  input: Parameters<typeof updateSectorFolderExternalItem>[0],
+) {
+  try {
+    return await updateSectorFolderExternalItem(input)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      throw new HttpError(
+        503,
+        "Banco sem suporte a links externos do gerenciador. Execute a migration de links do YouTube.",
+      )
+    }
+
+    throw error
+  }
+}
+
+async function deleteSectorFolderExternalItemsByIdsSafely(itemIds: string[]) {
+  try {
+    await deleteSectorFolderExternalItemsByIds(itemIds)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
+      return
+    }
+
+    throw error
+  }
+}
+
+async function updateSectorFolderExternalItemPathsByPrefixSafely(params: {
+  sectorKey: string
+  oldPathPrefix: string
+  newPathPrefix: string
+}) {
+  try {
+    await updateSectorFolderExternalItemPathsByPrefix(params)
+  } catch (error) {
+    if (isSectorFolderExternalItemTableMissingError(error)) {
+      warnMissingExternalItemSchemaOnce()
       return
     }
 
@@ -1653,6 +2010,13 @@ async function permanentlyDeleteItemAndMetadata(params: {
   const itemIdsToCleanup = currentItem.folder
     ? await collectNestedItemIds(params.itemId)
     : [params.itemId]
+  const externalItemsToCleanup = currentItem.folder
+    ? await listSectorFolderExternalItemsByPathPrefixSafely({
+        sectorKey: params.sector.key,
+        pathPrefix: buildItemPathFromSector(currentItem, params.sector),
+      })
+    : []
+  const externalItemIdsToCleanup = externalItemsToCleanup.map((item) => item.id)
 
   await deleteSharePointItemById(params.itemId)
   await Promise.all([
@@ -1660,6 +2024,26 @@ async function permanentlyDeleteItemAndMetadata(params: {
     deleteSectorFolderSharesSafely(itemIdsToCleanup),
     deleteSectorFolderTrashByItemIdsSafely(itemIdsToCleanup),
     deleteSectorFolderUserItemsByItemIdsSafely(itemIdsToCleanup),
+    deleteSectorFolderExternalItemsByIdsSafely(externalItemIdsToCleanup),
+    deleteSectorFolderTrashByItemIdsSafely(externalItemIdsToCleanup),
+    deleteSectorFolderUserItemsByItemIdsSafely(externalItemIdsToCleanup),
+  ])
+}
+
+async function permanentlyDeleteExternalItem(params: {
+  sector: SectorDefinition
+  itemId: string
+}) {
+  const externalItem = await getSectorFolderExternalItemByIdSafely(params.itemId)
+
+  if (!externalItem || externalItem.sectorKey !== params.sector.key) {
+    throw new HttpError(404, "Item do setor nao encontrado.")
+  }
+
+  await Promise.all([
+    deleteSectorFolderExternalItemsByIdsSafely([externalItem.id]),
+    deleteSectorFolderTrashByItemIdsSafely([externalItem.id]),
+    deleteSectorFolderUserItemsByItemIdsSafely([externalItem.id]),
   ])
 }
 
@@ -1693,6 +2077,34 @@ async function moveItemToTrash(params: {
       : path.extname(currentItem.name).toLowerCase() || null,
     size: currentItem.folder ? null : Number(currentItem.size ?? 0),
     webUrl: currentItem.webUrl ?? null,
+    deletedByName: params.actor.displayName,
+    deletedByEmail: params.actor.email,
+    deletedByUsername: params.actor.username,
+    deletedAt: new Date(),
+  })
+}
+
+async function moveExternalItemToTrash(params: {
+  sector: SectorDefinition
+  itemId: string
+  actor: UserProfile
+}) {
+  const externalItem = await getSectorFolderExternalItemByIdSafely(params.itemId)
+
+  if (!externalItem || externalItem.sectorKey !== params.sector.key) {
+    throw new HttpError(404, "Item do setor nao encontrado.")
+  }
+
+  await upsertSectorFolderTrashItemSafely({
+    itemId: externalItem.id,
+    sectorKey: params.sector.key,
+    name: externalItem.name,
+    path: externalItem.path,
+    itemType: "file",
+    extension:
+      externalItem.linkType === YOUTUBE_EXTERNAL_ITEM_TYPE ? ".youtube" : null,
+    size: null,
+    webUrl: buildExternalLinkOpenUrl(externalItem),
     deletedByName: params.actor.displayName,
     deletedByEmail: params.actor.email,
     deletedByUsername: params.actor.username,
@@ -1811,6 +2223,7 @@ export const listFolderContents = asyncHandler(
     }> = []
 
     const deletedItemResponses: Array<Record<string, unknown>> = []
+    const externalItemResponses: Array<Record<string, unknown>> = []
 
     if (parentContext.currentFolder) {
       const parentTrashRecord = await getSectorFolderTrashByItemIdSafely(
@@ -1834,6 +2247,35 @@ export const listFolderContents = asyncHandler(
           trashPathIndex,
         )
       })
+      const trashedItemIds = new Set(
+        currentTrashRows.map((trashRow) => buildUserRelationKey(trashRow.SHAREPOINT_ITEM_ID)),
+      )
+      const externalItems =
+        await listSectorFolderExternalItemsByParentSafely({
+          sectorKey: parentContext.pathSector.key,
+          parentItemId: parentContext.currentFolder.id,
+        })
+      externalItemResponses.push(
+        ...externalItems
+          .filter(
+            (item) =>
+              !trashedItemIds.has(buildUserRelationKey(item.id)) &&
+              !isPathHiddenByTrash(
+                parentContext.pathSector.key,
+                item.path,
+                trashPathIndex,
+              ),
+          )
+          .map((item) =>
+            buildExternalItemResponse({
+              item,
+              sector: parentContext.pathSector,
+              sharedFolder: parentContext.sharedFolder,
+              readOnly:
+                Boolean(parentContext.sharedFolder) || isVersionHistoryView,
+            }),
+          ),
+      )
 
       const favoriteRelations =
         username && visibleItems.length > 0
@@ -1874,12 +2316,20 @@ export const listFolderContents = asyncHandler(
       const metadataByItemId = new Map(
         metadataRows.map((metadata) => [metadata.itemId, metadata]),
       )
+      const externalItems = await listSectorFolderExternalItemsByIdsSafely(
+        trashRows.map((trashRow) => trashRow.SHAREPOINT_ITEM_ID),
+      )
+      const externalItemById = new Map(
+        externalItems.map((item) => [item.id, item]),
+      )
 
       deletedItemResponses.push(
         ...trashRows.map((trashRow) =>
           buildDeletedItemResponse({
             trash: trashRow,
             metadata: metadataByItemId.get(trashRow.SHAREPOINT_ITEM_ID) ?? null,
+            externalItem:
+              externalItemById.get(trashRow.SHAREPOINT_ITEM_ID) ?? null,
             sourceSector: requestedSector,
             isFavorite: false,
           }),
@@ -1889,6 +2339,37 @@ export const listFolderContents = asyncHandler(
       const historyItems = await listSharePointFolderChildren(versionHistoryRootPath)
       const historyTrashIndex = buildTrashPathIndex(
         trashRowsBySector.get(requestedSector.key) ?? [],
+      )
+      const historyTrashedItemIds = new Set(
+        (trashRowsBySector.get(requestedSector.key) ?? []).map((trashRow) =>
+          buildUserRelationKey(trashRow.SHAREPOINT_ITEM_ID),
+        ),
+      )
+      const historyRootItem = await getSharePointItemByPath(versionHistoryRootPath)
+      const historyExternalItems =
+        await listSectorFolderExternalItemsByParentSafely({
+          sectorKey: requestedSector.key,
+          parentItemId: historyRootItem.id,
+        })
+
+      externalItemResponses.push(
+        ...historyExternalItems
+          .filter(
+            (item) =>
+              !historyTrashedItemIds.has(buildUserRelationKey(item.id)) &&
+              !isPathHiddenByTrash(
+                requestedSector.key,
+                item.path,
+                historyTrashIndex,
+              ),
+          )
+          .map((item) =>
+            buildExternalItemResponse({
+              item,
+              sector: requestedSector,
+              readOnly: true,
+            }),
+          ),
       )
 
       itemEntries.push(
@@ -1993,6 +2474,11 @@ export const listFolderContents = asyncHandler(
         const ownTrashIndex = buildTrashPathIndex(
           trashRowsBySector.get(requestedSector.key) ?? [],
         )
+        const ownTrashedItemIds = new Set(
+          (trashRowsBySector.get(requestedSector.key) ?? []).map((trashRow) =>
+            buildUserRelationKey(trashRow.SHAREPOINT_ITEM_ID),
+          ),
+        )
 
         itemEntries.push(
           ...ownItems
@@ -2012,6 +2498,30 @@ export const listFolderContents = asyncHandler(
               readOnly: false,
               isFavorite: false,
             })),
+        )
+
+        const rootExternalItems =
+          await listSectorFolderExternalItemsByParentSafely({
+            sectorKey: requestedSector.key,
+            parentItemId: null,
+          })
+        externalItemResponses.push(
+          ...rootExternalItems
+            .filter(
+              (item) =>
+                !ownTrashedItemIds.has(buildUserRelationKey(item.id)) &&
+                !isPathHiddenByTrash(
+                  requestedSector.key,
+                  item.path,
+                  ownTrashIndex,
+                ),
+            )
+            .map((item) =>
+              buildExternalItemResponse({
+                item,
+                sector: requestedSector,
+              }),
+            ),
         )
       }
 
@@ -2126,7 +2636,9 @@ export const listFolderContents = asyncHandler(
     const responseItems =
       deletedItemResponses.length > 0 && itemEntries.length === 0
         ? deletedItemResponses
-        : await Promise.all(
+        : [
+            ...(
+              await Promise.all(
             sortedItems.map(async (entry) => {
               const members = await collectItemMembers(entry.item, metadataByItemId)
               return buildItemResponse({
@@ -2139,7 +2651,18 @@ export const listFolderContents = asyncHandler(
                 isFavorite: entry.isFavorite,
               })
             }),
-          )
+              )
+            ),
+            ...externalItemResponses,
+          ].sort((left, right) => {
+            if (String(left.itemType ?? "") !== String(right.itemType ?? "")) {
+              return String(left.itemType ?? "") === "folder" ? -1 : 1
+            }
+
+            return String(left.name ?? "").localeCompare(String(right.name ?? ""), "pt-BR", {
+              sensitivity: "base",
+            })
+          })
 
     const breadcrumbs =
       view === "deleted" && !parentContext.currentFolder
@@ -2251,6 +2774,96 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
   }
 })
 
+export const createYouTubeLink = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const body = req.body as Record<string, unknown>
+    const sector = parseSectorFromBody(body)
+    const actor = parseActor(body)
+    const parentItemId = parseParentItemId(body.parentItemId)
+    const name = parseExternalItemDisplayName(body.name)
+    const canonicalUrl = parseCanonicalYouTubeUrl(body.url)
+    const now = new Date()
+    await ensureSectorStructure(sector)
+
+    const parentContext = await resolveParentContext({
+      requestedSector: sector,
+      parentItemId,
+      sourceSector: null,
+      sharedRootItemId: null,
+    })
+
+    if (parentContext.sharedFolder) {
+      throw new HttpError(
+        403,
+        "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
+      )
+    }
+
+    assertPathIsNotVersionHistory(
+      parentContext.pathSector,
+      parentContext.currentFolderPath,
+      "O Historico de Versoes e gerenciado automaticamente e nao aceita links manuais.",
+    )
+
+    const sharePointSiblings = parentContext.currentFolder
+      ? await listSharePointFolderChildrenByItemId(parentContext.currentFolder.id)
+      : await listSharePointFolderChildren(parentContext.currentFolderPath)
+    const externalSiblings = await listSectorFolderExternalItemsByParentSafely({
+      sectorKey: parentContext.pathSector.key,
+      parentItemId: parentContext.currentFolder?.id ?? null,
+    })
+    const normalizedName = normalizeText(name)
+    const hasSharePointConflict = sharePointSiblings.some(
+      (item) => normalizeText(item.name) === normalizedName,
+    )
+    const hasExternalConflict = externalSiblings.some(
+      (item) => normalizeText(item.name) === normalizedName,
+    )
+
+    if (hasSharePointConflict || hasExternalConflict) {
+      throw new HttpError(
+        409,
+        "Ja existe um item com esse nome neste caminho.",
+      )
+    }
+
+    const itemPath = joinPaths(parentContext.currentFolderPath, name)
+    const externalItem = await createSectorFolderExternalItemSafely({
+      sectorKey: parentContext.pathSector.key,
+      parentItemId: parentContext.currentFolder?.id ?? null,
+      name,
+      path: itemPath,
+      linkType: YOUTUBE_EXTERNAL_ITEM_TYPE,
+      url: canonicalUrl,
+      createdByName: actor.displayName,
+      createdByEmail: actor.email,
+      createdByUsername: actor.username,
+      updatedByName: actor.displayName,
+      updatedByEmail: actor.email,
+      updatedByUsername: actor.username,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    if (!externalItem) {
+      throw new HttpError(
+        500,
+        "Nao foi possivel criar o link externo no gerenciador.",
+      )
+    }
+
+    res.status(201).json({
+      item: buildExternalItemResponse({
+        item: externalItem,
+        sector: parentContext.pathSector,
+      }),
+      currentFolderPath: parentContext.currentFolderPath,
+    })
+  },
+)
+
 export const update = asyncHandler(async (req: Request, res: Response) => {
   ensureSharePointIsAvailable()
 
@@ -2278,6 +2891,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       sector,
       "Pastas do Historico de Versoes nao podem ser renomeadas manualmente.",
     )
+    const previousItemPath = buildItemPathFromSector(currentItem, sector)
 
     const updatedItem = await updateSharePointItemName({
       itemId,
@@ -2299,6 +2913,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         existingMetadata?.createdAt ??
         parseDateOrNull(updatedItem.createdDateTime),
       updatedAt: new Date(),
+    })
+    await updateSectorFolderExternalItemPathsByPrefixSafely({
+      sectorKey: sector.key,
+      oldPathPrefix: previousItemPath,
+      newPathPrefix: buildItemPathFromSector(updatedItem, sector),
     })
     const metadataRows = await listSectorMetadataSafely(sector.label)
     const metadataByItemId = new Map(
@@ -2424,6 +3043,31 @@ export const getItemVersionImpact = asyncHandler(
       throw new HttpError(400, "Informe o arquivo a ser versionado.")
     }
 
+    const externalItem = await getSectorFolderExternalItemByIdSafely(itemId)
+    if (externalItem && externalItem.sectorKey === sector.key) {
+      assertPathIsNotVersionHistory(
+        sector,
+        externalItem.path,
+        "Itens do Historico de Versoes nao podem receber nova versao.",
+      )
+
+      const linkedMaterials = await listTrainingMaterialLinksByStoredPaths(
+        buildExternalStoredPathCandidates(externalItem),
+      )
+      const impact = buildVersionImpactResponse(linkedMaterials)
+
+      res.json({
+        impact,
+        item: {
+          id: externalItem.id,
+          name: externalItem.name,
+          path: externalItem.path,
+          webUrl: buildExternalLinkOpenUrl(externalItem),
+        },
+      })
+      return
+    }
+
     const currentItem = await getSharePointItemById(itemId)
     if (currentItem.folder) {
       throw new HttpError(400, "Somente arquivos podem ser versionados.")
@@ -2472,6 +3116,109 @@ export const versionItem = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(400, "Informe o arquivo a ser versionado.")
   }
 
+  const shouldRequireRetraining = parseBooleanFlag(
+    body.redoCompletedTrainings ??
+      body.refazerTreinamento ??
+      body.requireRetraining,
+  )
+  const now = new Date()
+
+  const externalItem = await getSectorFolderExternalItemByIdSafely(itemId)
+  if (externalItem && externalItem.sectorKey === sector.key) {
+    if (externalItem.linkType !== YOUTUBE_EXTERNAL_ITEM_TYPE) {
+      throw new HttpError(
+        400,
+        "Este tipo de link externo ainda nao suporta versionamento.",
+      )
+    }
+
+    assertPathIsNotVersionHistory(
+      sector,
+      externalItem.path,
+      "Itens do Historico de Versoes nao podem receber nova versao.",
+    )
+
+    const canonicalUrl = parseCanonicalYouTubeUrl(body.url)
+    const linkedMaterials = await listTrainingMaterialLinksByStoredPaths(
+      buildExternalStoredPathCandidates(externalItem),
+    )
+    const impact = buildVersionImpactResponse(linkedMaterials)
+    const historyFolderPath = buildExternalItemVersionHistoryFolderPath(
+      externalItem,
+      sector,
+    )
+    await ensureSharePointFolder(historyFolderPath)
+    const historyFolder = await getSharePointItemByPath(historyFolderPath)
+    const versionHistoryItemName = buildVersionHistoryExternalItemName(
+      externalItem.name,
+      now,
+    )
+    const historyItem = await createSectorFolderExternalItemSafely({
+      sectorKey: sector.key,
+      parentItemId: historyFolder.id,
+      name: versionHistoryItemName,
+      path: joinPaths(historyFolderPath, versionHistoryItemName),
+      linkType: externalItem.linkType,
+      url: externalItem.url,
+      createdByName: actor.displayName,
+      createdByEmail: actor.email,
+      createdByUsername: actor.username,
+      updatedByName: actor.displayName,
+      updatedByEmail: actor.email,
+      updatedByUsername: actor.username,
+      createdAt: now,
+      updatedAt: now,
+    })
+
+    if (!historyItem) {
+      throw new HttpError(
+        500,
+        "Nao foi possivel arquivar a versao anterior do link do YouTube.",
+      )
+    }
+
+    const updatedExternalItem = await updateSectorFolderExternalItemSafely({
+      itemId: externalItem.id,
+      url: canonicalUrl,
+      updatedByName: actor.displayName,
+      updatedByEmail: actor.email,
+      updatedByUsername: actor.username,
+      updatedAt: now,
+    })
+
+    if (!updatedExternalItem) {
+      throw new HttpError(
+        500,
+        "Nao foi possivel publicar a nova versao do link do YouTube.",
+      )
+    }
+
+    const archived =
+      shouldRequireRetraining && impact.linkedTrainingsCount > 0
+        ? await archiveTrainingProgressByTrilhaIds(
+            impact.linkedTrainings.map((training) => training.trilhaId),
+            now,
+          )
+        : {
+            materiaisArquivados: 0,
+            provasArquivadas: 0,
+          }
+
+    res.json({
+      item: buildExternalItemResponse({
+        item: updatedExternalItem,
+        sector,
+      }),
+      impact: {
+        ...impact,
+        archivedMaterialsCount: archived.materiaisArquivados,
+        archivedProofsCount: archived.provasArquivadas,
+        retrainingRequested: shouldRequireRetraining,
+      },
+    })
+    return
+  }
+
   assertAllowedUploadFile(file)
 
   const currentItem = await getSharePointItemById(itemId)
@@ -2513,12 +3260,6 @@ export const versionItem = asyncHandler(async (req: Request, res: Response) => {
     }),
   )
   const impact = buildVersionImpactResponse(linkedMaterials)
-  const shouldRequireRetraining = parseBooleanFlag(
-    body.redoCompletedTrainings ??
-      body.refazerTreinamento ??
-      body.requireRetraining,
-  )
-  const now = new Date()
 
   const versionHistoryUpload = await copySharePointItemToFolder({
     itemId: currentItem.id,
@@ -2856,12 +3597,21 @@ export const permanentlyDeleteTrashedItem = asyncHandler(
       throw new HttpError(404, "Item da lixeira nao encontrado para este setor.")
     }
 
+    const externalItem = await getSectorFolderExternalItemByIdSafely(itemId)
+
     try {
-      await permanentlyDeleteItemAndMetadata({
-        sector,
-        itemId,
-        requireFolder: trashRecord.TIPO_ITEM === "folder",
-      })
+      if (externalItem && externalItem.sectorKey === sector.key) {
+        await permanentlyDeleteExternalItem({
+          sector,
+          itemId,
+        })
+      } else {
+        await permanentlyDeleteItemAndMetadata({
+          sector,
+          itemId,
+          requireFolder: trashRecord.TIPO_ITEM === "folder",
+        })
+      }
     } catch (error) {
       if (isSharePointNotFoundError(error)) {
         await Promise.all([
@@ -2869,6 +3619,7 @@ export const permanentlyDeleteTrashedItem = asyncHandler(
           deleteSectorFolderSharesSafely([itemId]),
           deleteSectorFolderTrashByItemIdsSafely([itemId]),
           deleteSectorFolderUserItemsByItemIdsSafely([itemId]),
+          deleteSectorFolderExternalItemsByIdsSafely([itemId]),
         ])
         res.status(204).send()
         return
@@ -2921,12 +3672,22 @@ export const removeItem = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(400, "Informe o item a ser removido.")
   }
 
+  const externalItem = await getSectorFolderExternalItemByIdSafely(itemId)
+
   try {
-    await moveItemToTrash({
-      sector,
-      itemId,
-      actor,
-    })
+    if (externalItem && externalItem.sectorKey === sector.key) {
+      await moveExternalItemToTrash({
+        sector,
+        itemId,
+        actor,
+      })
+    } else {
+      await moveItemToTrash({
+        sector,
+        itemId,
+        actor,
+      })
+    }
 
     res.status(204).send()
   } catch (error) {
