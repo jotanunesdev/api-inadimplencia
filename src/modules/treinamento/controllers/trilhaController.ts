@@ -6,6 +6,7 @@ import {
   createTrilha,
   deleteTrilha,
   getTrilhaById,
+  listPendingRhEfficacyTrilhas,
   listTrilhasByModulo,
   listTrilhasByUser,
   upsertTrilhaEficaciaConfig,
@@ -41,6 +42,11 @@ export const getById = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(404, "Trilha nao encontrada")
   }
   res.json({ trilha })
+})
+
+export const listPendingRhEfficacy = asyncHandler(async (_req: Request, res: Response) => {
+  const trilhas = await listPendingRhEfficacyTrilhas()
+  res.json({ trilhas })
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {

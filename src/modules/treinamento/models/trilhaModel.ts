@@ -1,5 +1,10 @@
 import { getPool, sql } from "../config/db"
 import { hasTrilhaShareTable } from "./trilhaShareModel"
+import {
+  getEfficacyProvaByTrilhaId,
+  OBJECTIVE_PLACEHOLDER_PATH,
+} from "./provaModel"
+import { resolveSectorDefinitionFromModuleName } from "../utils/sectorAccess"
 
 export type TrilhaRecord = {
   ID: string
@@ -19,6 +24,7 @@ export type TrilhaRecord = {
   TOTAL_ATRIBUIDOS?: number | null
   TOTAL_CONCLUIDOS?: number | null
   ACESSO_COMPARTILHADO?: boolean | number | null
+  MODULO_NOME?: string | null
 }
 
 type TrilhaColumnState = {
@@ -210,7 +216,16 @@ export async function getTrilhaById(id: string) {
   return result.recordset[0] as TrilhaRecord | undefined
 }
 
+export async function trilhaHasStructuredEfficacyConfig(trilhaId: string) {
+  const prova = await getEfficacyProvaByTrilhaId(trilhaId)
+  return Boolean(prova?.QUESTOES?.length)
+}
+
 export async function trilhaHasEficaciaConfig(trilhaId: string) {
+  if (await trilhaHasStructuredEfficacyConfig(trilhaId)) {
+    return true
+  }
+
   await ensureTrilhaEficaciaColumns()
   const pool = await getPool()
   const result = await pool
@@ -230,6 +245,44 @@ export async function trilhaHasEficaciaConfig(trilhaId: string) {
   const row = result.recordset[0] as { POSSUI?: boolean | number | null } | undefined
   if (!row) return false
   return row.POSSUI === true || Number(row.POSSUI ?? 0) === 1
+}
+
+export async function listPendingRhEfficacyTrilhas() {
+  const columnState = await getTrilhaColumnState()
+  const pool = await getPool()
+  const result = await pool.request().query(`
+      SELECT ${buildTrilhaSelectFragment(columnState)},
+        COALESCE(a.TOTAL_ATRIBUIDOS, 0) AS TOTAL_ATRIBUIDOS,
+        COALESCE(c.TOTAL_CONCLUIDOS, 0) AS TOTAL_CONCLUIDOS,
+        m.NOME AS MODULO_NOME
+      FROM dbo.TTRILHAS t
+      INNER JOIN dbo.TMODULOS m
+        ON m.ID = t.MODULO_FK_ID
+      ${TRILHA_ASSIGNMENT_COUNT_JOIN}
+      ${TRILHA_COMPLETION_COUNT_JOIN}
+      WHERE EXISTS (
+        SELECT 1
+        FROM dbo.TPROVAS objective_prova
+        WHERE objective_prova.TRILHA_FK_ID = t.ID
+          AND objective_prova.PROVA_PATH = '${OBJECTIVE_PLACEHOLDER_PATH}'
+      )
+      ORDER BY COALESCE(t.ATUALIZADO_EM, SYSUTCDATETIME()) DESC, t.TITULO
+    `)
+
+  const records = result.recordset as TrilhaRecord[]
+  const filtered = await Promise.all(
+    records.map(async (trilha) => {
+      const ownerSector = resolveSectorDefinitionFromModuleName(trilha.MODULO_NOME)
+      if (!ownerSector || ownerSector.key === "recursos-humanos") {
+        return null
+      }
+
+      const hasConfig = await trilhaHasEficaciaConfig(trilha.ID).catch(() => false)
+      return hasConfig ? null : trilha
+    }),
+  )
+
+  return filtered.filter((trilha): trilha is TrilhaRecord => Boolean(trilha))
 }
 
 export type TrilhaEficaciaConfigInput = {

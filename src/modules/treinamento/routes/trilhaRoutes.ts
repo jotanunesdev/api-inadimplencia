@@ -4,6 +4,7 @@ import {
   create,
   getById,
   list,
+  listPendingRhEfficacy,
   listShares,
   remove,
   update,
@@ -14,6 +15,7 @@ import {
 const router = Router()
 
 router.get("/", list)
+router.get("/pendencias/eficacia", listPendingRhEfficacy)
 router.get("/:id", getById)
 router.get("/:id/shares", listShares)
 router.post("/", create)

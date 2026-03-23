@@ -17,9 +17,11 @@ import {
   type ProvaAttemptStatus,
 } from "../models/provaAttemptModel"
 import {
+  createOrVersionEfficacyProva,
   createOrVersionObjectiveProva,
   createProva,
   deleteProva,
+  getEfficacyProvaByTrilhaId,
   getObjectiveProvaForExecutionByTrilhaId,
   getObjectiveProvaByTrilhaId,
   getProvaById,
@@ -30,8 +32,28 @@ import {
   PROVA_MODO_APLICACAO,
   updateProva,
 } from "../models/provaModel"
-import { getTrilhaById, updateTrilha } from "../models/trilhaModel"
+import {
+  getTrilhaById,
+  trilhaHasEficaciaConfig,
+  upsertTrilhaEficaciaConfig,
+  updateTrilha,
+} from "../models/trilhaModel"
 import { getModuleById } from "../models/moduleModel"
+import {
+  clearTrainingWorkflowNotifications,
+  createTrainingWorkflowNotification,
+} from "../models/trainingWorkflowNotificationModel"
+import {
+  broadcastTrainingWorkflowNotificationSnapshot,
+} from "../services/trainingWorkflowNotificationRealtime"
+import {
+  buildTrainingNotificationAuthor,
+  listNotificationUsernamesBySectorKey,
+} from "../services/trainingNotificationRecipientService"
+import {
+  normalizeUsernameValue,
+  resolveSectorDefinitionFromModuleName,
+} from "../utils/sectorAccess"
 import {
   assertCollectiveProofTokenActive,
   createCollectiveProofToken,
@@ -259,6 +281,10 @@ type ObjectiveQuestionPayload = {
   }>
 }
 
+type StructuredQuestionValidationOptions = {
+  requireCorrectOption: boolean
+}
+
 type ObjectiveSubmitPayload = {
   cpf?: string
   respostas?: Array<{
@@ -298,8 +324,238 @@ type GabaritoItem = {
 }
 
 const MEDIA_APROVACAO = 6
+const DEFAULT_EFFICACY_DESTINATION_SECTOR = "recursos-humanos"
 const GUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
+
+function buildBalancedWeights(questionCount: number) {
+  if (!Number.isFinite(questionCount) || questionCount <= 0) {
+    return [] as number[]
+  }
+
+  const normalizedCount = Math.max(1, Math.trunc(questionCount))
+  const weights: number[] = []
+  let accumulated = 0
+
+  for (let index = 0; index < normalizedCount; index += 1) {
+    if (index === normalizedCount - 1) {
+      weights.push(round2(10 - accumulated))
+      break
+    }
+
+    const weight = round2(10 / normalizedCount)
+    accumulated += weight
+    weights.push(weight)
+  }
+
+  return weights
+}
+
+function sanitizeStructuredQuestions(
+  questoes: ObjectiveQuestionPayload[] | undefined,
+  options: StructuredQuestionValidationOptions,
+) {
+  if (!Array.isArray(questoes) || questoes.length === 0) {
+    throw new HttpError(400, "A prova deve conter ao menos uma questao")
+  }
+
+  const efficacyWeights = buildBalancedWeights(questoes.length)
+
+  return questoes.map((question, questionIndex) => {
+    const enunciado = question.enunciado?.trim()
+    if (!enunciado) {
+      throw new HttpError(400, `Questao ${questionIndex + 1}: enunciado obrigatorio`)
+    }
+
+    const parsedPeso = Number(question.peso)
+    const peso = options.requireCorrectOption
+      ? parsedPeso
+      : efficacyWeights[questionIndex] ?? 1
+
+    if (!Number.isFinite(peso) || peso <= 0) {
+      throw new HttpError(400, `Questao ${questionIndex + 1}: peso invalido`)
+    }
+
+    if (!Array.isArray(question.opcoes) || question.opcoes.length < 2) {
+      throw new HttpError(400, `Questao ${questionIndex + 1}: inclua ao menos 2 opcoes`)
+    }
+
+    const opcoes = question.opcoes.map((option, optionIndex) => {
+      const texto = option.texto?.trim()
+      if (!texto) {
+        throw new HttpError(
+          400,
+          `Questao ${questionIndex + 1}, opcao ${optionIndex + 1}: texto obrigatorio`,
+        )
+      }
+
+      return {
+        texto,
+        correta: options.requireCorrectOption ? Boolean(option.correta) : false,
+      }
+    })
+
+    if (options.requireCorrectOption) {
+      const correctCount = opcoes.filter((option) => option.correta).length
+      if (correctCount !== 1) {
+        throw new HttpError(
+          400,
+          `Questao ${questionIndex + 1}: deve existir exatamente 1 opcao correta`,
+        )
+      }
+    }
+
+    return {
+      enunciado,
+      peso: round2(peso),
+      opcoes,
+    }
+  })
+}
+
+async function resolveTrainingWorkflowContext(trilhaId: string) {
+  const trilha = await getTrilhaById(trilhaId)
+  if (!trilha) {
+    throw new HttpError(404, "Trilha nao encontrada")
+  }
+
+  const module = await getModuleById(trilha.MODULO_FK_ID)
+  const ownerSector = resolveSectorDefinitionFromModuleName(module?.NOME)
+
+  return {
+    module,
+    ownerSector,
+    trilha,
+  }
+}
+
+async function broadcastWorkflowRecipients(usernames: string[]) {
+  await Promise.all(
+    Array.from(
+      new Set(usernames.map((value) => normalizeUsernameValue(value)).filter(Boolean)),
+    ).map((username) => broadcastTrainingWorkflowNotificationSnapshot(username)),
+  )
+}
+
+async function notifyHumanResourcesPendingEfficacy(params: {
+  actorName?: string | null
+  actorUsername?: string | null
+  trilhaId: string
+}) {
+  const workflowContext = await resolveTrainingWorkflowContext(params.trilhaId)
+
+  if (
+    !workflowContext.ownerSector ||
+    workflowContext.ownerSector.key === DEFAULT_EFFICACY_DESTINATION_SECTOR
+  ) {
+    return {
+      recipientCount: 0,
+      sent: false,
+    }
+  }
+
+  const hasEficacia = await trilhaHasEficaciaConfig(params.trilhaId).catch(() => false)
+  if (hasEficacia) {
+    return {
+      recipientCount: 0,
+      sent: false,
+    }
+  }
+
+  const recipients = await listNotificationUsernamesBySectorKey(
+    DEFAULT_EFFICACY_DESTINATION_SECTOR,
+  )
+  if (recipients.length === 0) {
+    return {
+      recipientCount: 0,
+      sent: false,
+    }
+  }
+
+  const author = buildTrainingNotificationAuthor({
+    authorName: params.actorName ?? workflowContext.trilha.CRIADO_POR ?? null,
+    authorUsername: params.actorUsername ?? workflowContext.trilha.CRIADO_POR ?? null,
+  })
+
+  await Promise.all(
+    recipients.map((recipientUsername) =>
+      createTrainingWorkflowNotification({
+        recipientUsername,
+        type: "training_pending_efficacy",
+        trainingId: workflowContext.trilha.ID,
+        trainingTitle: workflowContext.trilha.TITULO,
+        moduleId: workflowContext.trilha.MODULO_FK_ID,
+        sourceSectorKey: workflowContext.ownerSector?.key ?? null,
+        sourceSectorLabel: workflowContext.ownerSector?.label ?? null,
+        destinationSectorKey: DEFAULT_EFFICACY_DESTINATION_SECTOR,
+        authorName: author.authorName,
+        authorUsername: author.authorUsername,
+      }),
+    ),
+  )
+
+  await broadcastWorkflowRecipients(recipients)
+
+  return {
+    recipientCount: recipients.length,
+    sent: true,
+  }
+}
+
+async function notifyTrainingReadyForAssignment(params: {
+  actorName?: string | null
+  actorUsername?: string | null
+  trilhaId: string
+}) {
+  const workflowContext = await resolveTrainingWorkflowContext(params.trilhaId)
+  const clearedRecipients = await clearTrainingWorkflowNotifications({
+    trainingId: workflowContext.trilha.ID,
+    type: "training_pending_efficacy",
+  })
+
+  if (
+    !workflowContext.ownerSector ||
+    workflowContext.ownerSector.key === DEFAULT_EFFICACY_DESTINATION_SECTOR
+  ) {
+    await broadcastWorkflowRecipients(clearedRecipients)
+    return {
+      recipientCount: 0,
+      sent: false,
+    }
+  }
+
+  const recipients = await listNotificationUsernamesBySectorKey(
+    workflowContext.ownerSector.key,
+  )
+  const author = buildTrainingNotificationAuthor({
+    authorName: params.actorName ?? "Recursos Humanos",
+    authorUsername: params.actorUsername ?? null,
+  })
+
+  await Promise.all(
+    recipients.map((recipientUsername) =>
+      createTrainingWorkflowNotification({
+        recipientUsername,
+        type: "training_ready_assignment",
+        trainingId: workflowContext.trilha.ID,
+        trainingTitle: workflowContext.trilha.TITULO,
+        moduleId: workflowContext.trilha.MODULO_FK_ID,
+        sourceSectorKey: workflowContext.ownerSector?.key ?? null,
+        sourceSectorLabel: workflowContext.ownerSector?.label ?? null,
+        destinationSectorKey: workflowContext.ownerSector?.key ?? null,
+        authorName: author.authorName,
+        authorUsername: author.authorUsername,
+      }),
+    ),
+  )
+
+  await broadcastWorkflowRecipients([...clearedRecipients, ...recipients])
+
+  return {
+    recipientCount: recipients.length,
+    sent: recipients.length > 0,
+  }
+}
 
 function sanitizeObjectiveProvaForPlayer(prova: {
   ID: string
@@ -462,9 +718,29 @@ export const getObjectiveByTrilha = asyncHandler(async (req: Request, res: Respo
   res.json({ prova })
 })
 
+export const getEfficacyByTrilha = asyncHandler(async (req: Request, res: Response) => {
+  const { versao } = req.query as { versao?: string }
+  const parsedVersion =
+    versao !== undefined && versao !== "" ? Number(versao) : undefined
+
+  if (parsedVersion !== undefined && (!Number.isFinite(parsedVersion) || parsedVersion <= 0)) {
+    throw new HttpError(400, "versao invalida")
+  }
+
+  const prova = await getEfficacyProvaByTrilhaId(req.params.trilhaId, parsedVersion)
+  if (!prova) {
+    res.json({ prova: null })
+    return
+  }
+
+  res.json({ prova })
+})
+
 export const createOrVersionObjective = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId } = req.params
-  const { titulo, questoes, modoAplicacao } = req.body as {
+  const { actorName, actorUsername, titulo, questoes, modoAplicacao } = req.body as {
+    actorName?: string
+    actorUsername?: string
     titulo?: string
     questoes?: ObjectiveQuestionPayload[]
     modoAplicacao?: string
@@ -474,53 +750,8 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     throw new HttpError(400, "titulo da prova e obrigatorio")
   }
 
-  if (!Array.isArray(questoes) || questoes.length === 0) {
-    throw new HttpError(400, "A prova deve conter ao menos uma questao")
-  }
-
-  const normalizedQuestions = questoes.map((question, questionIndex) => {
-    const enunciado = question.enunciado?.trim()
-    if (!enunciado) {
-      throw new HttpError(400, `Questao ${questionIndex + 1}: enunciado obrigatorio`)
-    }
-
-    const peso = Number(question.peso)
-    if (!Number.isFinite(peso) || peso <= 0) {
-      throw new HttpError(400, `Questao ${questionIndex + 1}: peso invalido`)
-    }
-
-    if (!Array.isArray(question.opcoes) || question.opcoes.length < 2) {
-      throw new HttpError(400, `Questao ${questionIndex + 1}: inclua ao menos 2 opcoes`)
-    }
-
-    const opcoes = question.opcoes.map((option, optionIndex) => {
-      const texto = option.texto?.trim()
-      if (!texto) {
-        throw new HttpError(
-          400,
-          `Questao ${questionIndex + 1}, opcao ${optionIndex + 1}: texto obrigatorio`,
-        )
-      }
-
-      return {
-        texto,
-        correta: Boolean(option.correta),
-      }
-    })
-
-    const correctCount = opcoes.filter((option) => option.correta).length
-    if (correctCount !== 1) {
-      throw new HttpError(
-        400,
-        `Questao ${questionIndex + 1}: deve existir exatamente 1 opcao correta`,
-      )
-    }
-
-    return {
-      enunciado,
-      peso: round2(peso),
-      opcoes,
-    }
+  const normalizedQuestions = sanitizeStructuredQuestions(questoes, {
+    requireCorrectOption: true,
   })
 
   const totalScore = round2(
@@ -544,7 +775,80 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     questoes: normalizedQuestions,
   })
 
-  res.status(201).json({ prova })
+  const hrPendingNotification = await notifyHumanResourcesPendingEfficacy({
+    actorName,
+    actorUsername,
+    trilhaId,
+  })
+
+  res.status(201).json({
+    prova,
+    rhPendingNotificationRecipientCount: hrPendingNotification.recipientCount,
+    rhPendingNotificationSent: hrPendingNotification.sent,
+  })
+})
+
+export const createOrVersionEfficacy = asyncHandler(async (req: Request, res: Response) => {
+  const { trilhaId } = req.params
+  const { actorName, actorUsername, questoes, titulo } = req.body as {
+    actorName?: string
+    actorUsername?: string
+    questoes?: ObjectiveQuestionPayload[]
+    titulo?: string
+  }
+
+  if (!titulo?.trim()) {
+    throw new HttpError(400, "titulo da avaliacao de eficacia e obrigatorio")
+  }
+
+  const normalizedQuestions = sanitizeStructuredQuestions(questoes, {
+    requireCorrectOption: false,
+  })
+  const totalScore = round2(
+    normalizedQuestions.reduce((total, question) => total + question.peso, 0),
+  )
+
+  const prova = await createOrVersionEfficacyProva({
+    trilhaId,
+    titulo: titulo.trim(),
+    notaTotal: totalScore,
+    modoAplicacao: PROVA_MODO_APLICACAO.INDIVIDUAL,
+    questoes: normalizedQuestions,
+  })
+
+  const firstQuestion = normalizedQuestions[0]?.enunciado ?? titulo.trim()
+  try {
+    await upsertTrilhaEficaciaConfig(trilhaId, {
+      pergunta: firstQuestion,
+      obrigatoria: true,
+      atualizadoEm: new Date(),
+    })
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code ?? "")
+        : ""
+    if (code === "TRILHA_EFICACIA_CONFIG_COLUMNS_MISSING") {
+      throw new HttpError(
+        400,
+        "Banco sem suporte a configuracao de avaliacao de eficacia por trilha. Execute a migration de TTRILHAS.",
+      )
+    }
+    throw error
+  }
+
+  const readyNotification = await notifyTrainingReadyForAssignment({
+    actorName,
+    actorUsername,
+    trilhaId,
+  })
+
+  res.status(201).json({
+    prova,
+    readyAssignmentNotificationRecipientCount: readyNotification.recipientCount,
+    readyAssignmentNotificationSent: readyNotification.sent,
+    resumoPergunta: firstQuestion,
+  })
 })
 
 export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Response) => {

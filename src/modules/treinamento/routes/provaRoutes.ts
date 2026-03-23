@@ -1,9 +1,11 @@
 import { Router } from "express"
 import {
+  createOrVersionEfficacy,
   createOrVersionObjective,
   create,
   createUpload,
   generateCollectiveIndividualProofQr,
+  getEfficacyByTrilha,
   getLatestObjectiveResult,
   getObjectiveForPlayer,
   getObjectiveByTrilha,
@@ -23,11 +25,13 @@ const router = Router()
 
 router.get("/", list)
 router.get("/attempts/report", listAttemptsReport)
+router.get("/trilha/:trilhaId/eficacia", getEfficacyByTrilha)
 router.get("/trilha/:trilhaId/objectiva", getObjectiveByTrilha)
 router.get("/trilha/:trilhaId/objectiva/player", getObjectiveForPlayer)
 router.get("/trilha/:trilhaId/objectiva/player/result", getLatestObjectiveResult)
 router.get("/:id", getById)
 router.post("/", create)
+router.post("/trilha/:trilhaId/eficacia", createOrVersionEfficacy)
 router.post("/trilha/:trilhaId/objectiva", createOrVersionObjective)
 router.post("/trilha/:trilhaId/objectiva/player/submit", submitObjectiveForPlayer)
 router.post("/trilha/:trilhaId/objectiva/instrutor/submit", submitObjectiveForCollective)

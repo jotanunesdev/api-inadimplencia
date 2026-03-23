@@ -17,6 +17,7 @@ export type ProvaRecord = {
 }
 
 export const OBJECTIVE_PLACEHOLDER_PATH = "__PROVA_OBJETIVA__"
+export const EFFICACY_PLACEHOLDER_PATH = "__PROVA_EFICACIA__"
 export const PROVA_MODO_APLICACAO = {
   COLETIVA: "coletiva",
   INDIVIDUAL: "individual",
@@ -115,21 +116,20 @@ export async function getProvaById(id: string, versao?: number) {
   return result.recordset[0] as ProvaRecord | undefined
 }
 
-export async function getProvaByTrilhaId(trilhaId: string) {
+export async function getProvaByTrilhaId(
+  trilhaId: string,
+  proofPath = OBJECTIVE_PLACEHOLDER_PATH,
+) {
   const pool = await getPool()
   const result = await pool
     .request()
     .input("TRILHA_FK_ID", sql.UniqueIdentifier, trilhaId)
-    .input(
-      "OBJECTIVE_PLACEHOLDER_PATH",
-      sql.NVarChar(1000),
-      OBJECTIVE_PLACEHOLDER_PATH,
-    )
+    .input("PROVA_PATH", sql.NVarChar(1000), proofPath)
     .query(`
       SELECT TOP 1 *
       FROM dbo.TPROVAS
       WHERE TRILHA_FK_ID = @TRILHA_FK_ID
-        AND PROVA_PATH = @OBJECTIVE_PLACEHOLDER_PATH
+        AND PROVA_PATH = @PROVA_PATH
       ORDER BY VERSAO DESC
     `)
 
@@ -445,17 +445,32 @@ async function fetchObjectiveProvaByVersion(
   }
 }
 
-export async function getObjectiveProvaByTrilhaId(
+async function getStructuredProvaByTrilhaId(
   trilhaId: string,
+  proofPath: string,
   versao?: number,
 ) {
-  const prova = await getProvaByTrilhaId(trilhaId)
+  const prova = await getProvaByTrilhaId(trilhaId, proofPath)
   if (!prova) {
     return undefined
   }
 
   const targetVersion = versao ?? prova.VERSAO
   return fetchObjectiveProvaByVersion(prova.ID, targetVersion)
+}
+
+export async function getObjectiveProvaByTrilhaId(
+  trilhaId: string,
+  versao?: number,
+) {
+  return getStructuredProvaByTrilhaId(trilhaId, OBJECTIVE_PLACEHOLDER_PATH, versao)
+}
+
+export async function getEfficacyProvaByTrilhaId(
+  trilhaId: string,
+  versao?: number,
+) {
+  return getStructuredProvaByTrilhaId(trilhaId, EFFICACY_PLACEHOLDER_PATH, versao)
 }
 
 export async function getObjectiveProvaForExecutionByTrilhaId(
@@ -501,7 +516,7 @@ export async function proofExecutionMustBeCollective(trilhaId: string) {
 }
 
 export async function trilhaHasObjectiveProva(trilhaId: string) {
-  const prova = await getProvaByTrilhaId(trilhaId)
+  const prova = await getProvaByTrilhaId(trilhaId, OBJECTIVE_PLACEHOLDER_PATH)
   if (!prova) return false
 
   const pool = await getPool()
@@ -519,8 +534,9 @@ export async function trilhaHasObjectiveProva(trilhaId: string) {
   return Number(result.recordset[0]?.TOTAL ?? 0) > 0
 }
 
-export async function createOrVersionObjectiveProva(input: {
+async function createOrVersionStructuredProva(input: {
   trilhaId: string
+  proofPath: string
   titulo: string
   notaTotal: number
   modoAplicacao?: ProvaModoAplicacao
@@ -534,10 +550,12 @@ export async function createOrVersionObjectiveProva(input: {
     const request = new sql.Request(transaction)
     const currentResult = await request
       .input("TRILHA_FK_ID", sql.UniqueIdentifier, input.trilhaId)
+      .input("PROVA_PATH", sql.NVarChar(1000), input.proofPath)
       .query(`
         SELECT TOP 1 ID, VERSAO
         FROM dbo.TPROVAS
         WHERE TRILHA_FK_ID = @TRILHA_FK_ID
+          AND PROVA_PATH = @PROVA_PATH
         ORDER BY VERSAO DESC
       `)
 
@@ -555,7 +573,7 @@ export async function createOrVersionObjectiveProva(input: {
         .input(
           "PROVA_PATH",
           sql.NVarChar(1000),
-          OBJECTIVE_PLACEHOLDER_PATH,
+          input.proofPath,
         )
         .input("VERSAO", sql.Int, nextVersion)
         .input(
@@ -573,6 +591,7 @@ export async function createOrVersionObjectiveProva(input: {
     } else {
       await new sql.Request(transaction)
         .input("ID", sql.UniqueIdentifier, provaId)
+        .input("PROVA_PATH", sql.NVarChar(1000), input.proofPath)
         .input("VERSAO", sql.Int, nextVersion)
         .input(
           "MODO_APLICACAO",
@@ -585,6 +604,7 @@ export async function createOrVersionObjectiveProva(input: {
         .query(`
           UPDATE dbo.TPROVAS
           SET VERSAO = @VERSAO,
+              PROVA_PATH = @PROVA_PATH,
               MODO_APLICACAO = @MODO_APLICACAO,
               TITULO = @TITULO,
               NOTA_TOTAL = @NOTA_TOTAL,
@@ -630,4 +650,30 @@ export async function createOrVersionObjectiveProva(input: {
     await transaction.rollback()
     throw error
   }
+}
+
+export async function createOrVersionObjectiveProva(input: {
+  trilhaId: string
+  titulo: string
+  notaTotal: number
+  modoAplicacao?: ProvaModoAplicacao
+  questoes: ObjectiveQuestionInput[]
+}) {
+  return createOrVersionStructuredProva({
+    ...input,
+    proofPath: OBJECTIVE_PLACEHOLDER_PATH,
+  })
+}
+
+export async function createOrVersionEfficacyProva(input: {
+  trilhaId: string
+  titulo: string
+  notaTotal: number
+  modoAplicacao?: ProvaModoAplicacao
+  questoes: ObjectiveQuestionInput[]
+}) {
+  return createOrVersionStructuredProva({
+    ...input,
+    proofPath: EFFICACY_PLACEHOLDER_PATH,
+  })
 }
