@@ -50,12 +50,13 @@ export const listPendingRhEfficacy = asyncHandler(async (_req: Request, res: Res
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
-  const { id, moduloId, titulo, criadoPor, descricao, procedimentoId, normaId, atualizadoEm, path } = req.body as {
+  const { id, moduloId, titulo, criadoPor, descricao, eixo, procedimentoId, normaId, atualizadoEm, path } = req.body as {
     id?: string
     moduloId?: string
     titulo?: string
     criadoPor?: string
     descricao?: string
+    eixo?: string | null
     procedimentoId?: string | null
     normaId?: string | null
     atualizadoEm?: string
@@ -82,6 +83,7 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
     titulo,
     criadoPor,
     descricao,
+    eixo: eixo === undefined ? undefined : String(eixo ?? "").trim() || null,
     procedimentoId: procedimentoId === undefined ? undefined : procedimentoId,
     normaId: normaId === undefined ? undefined : normaId,
     atualizadoEm: atualizadoEm ? new Date(atualizadoEm) : null,
@@ -92,11 +94,12 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const update = asyncHandler(async (req: Request, res: Response) => {
-  const { moduloId, titulo, criadoPor, descricao, procedimentoId, normaId, atualizadoEm, path } = req.body as {
+  const { moduloId, titulo, criadoPor, descricao, eixo, procedimentoId, normaId, atualizadoEm, path } = req.body as {
     moduloId?: string
     titulo?: string
     criadoPor?: string
     descricao?: string
+    eixo?: string | null
     procedimentoId?: string | null
     normaId?: string | null
     atualizadoEm?: string
@@ -108,6 +111,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     titulo === undefined &&
     criadoPor === undefined &&
     descricao === undefined &&
+    eixo === undefined &&
     procedimentoId === undefined &&
     normaId === undefined &&
     atualizadoEm === undefined &&
@@ -162,6 +166,7 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
     titulo,
     criadoPor,
     descricao,
+    eixo: eixo === undefined ? undefined : String(eixo ?? "").trim() || null,
     procedimentoId: procedimentoId === undefined ? undefined : procedimentoId,
     normaId: normaId === undefined ? undefined : normaId,
     atualizadoEm: atualizadoEm ? new Date(atualizadoEm) : null,

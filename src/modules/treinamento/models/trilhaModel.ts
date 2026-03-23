@@ -11,6 +11,7 @@ export type TrilhaRecord = {
   MODULO_FK_ID: string
   TITULO: string
   CRIADO_POR: string | null
+  EIXO?: string | null
   ATUALIZADO_EM: Date | null
   PATH: string | null
   DESCRICAO?: string | null
@@ -32,6 +33,7 @@ type TrilhaColumnState = {
   hasEficaciaAtualizadaEm: boolean
   hasEficaciaObrigatoria: boolean
   hasEficaciaPergunta: boolean
+  hasEixo: boolean
   hasNormaId: boolean
   hasProcedimentoId: boolean
 }
@@ -41,6 +43,7 @@ export async function getTrilhaColumnState(): Promise<TrilhaColumnState> {
   const result = await pool.request().query(`
     SELECT
       COL_LENGTH('dbo.TTRILHAS', 'DESCRICAO') AS DESCRICAO_COL,
+      COL_LENGTH('dbo.TTRILHAS', 'EIXO') AS EIXO_COL,
       COL_LENGTH('dbo.TTRILHAS', 'PROCEDIMENTO_ID') AS PROCEDIMENTO_ID_COL,
       COL_LENGTH('dbo.TTRILHAS', 'NORMA_ID') AS NORMA_ID_COL,
       COL_LENGTH('dbo.TTRILHAS', 'AVALIACAO_EFICACIA_OBRIGATORIA') AS OBRIGATORIA_COL,
@@ -51,6 +54,7 @@ export async function getTrilhaColumnState(): Promise<TrilhaColumnState> {
   const row = result.recordset[0] as
     | {
         DESCRICAO_COL?: number | null
+        EIXO_COL?: number | null
         PROCEDIMENTO_ID_COL?: number | null
         NORMA_ID_COL?: number | null
         OBRIGATORIA_COL?: number | null
@@ -64,6 +68,7 @@ export async function getTrilhaColumnState(): Promise<TrilhaColumnState> {
     hasEficaciaAtualizadaEm: Boolean(row?.ATUALIZADA_EM_COL),
     hasEficaciaObrigatoria: Boolean(row?.OBRIGATORIA_COL),
     hasEficaciaPergunta: Boolean(row?.PERGUNTA_COL),
+    hasEixo: Boolean(row?.EIXO_COL),
     hasNormaId: Boolean(row?.NORMA_ID_COL),
     hasProcedimentoId: Boolean(row?.PROCEDIMENTO_ID_COL),
   }
@@ -87,6 +92,10 @@ function buildTrilhaSelectFragment(columnState: TrilhaColumnState) {
 
   if (!columnState.hasDescricao) {
     fragments.push("CAST(NULL AS NVARCHAR(MAX)) AS DESCRICAO")
+  }
+
+  if (!columnState.hasEixo) {
+    fragments.push("CAST(NULL AS NVARCHAR(255)) AS EIXO")
   }
 
   if (!columnState.hasProcedimentoId) {
@@ -205,9 +214,11 @@ export async function getTrilhaById(id: string) {
     .input("ID", sql.UniqueIdentifier, id)
     .query(`
       SELECT ${buildTrilhaSelectFragment(columnState)},
+        m.NOME AS MODULO_NOME,
         COALESCE(a.TOTAL_ATRIBUIDOS, 0) AS TOTAL_ATRIBUIDOS,
         COALESCE(c.TOTAL_CONCLUIDOS, 0) AS TOTAL_CONCLUIDOS
       FROM dbo.TTRILHAS t
+      LEFT JOIN dbo.TMODULOS m ON m.ID = t.MODULO_FK_ID
       ${TRILHA_ASSIGNMENT_COUNT_JOIN}
       ${TRILHA_COMPLETION_COUNT_JOIN}
       WHERE t.ID = @ID
@@ -347,6 +358,7 @@ export type TrilhaCreateInput = {
   titulo: string
   criadoPor?: string | null
   descricao?: string | null
+  eixo?: string | null
   procedimentoId?: string | null
   normaId?: string | null
   atualizadoEm?: Date | null
@@ -369,6 +381,10 @@ export async function createTrilha(input: TrilhaCreateInput) {
     request.input("DESCRICAO", sql.NVarChar(sql.MAX), input.descricao ?? null)
   }
 
+  if (columnState.hasEixo) {
+    request.input("EIXO", sql.NVarChar(255), input.eixo ?? null)
+  }
+
   if (columnState.hasProcedimentoId) {
     request.input("PROCEDIMENTO_ID", sql.UniqueIdentifier, input.procedimentoId ?? null)
   }
@@ -385,6 +401,7 @@ export async function createTrilha(input: TrilhaCreateInput) {
         TITULO,
         CRIADO_POR,
         ${columnState.hasDescricao ? "DESCRICAO," : ""}
+        ${columnState.hasEixo ? "EIXO," : ""}
         ${columnState.hasProcedimentoId ? "PROCEDIMENTO_ID," : ""}
         ${columnState.hasNormaId ? "NORMA_ID," : ""}
         ATUALIZADO_EM,
@@ -396,6 +413,7 @@ export async function createTrilha(input: TrilhaCreateInput) {
         @TITULO,
         @CRIADO_POR,
         ${columnState.hasDescricao ? "@DESCRICAO," : ""}
+        ${columnState.hasEixo ? "@EIXO," : ""}
         ${columnState.hasProcedimentoId ? "@PROCEDIMENTO_ID," : ""}
         ${columnState.hasNormaId ? "@NORMA_ID," : ""}
         @ATUALIZADO_EM,
@@ -412,6 +430,7 @@ export type TrilhaUpdateInput = {
   titulo?: string | null
   criadoPor?: string | null
   descricao?: string | null
+  eixo?: string | null
   procedimentoId?: string | null
   normaId?: string | null
   atualizadoEm?: Date | null
@@ -435,6 +454,11 @@ export async function updateTrilha(id: string, input: TrilhaUpdateInput) {
     request.input("DESCRICAO", sql.NVarChar(sql.MAX), input.descricao ?? null)
   }
 
+  if (columnState.hasEixo) {
+    request.input("HAS_EIXO", sql.Bit, input.eixo !== undefined)
+    request.input("EIXO", sql.NVarChar(255), input.eixo ?? null)
+  }
+
   if (columnState.hasProcedimentoId) {
     request.input("HAS_PROCEDIMENTO_ID", sql.Bit, input.procedimentoId !== undefined)
     request.input("PROCEDIMENTO_ID", sql.UniqueIdentifier, input.procedimentoId ?? null)
@@ -453,6 +477,7 @@ export async function updateTrilha(id: string, input: TrilhaUpdateInput) {
         TITULO = COALESCE(@TITULO, TITULO),
         CRIADO_POR = COALESCE(@CRIADO_POR, CRIADO_POR),
         ${columnState.hasDescricao ? "DESCRICAO = CASE WHEN @HAS_DESCRICAO = 1 THEN @DESCRICAO ELSE DESCRICAO END," : ""}
+        ${columnState.hasEixo ? "EIXO = CASE WHEN @HAS_EIXO = 1 THEN @EIXO ELSE EIXO END," : ""}
         ${columnState.hasProcedimentoId ? "PROCEDIMENTO_ID = CASE WHEN @HAS_PROCEDIMENTO_ID = 1 THEN @PROCEDIMENTO_ID ELSE PROCEDIMENTO_ID END," : ""}
         ${columnState.hasNormaId ? "NORMA_ID = CASE WHEN @HAS_NORMA_ID = 1 THEN @NORMA_ID ELSE NORMA_ID END," : ""}
         ATUALIZADO_EM = COALESCE(@ATUALIZADO_EM, ATUALIZADO_EM),

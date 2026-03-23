@@ -192,7 +192,17 @@ const SECTORS: SectorDefinition[] = [
     key: "recursos-humanos",
     label: "Recursos Humanos",
     folderPath: "Recursos Humanos",
-    aliases: ["recursos humanos", "rh", "gente e gestao"],
+    aliases: [
+      "recursos humanos",
+      "rh",
+      "gente e gestao",
+      "departamento pessoal",
+      "administracao de pessoal",
+      "administração de pessoal",
+      "adm pessoal",
+      "adm. pessoal",
+      "dp",
+    ],
   },
   {
     key: "inovacao",

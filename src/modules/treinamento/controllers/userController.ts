@@ -150,7 +150,18 @@ const SECTOR_DEFINITIONS = [
     key: "qualidade",
   },
   {
-    aliases: ["recursos humanos", "rh", "gente e gestao", "gente e gestão"],
+    aliases: [
+      "recursos humanos",
+      "rh",
+      "gente e gestao",
+      "gente e gestão",
+      "departamento pessoal",
+      "administracao de pessoal",
+      "administração de pessoal",
+      "adm pessoal",
+      "adm. pessoal",
+      "dp",
+    ],
     key: "recursos-humanos",
   },
   {
