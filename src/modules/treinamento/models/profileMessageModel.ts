@@ -18,6 +18,18 @@ export type ProfileMessageRecord = {
   REACAO_ATUAL: ProfileMessageReactionType | null
 }
 
+export type ProfileMessageItem = {
+  id: string
+  profileUsername: string
+  parentId: string | null
+  authorUsername: string
+  authorName: string | null
+  authorJobTitle: string | null
+  content: string
+  createdAt: string
+  updatedAt: string
+}
+
 const normalizeUsernameValue = (value: string | null | undefined) =>
   String(value ?? "")
     .trim()
@@ -26,6 +38,20 @@ const normalizeUsernameValue = (value: string | null | undefined) =>
     ?.trim() ?? ""
 
 let ensureProfileMessageSchemaPromise: Promise<void> | null = null
+
+function mapProfileMessageRecord(record: ProfileMessageRecord): ProfileMessageItem {
+  return {
+    id: record.ID,
+    profileUsername: record.PERFIL_USERNAME,
+    parentId: record.PARENT_ID,
+    authorUsername: record.AUTOR_USERNAME,
+    authorName: record.AUTOR_NOME,
+    authorJobTitle: record.AUTOR_CARGO,
+    content: record.CONTEUDO,
+    createdAt: new Date(record.CRIADO_EM).toISOString(),
+    updatedAt: new Date(record.ATUALIZADO_EM).toISOString(),
+  }
+}
 
 async function ensureProfileMessageSchema() {
   if (!ensureProfileMessageSchemaPromise) {
@@ -199,6 +225,40 @@ export async function createProfileMessage(input: {
     `)
 
   return id
+}
+
+export async function getProfileMessageById(messageId: string) {
+  await ensureProfileMessageSchema()
+
+  const normalizedMessageId = String(messageId ?? "").trim()
+  if (!normalizedMessageId) {
+    return null
+  }
+
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input("ID", sql.UniqueIdentifier, normalizedMessageId)
+    .query(`
+      SELECT TOP 1
+        ID,
+        PERFIL_USERNAME,
+        PARENT_ID,
+        AUTOR_USERNAME,
+        AUTOR_NOME,
+        AUTOR_CARGO,
+        CONTEUDO,
+        CRIADO_EM,
+        ATUALIZADO_EM,
+        CAST(0 AS INT) AS CURTIDAS,
+        CAST(0 AS INT) AS DESCURTIDAS,
+        CAST(NULL AS VARCHAR(10)) AS REACAO_ATUAL
+      FROM dbo.TPERFIL_MENSAGENS
+      WHERE ID = @ID
+    `)
+
+  const record = result.recordset[0] as ProfileMessageRecord | undefined
+  return record ? mapProfileMessageRecord(record) : null
 }
 
 export async function setProfileMessageReaction(input: {
