@@ -10,6 +10,7 @@ import {
   listInstructors,
   listUsers,
   setInstructorFlag,
+  setInstructorFlags,
   upsertUser,
   type UserRecord,
 } from "../models/userModel"
@@ -99,6 +100,189 @@ const normalizeText = (value: string | null | undefined) =>
 
 const normalizeTextCompact = (value: string | null | undefined) =>
   normalizeText(value).replace(/[^0-9a-z]/g, "")
+
+const tokenizeSearch = (value: string | null | undefined) =>
+  normalizeText(value)
+    .split(/[^0-9a-z]+/g)
+    .map((item) => item.trim())
+    .filter(Boolean)
+
+const escapeSectorPattern = (value: string | null | undefined) =>
+  String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+const matchesSectorAlias = (normalizedValue: string, alias: string) => {
+  const normalizedAlias = normalizeText(alias)
+
+  if (!normalizedValue || !normalizedAlias) {
+    return false
+  }
+
+  if (normalizedValue === normalizedAlias) {
+    return true
+  }
+
+  if (normalizedAlias.includes(" ")) {
+    return normalizedValue.includes(normalizedAlias)
+  }
+
+  return new RegExp(`(^|[^a-z0-9])${escapeSectorPattern(normalizedAlias)}([^a-z0-9]|$)`).test(
+    normalizedValue,
+  )
+}
+
+const SECTOR_DEFINITIONS = [
+  {
+    aliases: ["ti", "tecnologia da informacao", "tecnologia da informação", "tecnologia"],
+    key: "ti",
+  },
+  {
+    aliases: [
+      "sesmt",
+      "seguranca do trabalho",
+      "segurança do trabalho",
+      "saude e seguranca",
+      "saúde e segurança",
+    ],
+    key: "sesmt",
+  },
+  {
+    aliases: ["qualidade", "gestao da qualidade", "gestão da qualidade", "qualidade e processos", "processos e qualidade"],
+    key: "qualidade",
+  },
+  {
+    aliases: ["recursos humanos", "rh", "gente e gestao", "gente e gestão"],
+    key: "recursos-humanos",
+  },
+  {
+    aliases: ["inovacao", "inovação"],
+    key: "inovacao",
+  },
+  {
+    aliases: ["diretoria", "diretoria executiva"],
+    key: "diretoria",
+  },
+] as const
+
+const resolveSectorKey = (value: string | null | undefined) => {
+  const normalizedValue = normalizeText(value)
+  if (!normalizedValue) {
+    return ""
+  }
+
+  return (
+    SECTOR_DEFINITIONS.find(
+      (item) =>
+        item.key === normalizedValue ||
+        item.aliases.some((alias) => matchesSectorAlias(normalizedValue, alias)),
+    )?.key ?? ""
+  )
+}
+
+const filterEmployeesBySectorKey = <T extends CompanyEmployee | CompanyEmployeeWithLocation>(
+  employees: T[],
+  sectorKey: string,
+) => {
+  const normalizedSectorKey = resolveSectorKey(sectorKey)
+  if (!normalizedSectorKey) {
+    return employees
+  }
+
+  return employees.filter((employee) => {
+    const locationEmployee = employee as Partial<CompanyEmployeeWithLocation> & {
+      raw?: Record<string, string>
+    }
+    const candidates = [
+      employee.NOMEDEPARTAMENTO,
+      locationEmployee.SECAO_DESCRICAO,
+      locationEmployee.SETOR_OBRA,
+      employee.raw?.NOMEDEPARTAMENTO,
+      employee.raw?.NOME_SECAO,
+      employee.raw?.DESCRICAOSECAO,
+      employee.raw?.SECAO_DESCRICAO,
+      employee.raw?.SETOR_OBRA,
+      employee.raw?.SETOR,
+    ]
+    return candidates.some((value) => resolveSectorKey(value) === normalizedSectorKey)
+  })
+}
+
+const matchesEmployeeSearch = <
+  T extends CompanyEmployee | CompanyEmployeeWithLocation,
+>(
+  employee: T,
+  search: string,
+) => {
+  const tokens = tokenizeSearch(search)
+  if (tokens.length === 0) {
+    return true
+  }
+
+  const locationEmployee = employee as Partial<CompanyEmployeeWithLocation> & {
+    raw?: Record<string, string>
+  }
+
+  const searchableCompact = normalizeTextCompact(
+    [
+      employee.CPF,
+      employee.NOME,
+      employee.NOME_FUNCAO,
+      employee.NOMEDEPARTAMENTO,
+      locationEmployee.SECAO_DESCRICAO,
+      locationEmployee.OBRA_NOME,
+      locationEmployee.SETOR_OBRA,
+      employee.raw?.CPF,
+      employee.raw?.NOME,
+      employee.raw?.NOME_FUNCAO,
+      employee.raw?.NOMEDEPARTAMENTO,
+      employee.raw?.NOME_SECAO,
+      employee.raw?.DESCRICAOSECAO,
+      employee.raw?.SECAO_DESCRICAO,
+      employee.raw?.SETOR_OBRA,
+      employee.raw?.SETOR,
+      employee.raw?.EMAIL,
+      employee.raw?.EMAILCORPORATIVO,
+      employee.raw?.EMAIL_CORPORATIVO,
+      employee.raw?.MAIL,
+      employee.raw?.LOGIN,
+      employee.raw?.LOGINUSUARIO,
+      employee.raw?.NOMEUSUARIOREDE,
+      employee.raw?.USUARIOREDE,
+      employee.raw?.USERNAME,
+      employee.raw?.USERPRINCIPALNAME,
+      employee.raw?.CODUSUARIO,
+      employee.raw?.CODUSUARIOREDE,
+    ]
+      .filter(Boolean)
+      .join(" "),
+  )
+
+  return tokens.every((token) => searchableCompact.includes(normalizeTextCompact(token)))
+}
+
+const filterInstructorRecordsBySectorKey = <
+  T extends {
+    CPF: string
+    SETOR?: string | null
+  },
+>(
+  instructors: T[],
+  sectorKey: string,
+  sectorCpfSet: Set<string> | null = null,
+) => {
+  const normalizedSectorKey = resolveSectorKey(sectorKey)
+  if (!normalizedSectorKey) {
+    return instructors
+  }
+
+  return instructors.filter((instructor) => {
+    const cpf = normalizeCpf(instructor.CPF ?? "")
+    if (cpf && sectorCpfSet?.has(cpf)) {
+      return true
+    }
+
+    return resolveSectorKey(instructor.SETOR) === normalizedSectorKey
+  })
+}
 
 const commonPrefixLength = (left: string, right: string) => {
   const limit = Math.min(left.length, right.length)
@@ -662,8 +846,10 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
   const obraFilterRaw = (req.query.obra as string | undefined)?.trim()
   const obraCodigoFilterRaw = (req.query.obraCodigo as string | undefined)?.trim()
   const includeLocation = parseBoolean((req.query.includeLocation as string | undefined)?.trim()) === true
+  const sectorKeyFilterRaw = (req.query.sectorKey as string | undefined)?.trim()
   const cpfFilter = normalizeCpf(String(req.query.cpf ?? ""))
   const nomeFilter = normalizeText(String(req.query.nome ?? ""))
+  const searchFilter = String(req.query.search ?? "").trim()
 
   const sections = await getCompanySectionsNormalized(forceRefresh)
 
@@ -696,6 +882,14 @@ export const listCompanyEmployees = asyncHandler(async (req: Request, res: Respo
 
   if (nomeFilter) {
     enrichedEmployees = enrichedEmployees.filter((item) => normalizeText(item.NOME).includes(nomeFilter))
+  }
+
+  if (searchFilter) {
+    enrichedEmployees = enrichedEmployees.filter((item) => matchesEmployeeSearch(item, searchFilter))
+  }
+
+  if (sectorKeyFilterRaw) {
+    enrichedEmployees = filterEmployeesBySectorKey(enrichedEmployees, sectorKeyFilterRaw)
   }
 
   if (!includeLocation) {
@@ -842,28 +1036,60 @@ export const listCompanySections = asyncHandler(async (_req: Request, res: Respo
   res.json({ sections })
 })
 
-export const listInstructorUsers = asyncHandler(async (_req: Request, res: Response) => {
+async function getSectorEmployeeCpfSet(sectorKey: string) {
+  const normalizedSectorKey = resolveSectorKey(sectorKey)
+  if (!normalizedSectorKey) {
+    return new Set<string>()
+  }
+
+  const employees = await getCompanyEmployees()
+  const sectorEmployees = filterEmployeesBySectorKey(employees, normalizedSectorKey)
+  return new Set(
+    sectorEmployees
+      .map((item) => normalizeCpf(item.CPF))
+      .filter((value) => value.length === 11),
+  )
+}
+
+export const listInstructorUsers = asyncHandler(async (req: Request, res: Response) => {
+  const sectorKey = String(req.query.sectorKey ?? "").trim()
   const instructors = await listInstructors()
-  res.json({ instructors })
+
+  if (!sectorKey) {
+    res.json({ instructors })
+    return
+  }
+
+  const sectorCpfSet = await getSectorEmployeeCpfSet(sectorKey)
+  res.json({
+    instructors: filterInstructorRecordsBySectorKey(instructors, sectorKey, sectorCpfSet),
+  })
 })
 
 export const updateInstructors = asyncHandler(async (req: Request, res: Response) => {
   const { users } = req.body as {
+    sectorKey?: string
     users?: Array<{
       cpf?: string
       user?: Record<string, unknown>
     }>
   }
+  const sectorKey = String(req.body?.sectorKey ?? req.query.sectorKey ?? "").trim()
 
   if (!Array.isArray(users)) {
     throw new HttpError(400, "Lista de usuarios e obrigatoria")
   }
 
+  const sectorCpfSet = sectorKey ? await getSectorEmployeeCpfSet(sectorKey) : null
   const selectedCpfs: string[] = []
 
   for (const item of users) {
     const cpfDigits = normalizeCpf(item.cpf ?? "")
     if (cpfDigits.length !== 11) {
+      continue
+    }
+
+    if (sectorCpfSet && !sectorCpfSet.has(cpfDigits)) {
       continue
     }
 
@@ -884,6 +1110,22 @@ export const updateInstructors = asyncHandler(async (req: Request, res: Response
     // eslint-disable-next-line no-await-in-loop
     await upsertUser({ ...mapped, instrutor: true })
     selectedCpfs.push(cpfDigits)
+  }
+
+  if (sectorCpfSet) {
+    const uniqueSelectedCpfs = Array.from(new Set(selectedCpfs))
+    const cpfsToDisable = Array.from(sectorCpfSet).filter((cpf) => !uniqueSelectedCpfs.includes(cpf))
+
+    await setInstructorFlags(cpfsToDisable, false)
+    await setInstructorFlags(uniqueSelectedCpfs, true)
+
+    const instructors = await listInstructors()
+    res.json({
+      instructors: filterInstructorRecordsBySectorKey(instructors, sectorKey, sectorCpfSet),
+      scope: resolveSectorKey(sectorKey),
+      updated: uniqueSelectedCpfs.length,
+    })
+    return
   }
 
   await clearAllInstructors()

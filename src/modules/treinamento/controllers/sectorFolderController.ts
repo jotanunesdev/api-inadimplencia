@@ -35,7 +35,11 @@ import {
   setSectorFolderFavorite,
   type SectorFolderUserItemRecord,
 } from "../models/sectorFolderUserItemModel"
+import { listTrainingMaterialLinksByStoredPaths } from "../models/trainingMaterialLinkModel"
+import { archiveTrainingProgressByTrilhaIds } from "../models/userTrainingModel"
+import { replaceMaterialStoredPathExact } from "../models/pathUpdateModel"
 import {
+  copySharePointItemToFolder,
   createSharePointFolder,
   deleteSharePointItemById,
   ensureSharePointFolder,
@@ -95,14 +99,23 @@ type ResolvedFolderContext = {
   sharedFolder: SharedFolderSummary | null
 }
 
+type LinkedTrainingSummary = {
+  trilhaId: string
+  trilhaTitulo: string
+  moduloId: string | null
+  moduloNome: string | null
+}
+
 type DirectoryView =
   | "all"
   | "shared"
   | "recent"
   | "favorites"
   | "deleted"
+  | "version-history"
 
 const MAX_FOLDER_MEMBERS = 8
+const VERSION_HISTORY_FOLDER_NAME = "Historico de Versoes"
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".pdf",
   ".mp4",
@@ -247,6 +260,10 @@ function buildSectorFixedFolderPath(
   return joinPaths(sector.folderPath, folder.label)
 }
 
+function buildSectorVersionHistoryRootPath(sector: SectorDefinition) {
+  return joinPaths(sector.folderPath, VERSION_HISTORY_FOLDER_NAME)
+}
+
 function findSectorFixedFolderByPath(
   sector: SectorDefinition,
   itemPath: string,
@@ -282,8 +299,90 @@ function findSectorFixedFolderAncestor(
   )
 }
 
+function isSectorVersionHistoryPath(
+  sector: SectorDefinition,
+  itemPath: string,
+) {
+  const normalizedItemPath = normalizeComparablePath(itemPath)
+  const normalizedHistoryRoot = normalizeComparablePath(
+    buildSectorVersionHistoryRootPath(sector),
+  )
+
+  return (
+    normalizedItemPath === normalizedHistoryRoot ||
+    normalizedItemPath.startsWith(`${normalizedHistoryRoot}/`)
+  )
+}
+
+function isSectorVersionHistoryRootItem(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+) {
+  return normalizeComparablePath(buildItemPathFromSector(item, sector)) ===
+    normalizeComparablePath(buildSectorVersionHistoryRootPath(sector))
+}
+
+function assertPathIsNotVersionHistory(
+  sector: SectorDefinition,
+  itemPath: string,
+  actionMessage = "Itens do Historico de Versoes sao gerenciados automaticamente.",
+) {
+  if (!isSectorVersionHistoryPath(sector, itemPath)) {
+    return
+  }
+
+  throw new HttpError(403, actionMessage)
+}
+
+function assertItemIsNotVersionHistory(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+  actionMessage = "Itens do Historico de Versoes sao gerenciados automaticamente.",
+) {
+  assertPathIsNotVersionHistory(
+    sector,
+    buildItemPathFromSector(item, sector),
+    actionMessage,
+  )
+}
+
+function buildVersionHistoryFolderPath(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+) {
+  const itemPath = buildItemPathFromSector(item, sector)
+  const itemSegments = normalizePath(itemPath).split("/").filter(Boolean)
+  const sectorSegments = normalizePath(sector.folderPath).split("/").filter(Boolean)
+  const relativeParentSegments = itemSegments.slice(sectorSegments.length, -1)
+
+  return joinPaths(
+    buildSectorVersionHistoryRootPath(sector),
+    relativeParentSegments.join("/"),
+  )
+}
+
+function buildVersionHistoryFileName(itemName: string, now: Date) {
+  const extension = path.extname(itemName ?? "")
+  const baseName = extension
+    ? itemName.slice(0, itemName.length - extension.length)
+    : itemName
+  const safeBaseName = String(baseName ?? "").trim() || "arquivo"
+  const stamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0"),
+    String(now.getMilliseconds()).padStart(3, "0"),
+  ].join("")
+
+  return `${safeBaseName} - versao ${stamp}${extension}`
+}
+
 async function ensureSectorStructure(sector: SectorDefinition) {
   await ensureSharePointFolder(sector.folderPath)
+  await ensureSharePointFolder(buildSectorVersionHistoryRootPath(sector))
 
   for (const fixedFolder of listSectorFixedFolders(sector)) {
     // eslint-disable-next-line no-await-in-loop
@@ -362,6 +461,7 @@ function parseDirectoryView(value: unknown): DirectoryView {
     case "recent":
     case "favorites":
     case "deleted":
+    case "version-history":
       return normalizedValue
     default:
       return "all"
@@ -473,6 +573,118 @@ function parseNormasFileValidity(
   return {
     validityMonths,
     validityYears,
+  }
+}
+
+function parseBooleanFlag(value: unknown) {
+  const normalizedValue = normalizeText(value)
+
+  return (
+    value === true ||
+    value === 1 ||
+    value === "1" ||
+    normalizedValue === "true" ||
+    normalizedValue === "sim" ||
+    normalizedValue === "yes"
+  )
+}
+
+function assertMatchingVersionedFileExtension(
+  currentItem: SharePointDriveItem,
+  file: Express.Multer.File | undefined,
+) {
+  if (!file) {
+    return
+  }
+
+  const currentExtension = path.extname(currentItem.name ?? "").toLowerCase()
+  const uploadedExtension = path.extname(file.originalname ?? "").toLowerCase()
+
+  if (
+    currentExtension &&
+    uploadedExtension &&
+    currentExtension !== uploadedExtension
+  ) {
+    throw new HttpError(
+      400,
+      `O arquivo versionado precisa manter a extensao ${currentExtension}.`,
+    )
+  }
+}
+
+function buildItemParentFolderPath(
+  item: SharePointDriveItem,
+  sector: SectorDefinition,
+) {
+  const itemPath = buildItemPathFromSector(item, sector)
+  const segments = normalizePath(itemPath).split("/").filter(Boolean)
+
+  if (segments.length <= 1) {
+    return sector.folderPath
+  }
+
+  segments.pop()
+  return segments.join("/")
+}
+
+function buildStoredPathCandidates(params: {
+  item: SharePointDriveItem
+  sector: SectorDefinition
+  metadata: SectorFolderMetadata | null
+}) {
+  const candidates = Array.from(
+    new Set(
+      [
+        params.item.webUrl,
+        buildItemPathFromSector(params.item, params.sector),
+        params.metadata?.path,
+      ]
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  )
+
+  return candidates
+}
+
+function buildVersionImpactResponse(
+  linkedMaterials: Awaited<ReturnType<typeof listTrainingMaterialLinksByStoredPaths>>,
+) {
+  const linkedTrainingMap = new Map<string, LinkedTrainingSummary>()
+
+  linkedMaterials.forEach((material) => {
+    const trilhaId = String(material.TRILHA_ID ?? "").trim()
+    if (!trilhaId || linkedTrainingMap.has(trilhaId)) {
+      return
+    }
+
+    linkedTrainingMap.set(trilhaId, {
+      trilhaId,
+      trilhaTitulo:
+        String(material.TRILHA_TITULO ?? "").trim() || "Treinamento sem titulo",
+      moduloId: material.MODULO_ID ?? null,
+      moduloNome: material.MODULO_NOME ?? null,
+    })
+  })
+
+  const linkedTrainings = Array.from(linkedTrainingMap.values()).sort(
+    (left, right) => {
+      const moduloCompare = String(left.moduloNome ?? "").localeCompare(
+        String(right.moduloNome ?? ""),
+        "pt-BR",
+      )
+      if (moduloCompare !== 0) {
+        return moduloCompare
+      }
+
+      return left.trilhaTitulo.localeCompare(right.trilhaTitulo, "pt-BR")
+    },
+  )
+
+  return {
+    linkedMaterialCount: linkedMaterials.length,
+    linkedTrainings,
+    linkedTrainingsCount: linkedTrainings.length,
   }
 }
 
@@ -832,6 +1044,7 @@ function buildCurrentFolderResponse(
   item: SharePointDriveItem | null,
   sector: SectorDefinition,
   sharedFolder: SharedFolderSummary | null = null,
+  readOnly = false,
 ) {
   if (!item) {
     return null
@@ -846,9 +1059,9 @@ function buildCurrentFolderResponse(
     name: item.name,
     path: itemPath,
     webUrl: item.webUrl ?? null,
-    canDelete: !fixedFolder && !sharedFolder,
-    canRename: !fixedFolder && !sharedFolder,
-    canShare: !sharedFolder,
+    canDelete: !fixedFolder && !sharedFolder && !readOnly,
+    canRename: !fixedFolder && !sharedFolder && !readOnly,
+    canShare: !sharedFolder && !readOnly,
     fixedFolderKey: fixedFolder?.key ?? null,
     isFixedFolder: Boolean(fixedFolder),
     requiresValidityForFiles: Boolean(
@@ -1427,6 +1640,11 @@ async function permanentlyDeleteItemAndMetadata(params: {
   const currentItem = await getSharePointItemById(params.itemId)
   assertItemBelongsToSector(currentItem, params.sector)
   assertItemIsNotFixedSectorFolder(currentItem, params.sector)
+  assertItemIsNotVersionHistory(
+    currentItem,
+    params.sector,
+    "Itens do Historico de Versoes nao podem ser excluidos manualmente.",
+  )
 
   if (params.requireFolder && !currentItem.folder) {
     throw new HttpError(400, "Selecione uma pasta valida.")
@@ -1454,6 +1672,11 @@ async function moveItemToTrash(params: {
   const currentItem = await getSharePointItemById(params.itemId)
   assertItemBelongsToSector(currentItem, params.sector)
   assertItemIsNotFixedSectorFolder(currentItem, params.sector)
+  assertItemIsNotVersionHistory(
+    currentItem,
+    params.sector,
+    "Itens do Historico de Versoes nao podem ser enviados para a lixeira.",
+  )
 
   if (params.requireFolder && !currentItem.folder) {
     throw new HttpError(400, "Selecione uma pasta valida.")
@@ -1510,17 +1733,21 @@ export const listFolderContents = asyncHandler(
 
     const requestedSector = parseSectorFromQuery(req)
     const view = parseDirectoryView(req.query.view)
+    const isVersionHistoryView = view === "version-history"
     const username = parseOptionalUsername(req.query.username)
     const parentItemId = parseParentItemId(req.query.parentItemId)
     const sourceSector = parseOptionalSector(req.query.sourceSector)
     const sharedRootItemId = parseParentItemId(req.query.sharedRootItemId)
     await ensureSectorStructure(requestedSector)
+    const versionHistoryRootPath = buildSectorVersionHistoryRootPath(requestedSector)
 
     const parentContext =
       !parentItemId || view === "deleted"
         ? {
             currentFolder: null,
-            currentFolderPath: requestedSector.folderPath,
+            currentFolderPath: isVersionHistoryView
+              ? versionHistoryRootPath
+              : requestedSector.folderPath,
             pathSector: requestedSector,
             sharedFolder: null,
           }
@@ -1530,6 +1757,27 @@ export const listFolderContents = asyncHandler(
             sourceSector,
             sharedRootItemId,
           })
+
+    if (isVersionHistoryView) {
+      if (
+        !isSectorVersionHistoryPath(
+          requestedSector,
+          parentContext.currentFolderPath,
+        )
+      ) {
+        throw new HttpError(
+          404,
+          "A pasta selecionada nao pertence ao Historico de Versoes.",
+        )
+      }
+    } else if (
+      isSectorVersionHistoryPath(requestedSector, parentContext.currentFolderPath)
+    ) {
+      throw new HttpError(
+        404,
+        "O Historico de Versoes fica disponivel apenas no menu lateral dedicado.",
+      )
+    }
 
     const targetShares = await listSectorFolderSharesByTargetSafely(
       requestedSector.key,
@@ -1606,7 +1854,7 @@ export const listFolderContents = asyncHandler(
           item,
           sector: parentContext.pathSector,
           sharedFolder: parentContext.sharedFolder,
-          readOnly: Boolean(parentContext.sharedFolder),
+          readOnly: Boolean(parentContext.sharedFolder) || isVersionHistoryView,
           isFavorite: favoriteItemIds.has(buildUserRelationKey(item.id)),
         })),
       )
@@ -1636,6 +1884,30 @@ export const listFolderContents = asyncHandler(
             isFavorite: false,
           }),
         ),
+      )
+    } else if (view === "version-history") {
+      const historyItems = await listSharePointFolderChildren(versionHistoryRootPath)
+      const historyTrashIndex = buildTrashPathIndex(
+        trashRowsBySector.get(requestedSector.key) ?? [],
+      )
+
+      itemEntries.push(
+        ...historyItems
+          .filter((item) => {
+            const itemPath = buildItemPathFromSector(item, requestedSector)
+            return !isPathHiddenByTrash(
+              requestedSector.key,
+              itemPath,
+              historyTrashIndex,
+            )
+          })
+          .map((item) => ({
+            item,
+            sector: requestedSector,
+            sharedFolder: null,
+            readOnly: true,
+            isFavorite: false,
+          })),
       )
     } else if (view === "recent" || view === "favorites") {
       const userRecords =
@@ -1670,6 +1942,9 @@ export const listFolderContents = asyncHandler(
           }
 
           const itemPath = buildItemPathFromSector(item, recordSourceSector)
+          if (isSectorVersionHistoryPath(recordSourceSector, itemPath)) {
+            continue
+          }
           if (
             isPathHiddenByTrash(
               recordSourceSector.key,
@@ -1723,7 +1998,8 @@ export const listFolderContents = asyncHandler(
           ...ownItems
             .filter((item) => {
               const itemPath = buildItemPathFromSector(item, requestedSector)
-              return !isPathHiddenByTrash(
+              return !isSectorVersionHistoryRootItem(item, requestedSector) &&
+                !isPathHiddenByTrash(
                 requestedSector.key,
                 itemPath,
                 ownTrashIndex,
@@ -1892,6 +2168,7 @@ export const listFolderContents = asyncHandler(
         parentContext.currentFolder,
         parentContext.pathSector,
         parentContext.sharedFolder,
+        Boolean(parentContext.sharedFolder) || isVersionHistoryView,
       ),
       currentFolderPath: parentContext.currentFolderPath,
       sharedContext: parentContext.sharedFolder,
@@ -1926,6 +2203,11 @@ export const create = asyncHandler(async (req: Request, res: Response) => {
       "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
     )
   }
+  assertPathIsNotVersionHistory(
+    parentContext.pathSector,
+    parentContext.currentFolderPath,
+    "Pastas do Historico de Versoes sao gerenciadas automaticamente e nao aceitam novas subpastas.",
+  )
 
   try {
     const item = await createSharePointFolder({
@@ -1991,6 +2273,11 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
 
     assertItemBelongsToSector(currentItem, sector)
     assertItemIsNotFixedSectorFolder(currentItem, sector)
+    assertItemIsNotVersionHistory(
+      currentItem,
+      sector,
+      "Pastas do Historico de Versoes nao podem ser renomeadas manualmente.",
+    )
 
     const updatedItem = await updateSharePointItemName({
       itemId,
@@ -2068,6 +2355,11 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
       "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
     )
   }
+  assertPathIsNotVersionHistory(
+    parentContext.pathSector,
+    parentContext.currentFolderPath,
+    "O Historico de Versoes e gerenciado automaticamente e nao aceita uploads manuais.",
+  )
   const requiresValidity =
     Boolean(
       findSectorFixedFolderAncestor(
@@ -2121,6 +2413,227 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   })
 })
 
+export const getItemVersionImpact = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+
+    const sector = parseSectorFromQuery(req)
+    const itemId = String(req.params.itemId ?? "").trim()
+
+    if (!itemId) {
+      throw new HttpError(400, "Informe o arquivo a ser versionado.")
+    }
+
+    const currentItem = await getSharePointItemById(itemId)
+    if (currentItem.folder) {
+      throw new HttpError(400, "Somente arquivos podem ser versionados.")
+    }
+
+    assertItemBelongsToSector(currentItem, sector)
+    assertItemIsNotVersionHistory(
+      currentItem,
+      sector,
+      "Arquivos do Historico de Versoes nao podem receber nova versao.",
+    )
+
+    const metadata = await getSectorMetadataSafely(itemId)
+    const linkedMaterials = await listTrainingMaterialLinksByStoredPaths(
+      buildStoredPathCandidates({
+        item: currentItem,
+        sector,
+        metadata,
+      }),
+    )
+    const impact = buildVersionImpactResponse(linkedMaterials)
+
+    res.json({
+      impact,
+      item: {
+        id: currentItem.id,
+        name: currentItem.name,
+        path: buildItemPathFromSector(currentItem, sector),
+        webUrl: currentItem.webUrl ?? null,
+      },
+    })
+  },
+)
+
+export const versionItem = asyncHandler(async (req: Request, res: Response) => {
+  ensureSharePointIsAvailable()
+
+  const body = req.body as Record<string, unknown>
+  const sector = parseSectorFromBody(body)
+  const actor = parseActor(body)
+  const itemId = String(req.params.itemId ?? "").trim()
+  const file = req.file
+  await ensureSectorStructure(sector)
+
+  if (!itemId) {
+    throw new HttpError(400, "Informe o arquivo a ser versionado.")
+  }
+
+  assertAllowedUploadFile(file)
+
+  const currentItem = await getSharePointItemById(itemId)
+  if (currentItem.folder) {
+    throw new HttpError(400, "Somente arquivos podem ser versionados.")
+  }
+
+  assertItemBelongsToSector(currentItem, sector)
+  assertItemIsNotVersionHistory(
+    currentItem,
+    sector,
+    "Arquivos do Historico de Versoes nao podem receber nova versao.",
+  )
+  assertMatchingVersionedFileExtension(currentItem, file)
+
+  const existingMetadata = await getSectorMetadataSafely(itemId)
+  const currentItemPath = buildItemPathFromSector(currentItem, sector)
+  const requiresValidity =
+    Boolean(
+      findSectorFixedFolderAncestor(sector, currentItemPath)
+        ?.requiresValidityForFiles,
+    ) && sector.key === "sesmt"
+  const hasExplicitValidity =
+    body.validadeMeses !== undefined ||
+    body.validityMonths !== undefined ||
+    body.validadeAnos !== undefined ||
+    body.validityYears !== undefined
+  const fileValidity = hasExplicitValidity
+    ? parseNormasFileValidity(body, requiresValidity)
+    : {
+        validityMonths: existingMetadata?.validityMonths ?? null,
+        validityYears: existingMetadata?.validityYears ?? null,
+      }
+  const linkedMaterials = await listTrainingMaterialLinksByStoredPaths(
+    buildStoredPathCandidates({
+      item: currentItem,
+      sector,
+      metadata: existingMetadata,
+    }),
+  )
+  const impact = buildVersionImpactResponse(linkedMaterials)
+  const shouldRequireRetraining = parseBooleanFlag(
+    body.redoCompletedTrainings ??
+      body.refazerTreinamento ??
+      body.requireRetraining,
+  )
+  const now = new Date()
+
+  const versionHistoryUpload = await copySharePointItemToFolder({
+    itemId: currentItem.id,
+    relativeFolderPath: buildVersionHistoryFolderPath(currentItem, sector),
+    fileName: buildVersionHistoryFileName(currentItem.name, now),
+    contentType:
+      typeof currentItem.file?.mimeType === "string"
+        ? currentItem.file.mimeType
+        : undefined,
+  })
+  const versionHistoryItem = await getSharePointItemById(versionHistoryUpload.itemId)
+  await upsertSectorMetadataSafely({
+    itemId: versionHistoryItem.id,
+    sector: sector.label,
+    name: versionHistoryItem.name,
+    path: buildItemPathFromSector(versionHistoryItem, sector),
+    createdByName: actor.displayName,
+    createdByEmail: actor.email,
+    createdByUsername: actor.username,
+    updatedByName: actor.displayName,
+    updatedByEmail: actor.email,
+    updatedByUsername: actor.username,
+    createdAt: parseDateOrNull(versionHistoryItem.createdDateTime) ?? now,
+    updatedAt: now,
+    validityMonths: existingMetadata?.validityMonths ?? null,
+    validityYears: existingMetadata?.validityYears ?? null,
+  })
+
+  const uploaded = await uploadFileToSharePoint({
+    tempFilePath: file.path,
+    relativeFolderPath: buildItemParentFolderPath(currentItem, sector),
+    fileName: currentItem.name,
+    contentType: file.mimetype,
+  })
+
+  const updatedItem = await getSharePointItemById(uploaded.itemId)
+
+  if (
+    currentItem.webUrl &&
+    updatedItem.webUrl &&
+    currentItem.webUrl !== updatedItem.webUrl
+  ) {
+    await replaceMaterialStoredPathExact(currentItem.webUrl, updatedItem.webUrl)
+  }
+
+  const metadata = await upsertSectorMetadataSafely({
+    itemId: updatedItem.id,
+    sector: sector.label,
+    name: updatedItem.name,
+    path: buildItemPathFromSector(updatedItem, sector),
+    createdByName:
+      existingMetadata?.createdByName ??
+      extractProfileFromIdentity(currentItem.createdBy, true)?.displayName ??
+      actor.displayName,
+    createdByEmail:
+      existingMetadata?.createdByEmail ??
+      extractProfileFromIdentity(currentItem.createdBy, true)?.email ??
+      actor.email,
+    createdByUsername:
+      existingMetadata?.createdByUsername ??
+      extractProfileFromIdentity(currentItem.createdBy, true)?.username ??
+      actor.username,
+    updatedByName: actor.displayName,
+    updatedByEmail: actor.email,
+    updatedByUsername: actor.username,
+    createdAt:
+      existingMetadata?.createdAt ??
+      parseDateOrNull(updatedItem.createdDateTime) ??
+      now,
+    updatedAt: now,
+    validityMonths: fileValidity.validityMonths,
+    validityYears: fileValidity.validityYears,
+  })
+
+  if (updatedItem.id !== currentItem.id) {
+    await Promise.all([
+      deleteSectorMetadataSafely(currentItem.id),
+      deleteSectorFolderUserItemsByItemIdsSafely([currentItem.id]),
+    ])
+  }
+
+  const archived =
+    shouldRequireRetraining && impact.linkedTrainingsCount > 0
+      ? await archiveTrainingProgressByTrilhaIds(
+          impact.linkedTrainings.map((training) => training.trilhaId),
+          now,
+        )
+      : {
+          materiaisArquivados: 0,
+          provasArquivadas: 0,
+        }
+
+  const metadataByItemId = new Map<string, SectorFolderMetadata>()
+  if (metadata) {
+    metadataByItemId.set(metadata.itemId, metadata)
+  }
+
+  const members = await collectItemMembers(updatedItem, metadataByItemId)
+
+  res.json({
+    item: buildItemResponse({
+      item: updatedItem,
+      sector,
+      metadata,
+      members,
+    }),
+    impact: {
+      ...impact,
+      archivedMaterialsCount: archived.materiaisArquivados,
+      archivedProofsCount: archived.provasArquivadas,
+      retrainingRequested: shouldRequireRetraining,
+    },
+  })
+})
+
 export const listFolderShares = asyncHandler(
   async (req: Request, res: Response) => {
     ensureSharePointIsAvailable()
@@ -2138,6 +2651,11 @@ export const listFolderShares = asyncHandler(
     }
 
     assertItemBelongsToSector(currentItem, sector)
+    assertItemIsNotVersionHistory(
+      currentItem,
+      sector,
+      "Pastas do Historico de Versoes nao podem ser compartilhadas.",
+    )
 
     try {
       const shares = await listSectorFolderSharesByItemId(itemId)
@@ -2199,6 +2717,11 @@ export const shareFolder = asyncHandler(async (req: Request, res: Response) => {
   }
 
   assertItemBelongsToSector(currentItem, sector)
+  assertItemIsNotVersionHistory(
+    currentItem,
+    sector,
+    "Pastas do Historico de Versoes nao podem ser compartilhadas.",
+  )
 
   try {
     const shares = await syncSectorFolderShares({
@@ -2273,6 +2796,12 @@ export const toggleFavoriteFolder = asyncHandler(
     if (!context.currentFolder?.folder) {
       throw new HttpError(400, "Somente pastas podem ser marcadas como favoritas.")
     }
+
+    assertItemIsNotVersionHistory(
+      context.currentFolder,
+      context.pathSector,
+      "Pastas do Historico de Versoes nao podem ser marcadas como favoritas.",
+    )
 
     await setSectorFolderFavoriteSafely({
       itemId: context.currentFolder.id,

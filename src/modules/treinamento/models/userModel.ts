@@ -218,6 +218,28 @@ export async function setInstructorFlag(cpf: string, isInstructor: boolean) {
     `)
 }
 
+export async function setInstructorFlags(cpfList: string[], isInstructor: boolean) {
+  const uniqueCpfs = Array.from(new Set(cpfList.map((value) => String(value ?? "").trim()).filter(Boolean)))
+
+  if (uniqueCpfs.length === 0) {
+    return
+  }
+
+  const pool = await getPool()
+  const request = pool.request().input("INSTRUTOR", sql.Bit, isInstructor ? 1 : 0)
+  const placeholders = uniqueCpfs.map((cpf, index) => {
+    const inputName = `CPF${index}`
+    request.input(inputName, sql.VarChar(100), cpf)
+    return `@${inputName}`
+  })
+
+  await request.query(`
+    UPDATE dbo.TUSUARIOS
+    SET INSTRUTOR = @INSTRUTOR
+    WHERE CPF IN (${placeholders.join(", ")})
+  `)
+}
+
 export async function clearAllInstructors() {
   const pool = await getPool()
   await pool.request().query(`

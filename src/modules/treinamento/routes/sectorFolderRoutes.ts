@@ -1,6 +1,7 @@
 import { Router } from "express"
 import {
   create,
+  getItemVersionImpact,
   listFolderShares,
   listFolderContents,
   list,
@@ -12,6 +13,7 @@ import {
   toggleFavoriteFolder,
   uploadFile,
   update,
+  versionItem,
 } from "../controllers/sectorFolderController"
 import { upload } from "../utils/upload"
 
@@ -20,8 +22,10 @@ const router = Router()
 router.get("/folders", list)
 router.get("/contents", listFolderContents)
 router.get("/folders/:itemId/shares", listFolderShares)
+router.get("/items/:itemId/version-impact", getItemVersionImpact)
 router.post("/folders", create)
 router.post("/files/upload", upload.single("file"), uploadFile)
+router.post("/items/:itemId/version", upload.single("file"), versionItem)
 router.patch("/folders/:itemId/favorite", toggleFavoriteFolder)
 router.patch("/folders/:itemId", update)
 router.post("/trash/:itemId/restore", restoreTrashedItem)

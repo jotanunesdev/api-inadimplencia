@@ -45,3 +45,27 @@ export async function updateMaterialPathsByPrefix(
       ].join("\n"),
     )
 }
+
+export async function replaceMaterialStoredPathExact(
+  oldPath: string,
+  newPath: string,
+) {
+  if (!oldPath || !newPath || oldPath === newPath) {
+    return
+  }
+
+  const pool = await getPool()
+  await pool
+    .request()
+    .input("OLD", sql.NVarChar(1000), oldPath)
+    .input("NEW", sql.NVarChar(1000), newPath)
+    .query(`
+      UPDATE dbo.TVIDEOS
+      SET PATH_VIDEO = @NEW
+      WHERE PATH_VIDEO = @OLD;
+
+      UPDATE dbo.TPDFS
+      SET PDF_PATH = @NEW
+      WHERE PDF_PATH = @OLD
+    `)
+}

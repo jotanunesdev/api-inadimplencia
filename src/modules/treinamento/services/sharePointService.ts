@@ -604,6 +604,31 @@ export async function downloadSharePointFileContentByItemId(params: {
   return graphBinaryRequest(endpoint, {}, [200])
 }
 
+export async function copySharePointItemToFolder(params: {
+  itemId: string
+  relativeFolderPath: string
+  fileName: string
+  contentType?: string
+}) {
+  const ext = path.extname(params.fileName || "") || ".bin"
+  const tempFilePath = path.join(
+    os.tmpdir(),
+    `sp-copy-${Date.now()}-${Math.random().toString(16).slice(2)}${ext}`,
+  )
+  const buffer = await downloadSharePointFileContentByItemId({
+    itemId: params.itemId,
+  })
+
+  await fs.writeFile(tempFilePath, buffer)
+
+  return uploadFileToSharePoint({
+    tempFilePath,
+    relativeFolderPath: params.relativeFolderPath,
+    fileName: params.fileName,
+    contentType: params.contentType,
+  })
+}
+
 export async function uploadFileToSharePoint(params: {
   tempFilePath: string
   relativeFolderPath: string

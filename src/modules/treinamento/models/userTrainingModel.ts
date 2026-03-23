@@ -1058,6 +1058,93 @@ export async function archiveVideoCompletionsByVideoId(
   return result.rowsAffected[0] ?? 0
 }
 
+export async function archiveTrainingProgressByTrilhaIds(
+  trilhaIds: string[],
+  archivedAt: Date = new Date(),
+) {
+  const normalizedTrilhaIds = Array.from(
+    new Set(
+      (Array.isArray(trilhaIds) ? trilhaIds : [])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean),
+    ),
+  )
+
+  if (normalizedTrilhaIds.length === 0) {
+    return {
+      materiaisArquivados: 0,
+      provasArquivadas: 0,
+    }
+  }
+
+  const pool = await getPool()
+  const trilhaIdsCsv = normalizedTrilhaIds.join(",")
+
+  const materialsResult = await pool
+    .request()
+    .input("TRILHA_IDS", sql.NVarChar(sql.MAX), trilhaIdsCsv)
+    .input("ARQUIVADO_EM", sql.DateTime2, archivedAt)
+    .query(`
+      ;WITH TRILHAS AS (
+        SELECT DISTINCT TRY_CONVERT(UNIQUEIDENTIFIER, value) AS TRILHA_ID
+        FROM STRING_SPLIT(@TRILHA_IDS, ',')
+        WHERE TRY_CONVERT(UNIQUEIDENTIFIER, value) IS NOT NULL
+      )
+      UPDATE ut
+      SET ARQUIVADO_EM = @ARQUIVADO_EM
+      FROM dbo.TUSUARIO_TREINAMENTOS ut
+      WHERE ut.ARQUIVADO_EM IS NULL
+        AND (
+          (
+            ut.TIPO = 'video'
+            AND EXISTS (
+              SELECT 1
+              FROM dbo.TVIDEOS v
+              JOIN TRILHAS t ON t.TRILHA_ID = v.TRILHA_FK_ID
+              WHERE v.ID = ut.MATERIAL_ID
+            )
+          )
+          OR (
+            ut.TIPO = 'pdf'
+            AND EXISTS (
+              SELECT 1
+              FROM dbo.TPDFS p
+              JOIN TRILHAS t ON t.TRILHA_ID = p.TRILHA_FK_ID
+              WHERE p.ID = ut.MATERIAL_ID
+            )
+          )
+        )
+    `)
+
+  const provasResult = await pool
+    .request()
+    .input("TRILHA_IDS", sql.NVarChar(sql.MAX), trilhaIdsCsv)
+    .input("ARQUIVADO_EM", sql.DateTime2, archivedAt)
+    .query(`
+      ;WITH TRILHAS AS (
+        SELECT DISTINCT TRY_CONVERT(UNIQUEIDENTIFIER, value) AS TRILHA_ID
+        FROM STRING_SPLIT(@TRILHA_IDS, ',')
+        WHERE TRY_CONVERT(UNIQUEIDENTIFIER, value) IS NOT NULL
+      )
+      UPDATE ut
+      SET ARQUIVADO_EM = @ARQUIVADO_EM
+      FROM dbo.TUSUARIO_TREINAMENTOS ut
+      WHERE ut.TIPO = 'prova'
+        AND ut.ARQUIVADO_EM IS NULL
+        AND EXISTS (
+          SELECT 1
+          FROM dbo.TPROVAS pr
+          JOIN TRILHAS t ON t.TRILHA_ID = pr.TRILHA_FK_ID
+          WHERE pr.ID = ut.MATERIAL_ID
+        )
+    `)
+
+  return {
+    materiaisArquivados: materialsResult.rowsAffected[0] ?? 0,
+    provasArquivadas: provasResult.rowsAffected[0] ?? 0,
+  }
+}
+
 export async function archiveTrainingsByProcedimentoId(
   procedimentoId: string,
   archivedAt: Date = new Date(),
