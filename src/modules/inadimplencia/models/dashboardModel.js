@@ -1,6 +1,6 @@
 const { getPool, sql } = require('../config/db');
 
-const TABLE_FAT = 'DW.fat_analise_inadimplencia_v2';
+const TABLE_FAT = 'DW.fat_analise_inadimplencia_v3';
 const COL_SALDO = 'VALOR_TOTAL';
 const COL_INADIMPLENTE = 'VALOR_INADIMPLENTE';
 const COL_STATUS_INADIMPLENCIA = 'INADIMPLENTE';

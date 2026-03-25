@@ -1,6 +1,6 @@
 const { getPool, sql } = require('../config/db');
 
-const TABLE = 'DW.fat_analise_inadimplencia_v2';
+const TABLE = 'DW.fat_analise_inadimplencia_v3';
 const TABLE_OC = 'dbo.OCORRENCIAS';
 const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
 const TABLE_USUARIO = 'dbo.USUARIO';
