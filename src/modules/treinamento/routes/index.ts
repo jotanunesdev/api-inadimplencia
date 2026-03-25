@@ -23,6 +23,7 @@ import feedbackRoutes from "./feedbackRoutes"
 import reportRoutes from "./reportRoutes"
 import sectorFolderRoutes from "./sectorFolderRoutes"
 import profileMessageRoutes from "./profileMessageRoutes"
+import platformAccessAuditRoutes from "./platformAccessAuditRoutes"
 
 const router = Router()
 
@@ -50,5 +51,6 @@ router.use("/feedbacks", feedbackRoutes)
 router.use("/reports", reportRoutes)
 router.use("/sector-file-manager", sectorFolderRoutes)
 router.use("/profile-feed", profileMessageRoutes)
+router.use("/platform-access-audit", platformAccessAuditRoutes)
 
 export default router
