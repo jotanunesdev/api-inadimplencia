@@ -1,6 +1,7 @@
 import { getPool, sql } from "../config/db"
 import { extractPFuncRows, readView } from "./readViewService"
 import {
+  matchesSectorKey,
   normalizeSectorText,
   normalizeUsernameValue,
   resolveSectorKey,
@@ -75,7 +76,7 @@ function recordBelongsToSector(
   }
 
   return resolveSectorCandidates(record).some(
-    (candidate) => resolveSectorKey(candidate) === normalizedSectorKey,
+    (candidate) => matchesSectorKey(candidate, normalizedSectorKey),
   )
 }
 

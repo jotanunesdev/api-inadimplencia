@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const trilhaController_1 = require("../controllers/trilhaController");
+const router = (0, express_1.Router)();
+router.get("/", trilhaController_1.list);
+router.get("/pendencias/eficacia", trilhaController_1.listPendingRhEfficacy);
+router.get("/:id", trilhaController_1.getById);
+router.get("/:id/shares", trilhaController_1.listShares);
+router.post("/", trilhaController_1.create);
+router.put("/:id", trilhaController_1.update);
+router.put("/:id/shares", trilhaController_1.updateShares);
+router.put("/:id/eficacia", trilhaController_1.upsertEficaciaConfig);
+router.delete("/:id/eficacia", trilhaController_1.clearEficaciaConfig);
+router.delete("/:id", trilhaController_1.remove);
+exports.default = router;

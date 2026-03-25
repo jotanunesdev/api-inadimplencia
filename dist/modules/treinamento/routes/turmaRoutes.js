@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const turmaController_1 = require("../controllers/turmaController");
+const upload_1 = require("../utils/upload");
+const router = (0, express_1.Router)();
+router.post("/", turmaController_1.createCollectiveTurma);
+router.get("/", turmaController_1.listCollectiveTurmas);
+router.get("/:turmaId", turmaController_1.getCollectiveTurmaById);
+router.post("/:turmaId/evidencias", upload_1.upload.array("files", 20), turmaController_1.saveCollectiveTurmaEvidencias);
+exports.default = router;

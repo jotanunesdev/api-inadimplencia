@@ -1,0 +1,10 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const userFaceController_1 = require("../controllers/userFaceController");
+const router = (0, express_1.Router)();
+router.get("/", userFaceController_1.listFaces);
+router.get("/:cpf", userFaceController_1.listFaces);
+router.post("/enroll", userFaceController_1.enrollFace);
+router.post("/match", userFaceController_1.matchFace);
+exports.default = router;

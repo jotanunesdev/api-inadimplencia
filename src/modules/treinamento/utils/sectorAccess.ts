@@ -51,6 +51,16 @@ const SECTOR_DEFINITIONS = [
     ],
   },
   {
+    key: "financeiro",
+    label: "Financeiro",
+    aliases: ["financeiro", "setor financeiro", "departamento financeiro"],
+  },
+  {
+    key: "contabilidade",
+    label: "Contabilidade",
+    aliases: ["contabilidade", "contabil", "setor contabil", "setor contabilidade"],
+  },
+  {
     key: "inovacao",
     label: "Inovacao",
     aliases: ["inovacao", "inovação"],
@@ -61,6 +71,9 @@ const SECTOR_DEFINITIONS = [
     aliases: ["diretoria", "diretoria executiva"],
   },
 ] as const
+
+const FINANCIAL_MANAGEMENT_ALIASES = ["gerencia financeira"] as const
+const FINANCIAL_MANAGEMENT_SECTOR_KEYS = ["financeiro", "contabilidade"] as const
 
 type SectorDefinition = (typeof SECTOR_DEFINITIONS)[number]
 
@@ -142,6 +155,42 @@ export function resolveSectorDefinition(
 
 export function resolveSectorKey(value: string | null | undefined) {
   return resolveSectorDefinition(value)?.key ?? ""
+}
+
+export function resolveAccessibleSectorKeys(value: string | null | undefined) {
+  const normalizedValue = normalizeSectorText(value)
+
+  if (!normalizedValue) {
+    return [] as string[]
+  }
+
+  const directSectorKey = resolveSectorKey(normalizedValue)
+  if (directSectorKey) {
+    return [directSectorKey]
+  }
+
+  if (
+    FINANCIAL_MANAGEMENT_ALIASES.some((alias) =>
+      matchesSectorAlias(normalizedValue, alias),
+    )
+  ) {
+    return [...FINANCIAL_MANAGEMENT_SECTOR_KEYS]
+  }
+
+  return [] as string[]
+}
+
+export function matchesSectorKey(
+  value: string | null | undefined,
+  sectorKey: string | null | undefined,
+) {
+  const normalizedSectorKey = resolveSectorKey(sectorKey)
+
+  if (!normalizedSectorKey) {
+    return false
+  }
+
+  return resolveAccessibleSectorKeys(value).includes(normalizedSectorKey)
 }
 
 export function resolveSectorLabel(value: string | null | undefined) {

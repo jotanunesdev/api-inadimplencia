@@ -67,6 +67,7 @@ import {
   updateSharePointItemName,
   uploadFileToSharePoint,
 } from "../services/sharePointService"
+import { resolveSectorDefinition } from "../utils/sectorAccess"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 
@@ -205,6 +206,18 @@ const SECTORS: SectorDefinition[] = [
     ],
   },
   {
+    key: "financeiro",
+    label: "Financeiro",
+    folderPath: "Financeiro",
+    aliases: ["financeiro", "setor financeiro", "departamento financeiro"],
+  },
+  {
+    key: "contabilidade",
+    label: "Contabilidade",
+    folderPath: "Contabilidade",
+    aliases: ["contabilidade", "contabil", "setor contabil", "setor contabilidade"],
+  },
+  {
     key: "inovacao",
     label: "Inovacao",
     folderPath: "Inovacao",
@@ -256,21 +269,14 @@ function joinPaths(...parts: Array<string | null | undefined>) {
 }
 
 function resolveSector(value: unknown) {
-  const normalizedValue = normalizeText(value)
-  if (!normalizedValue) {
+  const resolvedSectorDefinition = resolveSectorDefinition(String(value ?? ""))
+
+  if (!resolvedSectorDefinition) {
     return null
   }
 
   return (
-    SECTORS.find(
-      (sector) =>
-        sector.key === normalizedValue ||
-        normalizeText(sector.label) === normalizedValue ||
-        sector.aliases.some(
-          (alias) =>
-            normalizedValue === alias || normalizedValue.includes(alias),
-        ),
-    ) ?? null
+    SECTORS.find((sector) => sector.key === resolvedSectorDefinition.key) ?? null
   )
 }
 

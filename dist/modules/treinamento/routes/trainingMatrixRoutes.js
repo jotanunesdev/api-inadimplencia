@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const trainingMatrixController_1 = require("../controllers/trainingMatrixController");
+const router = (0, express_1.Router)();
+router.get("/", trainingMatrixController_1.list);
+router.get("/:id", trainingMatrixController_1.getById);
+router.post("/", trainingMatrixController_1.create);
+router.put("/:id", trainingMatrixController_1.update);
+router.delete("/:id", trainingMatrixController_1.remove);
+exports.default = router;

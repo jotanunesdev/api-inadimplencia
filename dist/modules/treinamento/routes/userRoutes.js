@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const userController_1 = require("../controllers/userController");
+const router = (0, express_1.Router)();
+router.get("/instructors", userController_1.listInstructorUsers);
+router.put("/instructors", userController_1.updateInstructors);
+router.get("/employees/obras", userController_1.listCompanyEmployeeObras);
+router.get("/employees", userController_1.listCompanyEmployees);
+router.get("/sections", userController_1.listCompanySections);
+router.get("/", userController_1.listAllUsers);
+router.get("/:cpf", userController_1.getByCpf);
+router.get("/:cpf/courses", userController_1.listCourses);
+exports.default = router;

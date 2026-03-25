@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const videoController_1 = require("../controllers/videoController");
+const upload_1 = require("../utils/upload");
+const router = (0, express_1.Router)();
+router.get("/", videoController_1.list);
+router.get("/:id", videoController_1.getById);
+router.post("/", videoController_1.create);
+router.post("/upload", upload_1.upload.single("file"), videoController_1.createUpload);
+router.put("/:id/order", videoController_1.updateOrder);
+router.put("/:id", videoController_1.update);
+router.put("/:id/upload", upload_1.upload.single("file"), videoController_1.updateUpload);
+router.delete("/:id", videoController_1.remove);
+exports.default = router;

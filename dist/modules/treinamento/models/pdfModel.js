@@ -1,0 +1,140 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.hasPdfOrderColumn = hasPdfOrderColumn;
+exports.listPdfs = listPdfs;
+exports.getPdfById = getPdfById;
+exports.createPdf = createPdf;
+exports.updatePdf = updatePdf;
+exports.deletePdf = deletePdf;
+const db_1 = require("../config/db");
+async function hasPdfOrderColumn() {
+    const pool = await (0, db_1.getPool)();
+    const result = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.TPDFS', 'ORDEM') AS ORDEM_COL
+  `);
+    return Boolean(result.recordset[0]?.ORDEM_COL);
+}
+async function listPdfs(trilhaId, cpf) {
+    const hasOrderColumn = await hasPdfOrderColumn();
+    const pool = await (0, db_1.getPool)();
+    const request = pool.request();
+    const conditions = [];
+    let join = "";
+    if (cpf) {
+        request.input("USUARIO_CPF", db_1.sql.VarChar(100), cpf);
+        join = "JOIN dbo.TUSUARIO_TRILHAS ut ON ut.TRILHA_ID = p.TRILHA_FK_ID";
+        conditions.push("ut.USUARIO_CPF = @USUARIO_CPF");
+    }
+    if (trilhaId) {
+        request.input("TRILHA_FK_ID", db_1.sql.UniqueIdentifier, trilhaId);
+        conditions.push("p.TRILHA_FK_ID = @TRILHA_FK_ID");
+    }
+    const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
+    const result = await request.query(`
+    SELECT ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO
+    FROM (
+      SELECT
+        p.ID,
+        p.TRILHA_FK_ID,
+        p.PDF_PATH,
+        p.PROCEDIMENTO_ID,
+        p.NORMA_ID,
+        ${hasOrderColumn ? "p.ORDEM" : "CAST(NULL AS INT) AS ORDEM"},
+        p.VERSAO,
+        ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
+      FROM dbo.TPDFS p
+      ${join}
+      ${where}
+    ) p
+    WHERE p.RN = 1
+  `);
+    return result.recordset;
+}
+async function getPdfById(id, versao) {
+    const pool = await (0, db_1.getPool)();
+    const request = pool.request().input("ID", db_1.sql.UniqueIdentifier, id);
+    if (versao !== undefined) {
+        request.input("VERSAO", db_1.sql.Int, versao);
+        const result = await request.query("SELECT * FROM dbo.TPDFS WHERE ID = @ID AND VERSAO = @VERSAO");
+        return result.recordset[0];
+    }
+    const result = await request.query("SELECT TOP 1 * FROM dbo.TPDFS WHERE ID = @ID ORDER BY VERSAO DESC");
+    return result.recordset[0];
+}
+async function createPdf(input) {
+    const hasOrderColumn = await hasPdfOrderColumn();
+    const pool = await (0, db_1.getPool)();
+    let ordem = hasOrderColumn ? input.ordem ?? null : null;
+    if (hasOrderColumn && ordem === null) {
+        const maxOrderResult = await pool
+            .request()
+            .input("TRILHA_FK_ID", db_1.sql.UniqueIdentifier, input.trilhaId)
+            .query("SELECT ISNULL(MAX(ORDEM), 0) AS MAX_ORDEM FROM dbo.TPDFS WHERE TRILHA_FK_ID = @TRILHA_FK_ID");
+        ordem = (maxOrderResult.recordset[0]?.MAX_ORDEM ?? 0) + 1;
+    }
+    const request = pool
+        .request()
+        .input("ID", db_1.sql.UniqueIdentifier, input.id)
+        .input("TRILHA_FK_ID", db_1.sql.UniqueIdentifier, input.trilhaId)
+        .input("PDF_PATH", db_1.sql.NVarChar(1000), input.pdfPath)
+        .input("PROCEDIMENTO_ID", db_1.sql.UniqueIdentifier, input.procedimentoId ?? null)
+        .input("NORMA_ID", db_1.sql.UniqueIdentifier, input.normaId ?? null)
+        .input("VERSAO", db_1.sql.Int, 1);
+    if (hasOrderColumn) {
+        await request
+            .input("ORDEM", db_1.sql.Int, ordem)
+            .query("INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)");
+    }
+    else {
+        await request.query("INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)");
+    }
+    return getPdfById(input.id);
+}
+async function updatePdf(id, input) {
+    const hasOrderColumn = await hasPdfOrderColumn();
+    const pool = await (0, db_1.getPool)();
+    const latestResult = await pool
+        .request()
+        .input("ID", db_1.sql.UniqueIdentifier, id)
+        .query("SELECT TOP 1 * FROM dbo.TPDFS WHERE ID = @ID ORDER BY VERSAO DESC");
+    const latest = latestResult.recordset[0];
+    if (!latest) {
+        return undefined;
+    }
+    const nextVersion = (latest.VERSAO ?? 0) + 1;
+    const trilhaId = input.trilhaId ?? latest.TRILHA_FK_ID;
+    const pdfPath = input.pdfPath ?? latest.PDF_PATH ?? "";
+    const procedimentoId = input.procedimentoId !== undefined
+        ? input.procedimentoId
+        : latest.PROCEDIMENTO_ID;
+    const normaId = input.normaId !== undefined
+        ? input.normaId
+        : latest.NORMA_ID;
+    const ordem = hasOrderColumn
+        ? input.ordem ?? latest.ORDEM ?? 0
+        : null;
+    const request = pool
+        .request()
+        .input("ID", db_1.sql.UniqueIdentifier, id)
+        .input("TRILHA_FK_ID", db_1.sql.UniqueIdentifier, trilhaId)
+        .input("PDF_PATH", db_1.sql.NVarChar(1000), pdfPath)
+        .input("PROCEDIMENTO_ID", db_1.sql.UniqueIdentifier, procedimentoId ?? null)
+        .input("NORMA_ID", db_1.sql.UniqueIdentifier, normaId ?? null)
+        .input("VERSAO", db_1.sql.Int, nextVersion);
+    if (hasOrderColumn) {
+        await request
+            .input("ORDEM", db_1.sql.Int, ordem)
+            .query("INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)");
+    }
+    else {
+        await request.query("INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)");
+    }
+    return getPdfById(id);
+}
+async function deletePdf(id) {
+    const pool = await (0, db_1.getPool)();
+    await pool
+        .request()
+        .input("ID", db_1.sql.UniqueIdentifier, id)
+        .query("DELETE FROM dbo.TPDFS WHERE ID = @ID");
+}

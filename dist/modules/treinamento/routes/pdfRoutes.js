@@ -1,0 +1,14 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const pdfController_1 = require("../controllers/pdfController");
+const upload_1 = require("../utils/upload");
+const router = (0, express_1.Router)();
+router.get("/", pdfController_1.list);
+router.get("/:id", pdfController_1.getById);
+router.post("/", pdfController_1.create);
+router.post("/upload", upload_1.upload.single("file"), pdfController_1.createUpload);
+router.put("/:id", pdfController_1.update);
+router.put("/:id/upload", upload_1.upload.single("file"), pdfController_1.updateUpload);
+router.delete("/:id", pdfController_1.remove);
+exports.default = router;

@@ -1,0 +1,16 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const channelVideoController_1 = require("../controllers/channelVideoController");
+const upload_1 = require("../utils/upload");
+const router = (0, express_1.Router)();
+router.get("/", channelVideoController_1.list);
+router.get("/:id", channelVideoController_1.getById);
+router.post("/", channelVideoController_1.create);
+router.post("/upload/session", channelVideoController_1.initSharePointUploadSession);
+router.post("/upload/session/:sessionId/complete", channelVideoController_1.completeSharePointUploadSession);
+router.post("/upload", upload_1.upload.single("file"), channelVideoController_1.createUpload);
+router.put("/:id", channelVideoController_1.update);
+router.put("/:id/upload", upload_1.upload.single("file"), channelVideoController_1.updateUpload);
+router.delete("/:id", channelVideoController_1.remove);
+exports.default = router;

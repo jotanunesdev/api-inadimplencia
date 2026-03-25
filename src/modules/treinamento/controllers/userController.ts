@@ -3,6 +3,7 @@ import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import { mapReadViewToUser } from "../utils/userMapping"
 import { normalizeCpf } from "../utils/normalizeCpf"
+import { matchesSectorKey } from "../utils/sectorAccess"
 import { extractPFuncRows, readView } from "../services/readViewService"
 import {
   clearAllInstructors,
@@ -165,6 +166,14 @@ const SECTOR_DEFINITIONS = [
     key: "recursos-humanos",
   },
   {
+    aliases: ["financeiro", "setor financeiro", "departamento financeiro"],
+    key: "financeiro",
+  },
+  {
+    aliases: ["contabilidade", "contabil", "setor contabil", "setor contabilidade"],
+    key: "contabilidade",
+  },
+  {
     aliases: ["inovacao", "inovação"],
     key: "inovacao",
   },
@@ -213,7 +222,7 @@ const filterEmployeesBySectorKey = <T extends CompanyEmployee | CompanyEmployeeW
       employee.raw?.SETOR_OBRA,
       employee.raw?.SETOR,
     ]
-    return candidates.some((value) => resolveSectorKey(value) === normalizedSectorKey)
+    return candidates.some((value) => matchesSectorKey(value, normalizedSectorKey))
   })
 }
 
@@ -291,7 +300,7 @@ const filterInstructorRecordsBySectorKey = <
       return true
     }
 
-    return resolveSectorKey(instructor.SETOR) === normalizedSectorKey
+    return matchesSectorKey(instructor.SETOR, normalizedSectorKey)
   })
 }
 

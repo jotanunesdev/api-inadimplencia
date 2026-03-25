@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const userTrainingController_1 = require("../controllers/userTrainingController");
+const router = (0, express_1.Router)();
+router.post("/", userTrainingController_1.recordAttendance);
+router.post("/face-evidence", userTrainingController_1.attachCollectiveFaceEvidence);
+router.post("/eficacia/trilha", userTrainingController_1.recordTrilhaEficacia);
+router.post("/eficacia/turma", userTrainingController_1.recordCollectiveEficacia);
+router.post("/complete", userTrainingController_1.recordVideoCompletion);
+router.get("/completions/videos", userTrainingController_1.listVideoCompletions);
+router.get("/completions/videos/:cpf", userTrainingController_1.listCompletedVideosByCpf);
+router.get("/completions/report", userTrainingController_1.listCompletionReportByFunction);
+router.get("/completions/report/archived", userTrainingController_1.listArchivedCompletionReportByFunction);
+exports.default = router;

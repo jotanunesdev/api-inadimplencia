@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const upload_1 = require("../utils/upload");
+const procedimentoController_1 = require("../controllers/procedimentoController");
+const router = (0, express_1.Router)();
+router.get("/", procedimentoController_1.list);
+router.get("/:id/content", procedimentoController_1.downloadContent);
+router.get("/:id", procedimentoController_1.getById);
+router.post("/", procedimentoController_1.create);
+router.post("/upload", upload_1.upload.single("file"), procedimentoController_1.createUpload);
+router.put("/:id", procedimentoController_1.update);
+router.put("/:id/upload", upload_1.upload.single("file"), procedimentoController_1.updateUpload);
+router.delete("/:id", procedimentoController_1.remove);
+exports.default = router;

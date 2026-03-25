@@ -1,0 +1,11 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const reportController_1 = require("../controllers/reportController");
+const router = (0, express_1.Router)();
+router.get("/user-trainings", reportController_1.listUserTrainingsReport);
+router.get("/obra-pending", reportController_1.listObraPendingTrainingsReport);
+router.get("/obra-trained", reportController_1.listObraTrainedReport);
+router.get("/obra-training-overview", reportController_1.listObraTrainingOverview);
+router.get("/procedimentos", reportController_1.listProcedimentoVersionReport);
+exports.default = router;

@@ -1,0 +1,15 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const express_1 = require("express");
+const upload_1 = require("../utils/upload");
+const normaController_1 = require("../controllers/normaController");
+const router = (0, express_1.Router)();
+router.get("/", normaController_1.list);
+router.get("/:id/content", normaController_1.downloadContent);
+router.get("/:id", normaController_1.getById);
+router.post("/", normaController_1.create);
+router.post("/upload", upload_1.upload.single("file"), normaController_1.createUpload);
+router.put("/:id", normaController_1.update);
+router.put("/:id/upload", upload_1.upload.single("file"), normaController_1.updateUpload);
+router.delete("/:id", normaController_1.remove);
+exports.default = router;
