@@ -638,6 +638,45 @@ function parseUserRecord(user: Record<string, unknown> | undefined) {
   return Object.keys(record).length > 0 ? record : null
 }
 
+function resolveCollectiveProofRedirectBaseUrl(
+  req: Request,
+  redirectBaseUrl: unknown,
+) {
+  const requestValue =
+    typeof redirectBaseUrl === "string" ? redirectBaseUrl.trim() : ""
+  const configuredValue = String(
+    env.COLLECTIVE_PROVA_REDIRECT_BASE_URL ?? "",
+  ).trim()
+  const forwardedProto = String(
+    req.get("x-forwarded-proto") ?? req.protocol ?? "https",
+  )
+    .split(",")[0]
+    ?.trim()
+  const forwardedHost = String(
+    req.get("x-forwarded-host") ?? req.get("host") ?? "",
+  )
+    .split(",")[0]
+    ?.trim()
+  const requestOrigin = forwardedHost
+    ? `${forwardedProto || "https"}://${forwardedHost}`
+    : ""
+
+  const resolved = requestValue || configuredValue || requestOrigin
+  if (!resolved) {
+    throw new HttpError(400, "Nao foi possivel determinar a URL base do QR Code.")
+  }
+
+  try {
+    const normalized = new URL(resolved)
+    normalized.hash = ""
+    normalized.search = ""
+    normalized.pathname = normalized.pathname.replace(/\/+$/, "")
+    return normalized.toString().replace(/\/+$/, "")
+  } catch {
+    throw new HttpError(400, "redirectBaseUrl invalido")
+  }
+}
+
 function assertTokenCanAccessTrilha(
   token: string | undefined,
   cpfDigits: string,
@@ -1199,10 +1238,10 @@ export const generateCollectiveIndividualProofQr = asyncHandler(
       turmaId: turmaId ?? null,
     })
 
-    const baseUrl =
-      (typeof redirectBaseUrl === "string" && redirectBaseUrl.trim()) ||
-      env.COLLECTIVE_PROVA_REDIRECT_BASE_URL
-    const normalizedBaseUrl = baseUrl.replace(/\/+$/, "")
+    const normalizedBaseUrl = resolveCollectiveProofRedirectBaseUrl(
+      req,
+      redirectBaseUrl,
+    )
     const redirectUrl = `${normalizedBaseUrl}/?coletivoProvaToken=${encodeURIComponent(token)}`
     const qrCodeImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(
       redirectUrl,

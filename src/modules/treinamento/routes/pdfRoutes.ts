@@ -2,6 +2,7 @@ import { Router } from "express"
 import {
   create,
   createUpload,
+  downloadContent,
   getById,
   list,
   remove,
@@ -14,6 +15,7 @@ const router = Router()
 
 router.get("/", list)
 router.get("/:id", getById)
+router.get("/:id/content", downloadContent)
 router.post("/", create)
 router.post("/upload", upload.single("file"), createUpload)
 router.put("/:id", update)

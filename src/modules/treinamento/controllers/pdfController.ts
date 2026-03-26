@@ -1,3 +1,4 @@
+import fs from "fs/promises"
 import type { Request, Response } from "express"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
@@ -17,8 +18,10 @@ import {
   buildTrilhaRelativePath,
   ensurePublicDir,
   moveFile,
+  sanitizeSegment,
   toFsPath,
 } from "../utils/storage"
+import { downloadSharePointFileByUrl } from "../services/sharePointService"
 
 const GUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -82,6 +85,19 @@ async function resolveTrilhaPath(trilhaId: string) {
   return { trilha, trilhaPath }
 }
 
+function parseOptionalVersion(raw: unknown) {
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return undefined
+  }
+
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed)) {
+    throw new HttpError(400, "versao deve ser um numero")
+  }
+
+  return parsed
+}
+
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId, cpf } = req.query as { trilhaId?: string; cpf?: string }
   const normalizedCpf = cpf ? normalizeCpf(cpf) : undefined
@@ -90,18 +106,49 @@ export const list = asyncHandler(async (req: Request, res: Response) => {
 })
 
 export const getById = asyncHandler(async (req: Request, res: Response) => {
-  const { versao } = req.query as { versao?: string }
-  const parsedVersion =
-    versao !== undefined && versao !== "" ? Number(versao) : undefined
-  if (parsedVersion !== undefined && Number.isNaN(parsedVersion)) {
-    throw new HttpError(400, "versao deve ser um numero")
-  }
-
+  const parsedVersion = parseOptionalVersion((req.query as { versao?: string }).versao)
   const pdf = await getPdfById(req.params.id, parsedVersion)
   if (!pdf) {
     throw new HttpError(404, "PDF nao encontrado")
   }
   res.json({ pdf })
+})
+
+export const downloadContent = asyncHandler(async (req: Request, res: Response) => {
+  const parsedVersion = parseOptionalVersion((req.query as { versao?: string }).versao)
+  const pdf = await getPdfById(req.params.id, parsedVersion)
+  if (!pdf) {
+    throw new HttpError(404, "PDF nao encontrado")
+  }
+
+  const rawPath = pdf.PDF_PATH?.trim()
+  if (!rawPath) {
+    throw new HttpError(404, "Arquivo PDF nao encontrado")
+  }
+
+  let buffer: Buffer
+  if (rawPath.startsWith("http")) {
+    buffer = await downloadSharePointFileByUrl(rawPath)
+  } else {
+    const localPath = toFsPath(rawPath)
+    try {
+      buffer = await fs.readFile(localPath)
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException
+      if (err.code === "ENOENT") {
+        throw new HttpError(404, "Arquivo PDF nao encontrado")
+      }
+      throw error
+    }
+  }
+
+  const safeName = sanitizeSegment(
+    pdf.PDF_PATH.split("/").pop() || `pdf-${pdf.ID}`,
+  ).replace(/\s+/g, "-")
+  const fileName = `${safeName || "pdf"}-v${pdf.VERSAO ?? 1}.pdf`
+  res.setHeader("Content-Type", "application/pdf")
+  res.setHeader("Content-Disposition", `inline; filename="${fileName}"`)
+  res.send(buffer)
 })
 
 export const create = asyncHandler(async (req: Request, res: Response) => {
