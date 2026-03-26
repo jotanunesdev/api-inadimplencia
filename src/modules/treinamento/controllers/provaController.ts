@@ -623,6 +623,22 @@ function sanitizeObjectiveProvaForPlayer(prova: {
   }
 }
 
+async function getObjectiveProvaForExecutionWithFallback(trilhaId: string) {
+  try {
+    return await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
+  } catch (error) {
+    const fallback = await getObjectiveProvaByTrilhaId(trilhaId)
+    if (fallback) {
+      console.warn(
+        `[treinamento] fallback da prova objetiva base aplicado para a trilha ${trilhaId}`,
+        error,
+      )
+      return fallback
+    }
+    throw error
+  }
+}
+
 function parseUserRecord(user: Record<string, unknown> | undefined) {
   if (!user || typeof user !== "object") return null
 
@@ -952,7 +968,7 @@ export const getObjectiveForPlayer = asyncHandler(async (req: Request, res: Resp
     }
   }
 
-  const prova = await getObjectiveProvaForExecutionByTrilhaId(req.params.trilhaId)
+  const prova = await getObjectiveProvaForExecutionWithFallback(req.params.trilhaId)
   if (!prova) {
     res.json({ prova: null })
     return
@@ -988,7 +1004,7 @@ export const submitObjectiveForPlayer = asyncHandler(async (req: Request, res: R
     }
   }
 
-  const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
+  const prova = await getObjectiveProvaForExecutionWithFallback(trilhaId)
   if (!prova) {
     throw new HttpError(404, "Prova objetiva nao encontrada para esta trilha")
   }
@@ -1063,7 +1079,7 @@ export const submitObjectiveForCollective = asyncHandler(async (req: Request, re
     throw new HttpError(400, "respostas invalida")
   }
 
-  const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
+  const prova = await getObjectiveProvaForExecutionWithFallback(trilhaId)
   if (!prova) {
     throw new HttpError(404, "Prova objetiva nao encontrada para esta trilha")
   }
@@ -1219,7 +1235,7 @@ export const generateCollectiveIndividualProofQr = asyncHandler(
     const provasIndividuais: ProvaObjectiveRecord[] = []
     for (const trilhaId of validTrilhaIds) {
       // eslint-disable-next-line no-await-in-loop
-      const prova = await getObjectiveProvaForExecutionByTrilhaId(trilhaId)
+      const prova = await getObjectiveProvaForExecutionWithFallback(trilhaId)
       if (!prova) continue
       if (normalizeProvaModoAplicacao(prova.MODO_APLICACAO) !== PROVA_MODO_APLICACAO.INDIVIDUAL) continue
       provasIndividuais.push(prova)
