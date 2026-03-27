@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import path from "path"
 import type { Request, Response } from "express"
 import {
@@ -54,9 +55,11 @@ import {
 } from "../models/sectorFolderExternalItemModel"
 import {
   copySharePointItemToFolder,
+  createSharePointUploadSession,
   createSharePointFolder,
   deleteSharePointItemById,
   ensureSharePointFolder,
+  getSharePointFileByPath,
   getSharePointItemById,
   getSharePointItemByPath,
   isSharePointEnabled,
@@ -89,6 +92,16 @@ type UserProfile = {
   displayName: string | null
   email: string | null
   username: string | null
+}
+
+type PendingSectorFolderUpload = {
+  sectorKey: string
+  actor: UserProfile
+  currentFolderPath: string
+  validityMonths: number | null
+  validityYears: number | null
+  fullPath: string
+  createdAt: number
 }
 
 type BreadcrumbItem = {
@@ -141,6 +154,8 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".wmv",
   ".m4v",
 ])
+const pendingSectorFolderUploads = new Map<string, PendingSectorFolderUpload>()
+const PENDING_SECTOR_FOLDER_UPLOAD_TTL_MS = 2 * 60 * 60 * 1000
 
 const SECTORS: SectorDefinition[] = [
   {
@@ -453,6 +468,15 @@ function ensureSharePointIsAvailable() {
   }
 }
 
+function cleanupPendingSectorFolderUploads() {
+  const now = Date.now()
+  for (const [key, pending] of pendingSectorFolderUploads.entries()) {
+    if (now - pending.createdAt > PENDING_SECTOR_FOLDER_UPLOAD_TTL_MS) {
+      pendingSectorFolderUploads.delete(key)
+    }
+  }
+}
+
 function parseSectorFromQuery(req: Request) {
   const sector = resolveSector(req.query.sector)
   if (!sector) {
@@ -655,6 +679,20 @@ function assertAllowedUploadFile(file: Express.Multer.File | undefined) {
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
     throw new HttpError(400, "Apenas arquivos PDF ou de video sao permitidos.")
   }
+}
+
+function assertAllowedUploadFileName(fileName: unknown) {
+  const normalized = String(fileName ?? "").trim()
+  if (!normalized) {
+    throw new HttpError(400, "Informe o nome do arquivo para upload.")
+  }
+
+  const extension = path.extname(normalized).toLowerCase()
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
+    throw new HttpError(400, "Apenas arquivos PDF ou de video sao permitidos.")
+  }
+
+  return normalized
 }
 
 function parseOptionalIntegerInRange(
@@ -3047,6 +3085,134 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     currentFolderPath: parentContext.currentFolderPath,
   })
 })
+
+export const initUploadFileSession = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+    cleanupPendingSectorFolderUploads()
+
+    const body = (req.body ?? {}) as Record<string, unknown>
+    const sector = parseSectorFromBody(body)
+    const actor = parseActor(body)
+    const parentItemId = parseParentItemId(body.parentItemId)
+    const fileName = assertAllowedUploadFileName(body.fileName)
+
+    await ensureSectorStructure(sector)
+
+    const parentContext = await resolveParentContext({
+      requestedSector: sector,
+      parentItemId,
+      sourceSector: null,
+      sharedRootItemId: null,
+    })
+    if (parentContext.sharedFolder) {
+      throw new HttpError(
+        403,
+        "Pastas compartilhadas ficam em modo somente leitura para o setor destinatario.",
+      )
+    }
+
+    assertPathIsNotVersionHistory(
+      parentContext.pathSector,
+      parentContext.currentFolderPath,
+      "O Historico de Versoes e gerenciado automaticamente e nao aceita uploads manuais.",
+    )
+
+    const requiresValidity =
+      Boolean(
+        findSectorFixedFolderAncestor(
+          parentContext.pathSector,
+          parentContext.currentFolderPath,
+        )?.requiresValidityForFiles,
+      ) && sector.key === "sesmt"
+    const fileValidity = parseNormasFileValidity(body, requiresValidity)
+
+    const session = await createSharePointUploadSession({
+      relativeFolderPath: parentContext.currentFolderPath,
+      fileName,
+    })
+    const sessionId = randomUUID()
+
+    pendingSectorFolderUploads.set(sessionId, {
+      sectorKey: sector.key,
+      actor,
+      currentFolderPath: parentContext.currentFolderPath,
+      validityMonths: fileValidity.validityMonths,
+      validityYears: fileValidity.validityYears,
+      fullPath: session.fullPath,
+      createdAt: Date.now(),
+    })
+
+    res.status(201).json({
+      sessionId,
+      uploadUrl: session.uploadUrl,
+      fileName: session.fileName,
+      currentFolderPath: parentContext.currentFolderPath,
+      expiresAt: session.expiresAt,
+    })
+  },
+)
+
+export const completeUploadFileSession = asyncHandler(
+  async (req: Request, res: Response) => {
+    ensureSharePointIsAvailable()
+    cleanupPendingSectorFolderUploads()
+
+    const pending = pendingSectorFolderUploads.get(req.params.sessionId)
+    if (!pending) {
+      throw new HttpError(404, "Sessao de upload nao encontrada ou expirada.")
+    }
+
+    if (Date.now() - pending.createdAt > PENDING_SECTOR_FOLDER_UPLOAD_TTL_MS) {
+      pendingSectorFolderUploads.delete(req.params.sessionId)
+      throw new HttpError(410, "Sessao de upload expirada.")
+    }
+
+    const sector = resolveSector(pending.sectorKey)
+    if (!sector) {
+      pendingSectorFolderUploads.delete(req.params.sessionId)
+      throw new HttpError(400, "Informe um setor valido.")
+    }
+
+    const uploadedFile = await getSharePointFileByPath(pending.fullPath)
+    const uploadedItem = await getSharePointItemById(uploadedFile.id)
+    const now = new Date()
+    const metadata = await upsertSectorMetadataSafely({
+      itemId: uploadedItem.id,
+      sector: sector.label,
+      name: uploadedItem.name,
+      path: buildItemPathFromSector(uploadedItem, sector),
+      createdByName: pending.actor.displayName,
+      createdByEmail: pending.actor.email,
+      createdByUsername: pending.actor.username,
+      updatedByName: pending.actor.displayName,
+      updatedByEmail: pending.actor.email,
+      updatedByUsername: pending.actor.username,
+      createdAt: parseDateOrNull(uploadedItem.createdDateTime) ?? now,
+      updatedAt: now,
+      validityMonths: pending.validityMonths,
+      validityYears: pending.validityYears,
+    })
+
+    const metadataByItemId = new Map<string, SectorFolderMetadata>()
+    if (metadata) {
+      metadataByItemId.set(metadata.itemId, metadata)
+    }
+
+    const members = await collectItemMembers(uploadedItem, metadataByItemId)
+    pendingSectorFolderUploads.delete(req.params.sessionId)
+
+    res.status(201).json({
+      item: buildItemResponse({
+        item: uploadedItem,
+        sector,
+        metadata,
+        members,
+      }),
+      currentFolderPath: pending.currentFolderPath,
+    })
+  },
+)
 
 export const getItemVersionImpact = asyncHandler(
   async (req: Request, res: Response) => {

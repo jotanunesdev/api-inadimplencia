@@ -2,7 +2,9 @@ import { Router } from "express"
 import {
   create,
   createYouTubeLink,
+  completeUploadFileSession,
   getItemVersionImpact,
+  initUploadFileSession,
   listFolderShares,
   listFolderContents,
   list,
@@ -25,6 +27,8 @@ router.get("/contents", listFolderContents)
 router.get("/folders/:itemId/shares", listFolderShares)
 router.get("/items/:itemId/version-impact", getItemVersionImpact)
 router.post("/folders", create)
+router.post("/files/upload/session", initUploadFileSession)
+router.post("/files/upload/session/:sessionId/complete", completeUploadFileSession)
 router.post("/files/upload", upload.single("file"), uploadFile)
 router.post("/links/youtube", createYouTubeLink)
 router.post("/items/:itemId/version", upload.single("file"), versionItem)
