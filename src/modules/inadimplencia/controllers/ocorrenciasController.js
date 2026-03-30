@@ -1,4 +1,6 @@
+const { formToJSON } = require('axios');
 const model = require('../models/ocorrenciasModel');
+const { DateTime } = require('mssql');
 
 const GUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
@@ -17,55 +19,50 @@ function parseNumVenda(value) {
   return num;
 }
 
-function normalizeTime(value) {
-  if (!value || typeof value !== 'string') {
-    return null;
-  }
+function validateAndFormat(dateStr, timeStr) {
+  const cleanDate = dateStr.includes('T') ? dateStr.split('T')[0] : dateStr;
+  
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) return null;
+  if (!/^([01]\d|2[0-3]):([0-5]\d)(:([0-5]\d))?$/.test(timeStr)) return null;
 
-  let trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
 
-  if (trimmed.includes('T')) {
-    const parts = trimmed.split('T');
-    trimmed = parts[1] || '';
-  }
+  return {
+    date: cleanDate, 
+    time: timeStr
+  };
+}
 
-  if (trimmed.includes(' ')) {
-    trimmed = trimmed.split(' ')[0];
-  }
+function formatarResposta(data) {
+  if (!data) return null;
+  
+  const formatarItem = (item) => {
+    const novoItem = { ...item };
+    const d = item.DT_OCORRENCIA ?? item.DATA_OCORRENCIA;
 
-  const match = trimmed.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (!match) {
-    return null;
-  }
+    if (d instanceof Date) {
+      const ano = d.getUTCFullYear();
+      const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dia = String(d.getUTCDate()).padStart(2, '0'); 
+      novoItem.DT_OCORRENCIA = `${ano}-${mes}-${dia}`;
+    }
 
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  const seconds = Number(match[3] ?? '00');
+    if (item.HORA_OCORRENCIA instanceof Date) {
+      const h = item.HORA_OCORRENCIA;
+      const horas = String(h.getUTCHours()).padStart(2, '0');
+      const minutos = String(h.getUTCMinutes()).padStart(2, '0');
+      const segundos = String(h.getUTCSeconds()).padStart(2, '0');
+      novoItem.HORA_OCORRENCIA = `${horas}:${minutos}:${segundos}`;
+    }
 
-  if (
-    Number.isNaN(hours) ||
-    Number.isNaN(minutes) ||
-    Number.isNaN(seconds) ||
-    hours < 0 ||
-    hours > 23 ||
-    minutes < 0 ||
-    minutes > 59 ||
-    seconds < 0 ||
-    seconds > 59
-  ) {
-    return null;
-  }
-
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    return novoItem;
+  };
+  return Array.isArray(data) ? data.map(formatarItem) : formatarItem(data);
 }
 
 async function getAll(req, res, next) {
   try {
     const data = await model.findAll();
-    res.json({ data });
+    res.json({ data: formatarResposta(data) });
   } catch (err) {
     next(err);
   }
@@ -173,10 +170,10 @@ async function create(req, res, next) {
       return res.status(400).json({ error: 'DT_OCORRENCIA e obrigatoria.' });
     }
     if (!horaOcorrencia || typeof horaOcorrencia !== 'string') {
-      return res.status(400).json({ error: 'HORA_OCORRENCIA e obrigatoria.' });
-    }
-    const normalizedHora = normalizeTime(horaOcorrencia);
-    if (!normalizedHora) {
+       return res.status(400).json({ error: 'HORA_OCORRENCIA e obrigatoria.' });
+     }
+    const formatted = validateAndFormat(dtOcorrencia, horaOcorrencia);
+    if (!formatted) {
       return res.status(400).json({ error: 'HORA_OCORRENCIA invalida.' });
     }
 
@@ -186,12 +183,12 @@ async function create(req, res, next) {
       protocolo: typeof protocolo === 'string' && protocolo.trim() ? protocolo.trim() : null,
       descricao: descricao.trim(),
       statusOcorrencia: statusOcorrencia.trim(),
-      dtOcorrencia: dtOcorrencia.trim(),
-      horaOcorrencia: normalizedHora,
+      dtOcorrencia: formatted.date,
+      horaOcorrencia: formatted.time,
       proximaAcao: typeof proximaAcao === 'string' ? proximaAcao.trim() : null,
     });
 
-    res.status(201).json({ data });
+    res.status(201).json({ data: formatarResposta(data) });
   } catch (err) {
     next(err);
   }
@@ -255,8 +252,8 @@ async function update(req, res, next) {
     if (!horaOcorrencia || typeof horaOcorrencia !== 'string') {
       return res.status(400).json({ error: 'HORA_OCORRENCIA e obrigatoria.' });
     }
-    const normalizedHora = normalizeTime(horaOcorrencia);
-    if (!normalizedHora) {
+    const formatted = validateAndFormat(dtOcorrencia, horaOcorrencia);
+    if (!formatted) {
       return res.status(400).json({ error: 'HORA_OCORRENCIA invalida.' });
     }
 
@@ -266,8 +263,8 @@ async function update(req, res, next) {
       protocolo: typeof protocolo === 'string' && protocolo.trim() ? protocolo.trim() : null,
       descricao: descricao.trim(),
       statusOcorrencia: statusOcorrencia.trim(),
-      dtOcorrencia: dtOcorrencia.trim(),
-      horaOcorrencia: normalizedHora,
+      dtOcorrencia: formatted.date,
+      horaOcorrencia: formatted.time,
       proximaAcao: typeof proximaAcao === 'string' ? proximaAcao.trim() : null,
     });
 
