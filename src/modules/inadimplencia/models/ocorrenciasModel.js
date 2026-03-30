@@ -48,6 +48,8 @@ async function findByProtocolo(protocolo) {
 
 async function create(data) {
   const pool = await getPool();
+  const proximaAcao = data.proximaAcao && data.proximaAcao.trim() !== '' ? data.proximaAcao : null;
+
   const result = await pool
     .request()
     .input('numVendaFk', sql.Int, data.numVendaFk)
@@ -57,7 +59,7 @@ async function create(data) {
     .input('statusOcorrencia', sql.NVarChar(200), data.statusOcorrencia ?? null)
     .input('dtOcorrencia', sql.Date, data.dtOcorrencia)
     .input('horaOcorrencia', sql.VarChar, data.horaOcorrencia)
-    .input('proximaAcao', sql.DateTime, data.proximaAcao ?? null)
+    .input('proximaAcao', sql.DateTime, data.proximaAcao)
     .query(
       `INSERT INTO ${TABLE} (NUM_VENDA_FK, NOME_USUARIO_FK, PROTOCOLO, DESCRICAO, STATUS_OCORRENCIA, DT_OCORRENCIA, HORA_OCORRENCIA, PROXIMA_ACAO)
        OUTPUT inserted.*
@@ -69,6 +71,7 @@ async function create(data) {
 
 async function update(id, data) {
   const pool = await getPool();
+
   const result = await pool
     .request()
     .input('id', sql.UniqueIdentifier, id)
@@ -79,7 +82,7 @@ async function update(id, data) {
     .input('statusOcorrencia', sql.NVarChar(200), data.statusOcorrencia ?? null)
     .input('dtOcorrencia', sql.Date, data.dtOcorrencia)
     .input('horaOcorrencia', sql.VarChar, data.horaOcorrencia)
-    .input('proximaAcao', sql.DateTime, data.proximaAcao ?? null)
+    .input('proximaAcao', sql.DateTime, data.proximaAcao)
     .query(
       `UPDATE ${TABLE}
        SET NUM_VENDA_FK = @numVendaFk,
