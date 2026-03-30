@@ -28,6 +28,7 @@ import {
   deleteSharePointFileByUrl,
   downloadSharePointFileByUrl,
   ensureSharePointFolder,
+  listSharePointFolderChildren,
   isSharePointEnabled,
   uploadFileToSharePoint,
 } from "../services/sharePointService"
@@ -170,6 +171,106 @@ function buildProcedureFileName(nome: string, originalName: string, versao: numb
   return `${base}-v${versao}${ext}`
 }
 
+const QUALITY_PROCEDURES_FOLDER_PATH = "Qualidade/Procedimentos"
+const PROCEDURE_FOLDER_PATH_BY_SECTOR = {
+  qualidade: QUALITY_PROCEDURES_FOLDER_PATH,
+  inovacao: QUALITY_PROCEDURES_FOLDER_PATH,
+} as const
+
+function isPdfSharePointItem(item: { name?: string; folder?: unknown }) {
+  return (
+    !item?.folder &&
+    String(item?.name ?? "").trim().toLowerCase().endsWith(".pdf")
+  )
+}
+
+function resolveProcedureFolderPathForSector(sectorKey: unknown) {
+  const normalizedSectorKey = String(sectorKey ?? "")
+    .trim()
+    .toLowerCase()
+
+  return (
+    PROCEDURE_FOLDER_PATH_BY_SECTOR[
+      normalizedSectorKey as keyof typeof PROCEDURE_FOLDER_PATH_BY_SECTOR
+    ] ?? QUALITY_PROCEDURES_FOLDER_PATH
+  )
+}
+
+async function syncFileManagerProcedures(folderPath = QUALITY_PROCEDURES_FOLDER_PATH) {
+  if (!isSharePointEnabled()) {
+    return []
+  }
+
+  await ensureSharePointFolder(folderPath)
+
+  const [folderItems, currentProcedimentos] = await Promise.all([
+    listSharePointFolderChildren(folderPath),
+    listProcedimentos(),
+  ])
+
+  const procedimentoByPath = new Map(
+    currentProcedimentos
+      .map((procedimento) => [
+        String(procedimento.PATH_PDF ?? "").trim(),
+        procedimento,
+      ])
+      .filter(([storedPath]) => Boolean(storedPath)),
+  )
+
+  const syncedProcedimentos = []
+
+  for (const item of folderItems.filter(isPdfSharePointItem)) {
+    const storedPath = String(item.webUrl ?? "").trim()
+    if (!storedPath) {
+      continue
+    }
+
+    const currentProcedimento = procedimentoByPath.get(storedPath)
+
+    if (!currentProcedimento) {
+      const created = await createProcedimento({
+        id: randomUUID(),
+        nome: item.name,
+        pathPdf: storedPath,
+        alteradoEm: item.lastModifiedDateTime
+          ? new Date(item.lastModifiedDateTime)
+          : new Date(),
+      })
+
+      if (created) {
+        procedimentoByPath.set(storedPath, created)
+        syncedProcedimentos.push(created)
+      }
+
+      continue
+    }
+
+    if (String(currentProcedimento.NOME ?? "").trim() !== String(item.name ?? "").trim()) {
+      const updated = await updateProcedimento(currentProcedimento.ID, {
+        alteradoEm: item.lastModifiedDateTime
+          ? new Date(item.lastModifiedDateTime)
+          : new Date(),
+        nome: item.name,
+        pathPdf: storedPath,
+      })
+
+      if (updated) {
+        procedimentoByPath.set(storedPath, updated)
+        syncedProcedimentos.push(updated)
+        continue
+      }
+    }
+
+    syncedProcedimentos.push(currentProcedimento)
+  }
+
+  return syncedProcedimentos.sort((left, right) =>
+    String(left?.NOME ?? "").localeCompare(String(right?.NOME ?? ""), "pt-BR", {
+      sensitivity: "base",
+    }),
+  )
+}
+
 async function removeLocalFileIfExists(storedPath: string | null) {
   if (!storedPath || storedPath.startsWith("http")) {
     return
@@ -186,6 +287,13 @@ async function removeLocalFileIfExists(storedPath: string | null) {
 
 export const list = asyncHandler(async (_req: Request, res: Response) => {
   const procedimentos = await listProcedimentos()
+  res.json({ procedimentos })
+})
+
+export const listFromFileManager = asyncHandler(async (req: Request, res: Response) => {
+  const procedimentos = await syncFileManagerProcedures(
+    resolveProcedureFolderPathForSector(req.query?.sector),
+  )
   res.json({ procedimentos })
 })
 

@@ -6,6 +6,7 @@ import {
   downloadContent,
   getById,
   list,
+  listFromFileManager,
   remove,
   update,
   updateUpload,
@@ -14,6 +15,7 @@ import {
 const router = Router()
 
 router.get("/", list)
+router.get("/from-file-manager", listFromFileManager)
 router.get("/:id/content", downloadContent)
 router.get("/:id", getById)
 router.post("/", create)
