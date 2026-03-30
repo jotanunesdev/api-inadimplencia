@@ -3,6 +3,7 @@ import {
   create,
   createYouTubeLink,
   completeUploadFileSession,
+  getItemContent,
   getItemVersionImpact,
   initUploadFileSession,
   listFolderShares,
@@ -25,6 +26,7 @@ const router = Router()
 router.get("/folders", list)
 router.get("/contents", listFolderContents)
 router.get("/folders/:itemId/shares", listFolderShares)
+router.get("/items/:itemId/content", getItemContent)
 router.get("/items/:itemId/version-impact", getItemVersionImpact)
 router.post("/folders", create)
 router.post("/files/upload/session", initUploadFileSession)

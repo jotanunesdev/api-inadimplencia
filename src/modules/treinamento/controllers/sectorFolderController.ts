@@ -57,6 +57,7 @@ import {
   copySharePointItemToFolder,
   createSharePointUploadSession,
   createSharePointFolder,
+  downloadSharePointFileContentByItemId,
   deleteSharePointItemById,
   ensureSharePointFolder,
   getSharePointFileByPath,
@@ -146,6 +147,7 @@ const MAX_FOLDER_MEMBERS = 8
 const VERSION_HISTORY_FOLDER_NAME = "Historico de Versoes"
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".pdf",
+  ".pptx",
   ".mp4",
   ".mov",
   ".avi",
@@ -677,7 +679,10 @@ function assertAllowedUploadFile(file: Express.Multer.File | undefined) {
 
   const extension = path.extname(file.originalname || "").toLowerCase()
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
-    throw new HttpError(400, "Apenas arquivos PDF ou de video sao permitidos.")
+    throw new HttpError(
+      400,
+      "Apenas arquivos PDF, PPTX ou de video sao permitidos.",
+    )
   }
 }
 
@@ -689,7 +694,10 @@ function assertAllowedUploadFileName(fileName: unknown) {
 
   const extension = path.extname(normalized).toLowerCase()
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(extension)) {
-    throw new HttpError(400, "Apenas arquivos PDF ou de video sao permitidos.")
+    throw new HttpError(
+      400,
+      "Apenas arquivos PDF, PPTX ou de video sao permitidos.",
+    )
   }
 
   return normalized
@@ -1853,6 +1861,62 @@ async function resolveParentContext(params: {
     currentFolderPath,
     pathSector: params.sourceSector,
     sharedFolder: buildSharedFolderSummary(params.sourceSector, share),
+  }
+}
+
+async function resolveFilePreviewContext(params: {
+  requestedSector: SectorDefinition
+  itemId: string
+  sourceSector: SectorDefinition | null
+  sharedRootItemId: string | null
+}) {
+  const currentItem = await getSharePointItemById(params.itemId)
+  if (currentItem.folder) {
+    throw new HttpError(400, "Somente arquivos podem ser visualizados.")
+  }
+
+  if (!params.sourceSector || !params.sharedRootItemId) {
+    assertItemBelongsToSector(currentItem, params.requestedSector)
+    return {
+      item: currentItem,
+      sector: params.requestedSector,
+    }
+  }
+
+  const share = await getSectorFolderShareByTargetAndItem({
+    itemId: params.sharedRootItemId,
+    targetSectorKey: params.requestedSector.key,
+  })
+  if (!share || share.SETOR_ORIGEM_CHAVE !== params.sourceSector.key) {
+    throw new HttpError(404, "Pasta compartilhada nao encontrada para este setor.")
+  }
+
+  const sharedRootItem = await getSharePointItemById(params.sharedRootItemId)
+  if (!sharedRootItem.folder) {
+    throw new HttpError(404, "Pasta compartilhada nao encontrada para este setor.")
+  }
+
+  assertItemBelongsToSector(sharedRootItem, params.sourceSector)
+  assertItemBelongsToSector(currentItem, params.sourceSector)
+
+  const sharedRootPath = buildItemPathFromSector(sharedRootItem, params.sourceSector)
+  const currentItemPath = buildItemPathFromSector(currentItem, params.sourceSector)
+  const normalizedSharedRootPath = normalizeComparablePath(sharedRootPath)
+  const normalizedCurrentItemPath = normalizeComparablePath(currentItemPath)
+
+  if (
+    normalizedCurrentItemPath !== normalizedSharedRootPath &&
+    !normalizedCurrentItemPath.startsWith(`${normalizedSharedRootPath}/`)
+  ) {
+    throw new HttpError(
+      403,
+      "O arquivo selecionado nao pertence ao compartilhamento informado.",
+    )
+  }
+
+  return {
+    item: currentItem,
+    sector: params.sourceSector,
   }
 }
 
@@ -3283,6 +3347,42 @@ export const getItemVersionImpact = asyncHandler(
     })
   },
 )
+
+export const getItemContent = asyncHandler(async (req: Request, res: Response) => {
+  ensureSharePointIsAvailable()
+
+  const requestedSector = parseSectorFromQuery(req)
+  const sourceSector = parseOptionalSector(req.query.sourceSector)
+  const sharedRootItemId = parseParentItemId(req.query.sharedRootItemId)
+  const itemId = String(req.params.itemId ?? "").trim()
+
+  if (!itemId) {
+    throw new HttpError(400, "Informe o arquivo a ser visualizado.")
+  }
+
+  const { item } = await resolveFilePreviewContext({
+    requestedSector,
+    itemId,
+    sourceSector,
+    sharedRootItemId,
+  })
+  const buffer = await downloadSharePointFileContentByItemId({
+    itemId: item.id,
+  })
+  const contentType =
+    typeof item.file?.mimeType === "string" && item.file.mimeType.trim()
+      ? item.file.mimeType
+      : "application/octet-stream"
+
+  res.setHeader("Content-Type", contentType)
+  res.setHeader("Content-Length", String(buffer.length))
+  res.setHeader(
+    "Content-Disposition",
+    `inline; filename*=UTF-8''${encodeURIComponent(item.name)}`,
+  )
+  res.setHeader("Cache-Control", "private, max-age=300")
+  res.send(buffer)
+})
 
 export const versionItem = asyncHandler(async (req: Request, res: Response) => {
   ensureSharePointIsAvailable()
