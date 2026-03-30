@@ -48,6 +48,15 @@ async function kpis() {
   return result.recordset[0];
 }
 
+async function todasOcorrencias() {
+  const pool = await getPool();
+  const result = await pool.request().query(
+    `SELECT *
+    FROM ${TABLE_OC}`
+  );
+
+  return result.recordset;
+}
 async function vendasPorResponsavel() {
   const pool = await getPool();
   const result = await pool.request().query(
@@ -64,6 +73,16 @@ async function vendasPorResponsavel() {
      ) vr_inad ON vr_inad.NOME_USUARIO_FK = u.NOME
      GROUP BY u.NOME, u.COR_HEX
      ORDER BY TOTAL_VENDAS DESC`
+  );
+
+  return result.recordset;
+}
+
+async function todosResponsaveis(){
+  const pool = await getPool();
+  const result = await pool.request().query(
+    `SELECT *
+    FROM ${TABLE_RESP}`
   );
 
   return result.recordset;
@@ -554,4 +573,6 @@ module.exports = {
   agingDetalhes,
   parcelasDetalhes,
   scoreSaldoDetalhes,
+  todasOcorrencias,
+  todosResponsaveis,
 };

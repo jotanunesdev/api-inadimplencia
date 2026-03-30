@@ -310,6 +310,13 @@ const swaggerSpec = {
         responses: jsonResponse,
       },
     },
+    '/dashboard/responsaveis': {
+      get: {
+        tags: ['Dashboard'],
+        summary: 'Todos responsáveis',
+        responses: jsonResponse,
+      },
+    },
     '/dashboard/ocorrencias-por-usuario': {
       get: {
         tags: ['Dashboard'],
@@ -342,6 +349,13 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por dia e hora',
+        responses: jsonResponse,
+      },
+    },
+    '/dashboard/ocorrencias': {
+      get: {
+        tags: ['Dashboard'],
+        summary: 'Todas as ocorrências',
         responses: jsonResponse,
       },
     },

@@ -59,6 +59,15 @@ async function getVendasPorResponsavel(req, res, next) {
   }
 }
 
+async function getResponsaveis(req, res, next) {
+  try {
+    const data = await model.todosResponsaveis();
+    res.json({ data });
+  } catch (err) {
+    next(err);
+  }
+}
+
 async function getInadimplenciaPorEmpreendimento(req, res, next) {
   try {
     const data = await model.inadimplenciaPorEmpreendimento();
@@ -278,6 +287,15 @@ async function getAgingDetalhes(req, res, next) {
   }
 }
 
+async function getTodasOcorrencias(req, res, next) {
+  try {
+    const data = await model.todasOcorrencias();
+    res.json({ data });
+  } catch (err){
+    next(err);
+  }
+}
+
 module.exports = {
   getKpis,
   getVendasPorResponsavel,
@@ -303,4 +321,6 @@ module.exports = {
   getPerfilRiscoEmpreendimento,
   getAtendentesProximaAcao,
   getAgingDetalhes,
+  getTodasOcorrencias,
+  getResponsaveis,
 };

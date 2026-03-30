@@ -27,5 +27,7 @@ router.get('/saldo-por-mes-vencimento', controller.getSaldoPorMesVencimento);
 router.get('/perfil-risco-empreendimento', controller.getPerfilRiscoEmpreendimento);
 router.get('/atendentes-proxima-acao', controller.getAtendentesProximaAcao);
 router.get('/aging-detalhes', controller.getAgingDetalhes);
+router.get('/ocorrencias', controller.getTodasOcorrencias);
+router.get('/responsaveis', controller.getResponsaveis);
 
 module.exports = router;
