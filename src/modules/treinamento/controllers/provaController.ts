@@ -398,8 +398,15 @@ function sanitizeStructuredQuestions(
       throw new HttpError(400, `Questao ${questionIndex + 1}: peso invalido`)
     }
 
-    if (!Array.isArray(question.opcoes) || question.opcoes.length < 2) {
-      throw new HttpError(400, `Questao ${questionIndex + 1}: inclua ao menos 2 opcoes`)
+    if (
+      !Array.isArray(question.opcoes) ||
+      question.opcoes.length < 2 ||
+      question.opcoes.length > 4
+    ) {
+      throw new HttpError(
+        400,
+        `Questao ${questionIndex + 1}: inclua entre 2 e 4 opcoes`,
+      )
     }
 
     const opcoes = question.opcoes.map((option, optionIndex) => {
