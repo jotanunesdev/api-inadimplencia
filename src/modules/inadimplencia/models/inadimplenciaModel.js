@@ -1,10 +1,10 @@
 const { getPool, sql } = require('../config/db');
 
-const TABLE = 'DW.fat_analise_inadimplencia_v3';
+const TABLE = 'DW.fat_analise_inadimplencia_v4';
 const TABLE_OC = 'dbo.OCORRENCIAS';
 const TABLE_RESP = 'dbo.VENDA_RESPONSAVEL';
 const TABLE_USUARIO = 'dbo.USUARIO';
-const COL_SALDO = 'VALOR_TOTAL';
+const COL_SALDO = 'VALOR_TOTAL_EM_ABERTO';
 const COL_INADIMPLENTE = 'VALOR_INADIMPLENTE';
 const COL_STATUS_INADIMPLENCIA = 'INADIMPLENTE';
 const SELECT_FIELDS = [
@@ -24,7 +24,7 @@ const SELECT_FIELDS = [
   'VALOR_NAO_CONTRATUAL_INAD',
   'VALOR_POUPANCA_INAD',
   'VALOR_INADIMPLENTE',
-  'VALOR_TOTAL',
+  `${COL_SALDO} AS VALOR_TOTAL`,
   `CAST(${COL_SALDO} AS float) AS SALDO`,
   `CAST(${COL_INADIMPLENTE} AS float) AS VALOR_SOMENTE_INADIMPLENTE`,
 ].join(', ');

@@ -1,7 +1,7 @@
 const { getPool, sql } = require('../config/db');
 
 const TABLE_OC = 'dbo.OCORRENCIAS';
-const TABLE_FAT = 'DW.fat_analise_inadimplencia_v3';
+const TABLE_FAT = 'DW.fat_analise_inadimplencia_v4';
 const COL_STATUS_INADIMPLENCIA = 'INADIMPLENTE';
 
 function buildInadimplenteCondition(alias = 'f') {
