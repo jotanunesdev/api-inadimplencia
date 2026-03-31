@@ -1,9 +1,11 @@
 import fs from "fs/promises"
 import type { Request, Response } from "express"
+import { env } from "../config/env"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import { normalizeCpf } from "../utils/normalizeCpf"
 import {
+  downloadSharePointFileContentByItemId,
   createPdf,
   deletePdf,
   getPdfById,
@@ -21,7 +23,12 @@ import {
   sanitizeSegment,
   toFsPath,
 } from "../utils/storage"
-import { downloadSharePointFileByUrl } from "../services/sharePointService"
+import {
+  downloadSharePointFileByUrl,
+  listSharePointFolderChildren,
+  listSharePointFolderChildrenByItemId,
+  type SharePointDriveItem,
+} from "../services/sharePointService"
 
 const GUID_REGEX =
   /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/
@@ -98,6 +105,135 @@ function parseOptionalVersion(raw: unknown) {
   return parsed
 }
 
+function normalizeSharePointSearchToken(value: string) {
+  const normalized = String(value ?? "").trim()
+  if (!normalized) {
+    return ""
+  }
+
+  const repaired = (() => {
+    try {
+      const latin1 = Buffer.from(normalized, "latin1").toString("utf8")
+      return latin1.includes("�") ? normalized : latin1
+    } catch {
+      return normalized
+    }
+  })()
+
+  return repaired
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\(\d+\)(?=\.[^.]+$)/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+}
+
+function isSharePointItemNotFoundError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error ?? "")
+  return message.includes("itemNotFound") || message.includes("(404)")
+}
+
+function splitSharePointRelativeSegments(fileUrl: string) {
+  const parsedUrl = new URL(fileUrl)
+  const pathnameSegments = decodeURIComponent(parsedUrl.pathname)
+    .split("/")
+    .filter(Boolean)
+
+  const libraryIndex = pathnameSegments.findIndex(
+    (segment) =>
+      normalizeSharePointSearchToken(segment) ===
+      normalizeSharePointSearchToken(env.SHAREPOINT_LIBRARY_NAME),
+  )
+
+  if (libraryIndex < 0) {
+    return []
+  }
+
+  const relativeSegments = pathnameSegments.slice(libraryIndex + 1)
+  if (
+    relativeSegments.length > 0 &&
+    normalizeSharePointSearchToken(relativeSegments[0]) ===
+      normalizeSharePointSearchToken(env.SHAREPOINT_ROOT_FOLDER)
+  ) {
+    return relativeSegments.slice(1)
+  }
+
+  return relativeSegments
+}
+
+function findMatchingSharePointFile(
+  items: SharePointDriveItem[],
+  targetFileName: string,
+) {
+  const normalizedTarget = normalizeSharePointSearchToken(targetFileName)
+  return items.find(
+    (item) =>
+      Boolean(item.file) &&
+      normalizeSharePointSearchToken(item.name) === normalizedTarget,
+  )
+}
+
+async function findSharePointFileByNameFallback(
+  fileUrl: string,
+) {
+  const relativeSegments = splitSharePointRelativeSegments(fileUrl)
+  const targetFileName = relativeSegments.at(-1)
+  const sectorFolder = relativeSegments[0]
+  if (!targetFileName || !sectorFolder) {
+    return null
+  }
+
+  const sectorChildren = await listSharePointFolderChildren(sectorFolder)
+  const directFile = findMatchingSharePointFile(sectorChildren, targetFileName)
+  if (directFile?.id) {
+    return directFile
+  }
+
+  const folderQueue = sectorChildren
+    .filter((item) => item.folder?.childCount && item.id)
+    .map((item) => item.id)
+
+  while (folderQueue.length > 0) {
+    const folderId = folderQueue.shift()
+    if (!folderId) {
+      continue
+    }
+
+    // eslint-disable-next-line no-await-in-loop
+    const folderChildren = await listSharePointFolderChildrenByItemId(folderId)
+    const matchedFile = findMatchingSharePointFile(folderChildren, targetFileName)
+    if (matchedFile?.id) {
+      return matchedFile
+    }
+
+    folderChildren
+      .filter((item) => item.folder?.childCount && item.id)
+      .forEach((item) => {
+        folderQueue.push(item.id)
+      })
+  }
+
+  return null
+}
+
+async function downloadSharePointPdfWithFallback(fileUrl: string) {
+  try {
+    return await downloadSharePointFileByUrl(fileUrl)
+  } catch (error) {
+    if (!isSharePointItemNotFoundError(error)) {
+      throw error
+    }
+
+    const matchedFile = await findSharePointFileByNameFallback(fileUrl)
+    if (!matchedFile?.id) {
+      throw new HttpError(404, "Arquivo PDF nao encontrado")
+    }
+
+    return downloadSharePointFileContentByItemId({ itemId: matchedFile.id })
+  }
+}
+
 export const list = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId, cpf } = req.query as { trilhaId?: string; cpf?: string }
   const normalizedCpf = cpf ? normalizeCpf(cpf) : undefined
@@ -128,7 +264,7 @@ export const downloadContent = asyncHandler(async (req: Request, res: Response) 
 
   let buffer: Buffer
   if (rawPath.startsWith("http")) {
-    buffer = await downloadSharePointFileByUrl(rawPath)
+    buffer = await downloadSharePointPdfWithFallback(rawPath)
   } else {
     const localPath = toFsPath(rawPath)
     try {
