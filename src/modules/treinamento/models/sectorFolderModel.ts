@@ -407,3 +407,31 @@ export async function deleteSectorFolderMetadataByItemId(itemId: string) {
     .input("SHAREPOINT_ITEM_ID", sql.NVarChar(255), itemId)
     .query(`DELETE FROM ${TABLE_NAME} WHERE SHAREPOINT_ITEM_ID = @SHAREPOINT_ITEM_ID`)
 }
+
+export async function updateSectorFolderMetadataPathsByPrefix(params: {
+  sector: string
+  oldPathPrefix: string
+  newPathPrefix: string
+}) {
+  const oldPathPrefix = String(params.oldPathPrefix ?? "").trim()
+  const newPathPrefix = String(params.newPathPrefix ?? "").trim()
+
+  if (!oldPathPrefix || !newPathPrefix || oldPathPrefix === newPathPrefix) {
+    return
+  }
+
+  const pool = await getPool()
+  await pool
+    .request()
+    .input("SETOR", sql.NVarChar(120), params.sector)
+    .input("OLD", sql.NVarChar(1000), oldPathPrefix)
+    .input("NEW", sql.NVarChar(1000), newPathPrefix)
+    .query(`
+      UPDATE ${TABLE_NAME}
+      SET
+        CAMINHO = @NEW + SUBSTRING(CAMINHO, LEN(@OLD) + 1, 1000),
+        ATUALIZADO_EM = SYSUTCDATETIME()
+      WHERE SETOR = @SETOR
+        AND LEFT(CAMINHO, LEN(@OLD) + 1) = @OLD + '/'
+    `)
+}

@@ -35,12 +35,14 @@ export async function updateMaterialPathsByPrefix(
   const pool = await getPool()
   await pool
     .request()
-    .input("OLD", sql.NVarChar(1000), oldPrefix)
-    .input("NEW", sql.NVarChar(1000), newPrefix)
+    .input("OLD", sql.NVarChar(2000), oldPrefix)
+    .input("NEW", sql.NVarChar(2000), newPrefix)
     .query(
       [
         buildUpdateSql("dbo.TVIDEOS", "PATH_VIDEO"),
         buildUpdateSql("dbo.TPDFS", "PDF_PATH"),
+        buildUpdateSql("dbo.TPROCEDIMENTOS", "PATH_PDF"),
+        buildUpdateSql("dbo.TNORMAS", "PATH_PDF"),
         buildUpdateSql("dbo.TPROVAS", "PROVA_PATH"),
       ].join("\n"),
     )
@@ -57,8 +59,8 @@ export async function replaceMaterialStoredPathExact(
   const pool = await getPool()
   await pool
     .request()
-    .input("OLD", sql.NVarChar(1000), oldPath)
-    .input("NEW", sql.NVarChar(1000), newPath)
+    .input("OLD", sql.NVarChar(2000), oldPath)
+    .input("NEW", sql.NVarChar(2000), newPath)
     .query(`
       UPDATE dbo.TVIDEOS
       SET PATH_VIDEO = @NEW
@@ -66,6 +68,14 @@ export async function replaceMaterialStoredPathExact(
 
       UPDATE dbo.TPDFS
       SET PDF_PATH = @NEW
-      WHERE PDF_PATH = @OLD
+      WHERE PDF_PATH = @OLD;
+
+      UPDATE dbo.TPROCEDIMENTOS
+      SET PATH_PDF = @NEW
+      WHERE PATH_PDF = @OLD;
+
+      UPDATE dbo.TNORMAS
+      SET PATH_PDF = @NEW
+      WHERE PATH_PDF = @OLD
     `)
 }

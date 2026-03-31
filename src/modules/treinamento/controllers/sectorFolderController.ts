@@ -7,6 +7,7 @@ import {
   isSectorFolderMetadataSchemaMissingError,
   listSectorFolderMetadataBySector,
   type SectorFolderMetadata,
+  updateSectorFolderMetadataPathsByPrefix,
   upsertSectorFolderMetadata,
 } from "../models/sectorFolderModel"
 import {
@@ -38,7 +39,10 @@ import {
 } from "../models/sectorFolderUserItemModel"
 import { listTrainingMaterialLinksByStoredPaths } from "../models/trainingMaterialLinkModel"
 import { archiveTrainingProgressByTrilhaIds } from "../models/userTrainingModel"
-import { replaceMaterialStoredPathExact } from "../models/pathUpdateModel"
+import {
+  replaceMaterialStoredPathExact,
+  updateMaterialPathsByPrefix,
+} from "../models/pathUpdateModel"
 import {
   buildYouTubeStoredPathToken,
   createSectorFolderExternalItem,
@@ -1460,6 +1464,23 @@ async function upsertSectorMetadataSafely(
     if (isSectorFolderMetadataSchemaMissingError(error)) {
       warnMissingMetadataSchemaOnce()
       return null
+    }
+
+    throw error
+  }
+}
+
+async function updateSectorMetadataPathsByPrefixSafely(params: {
+  sector: string
+  oldPathPrefix: string
+  newPathPrefix: string
+}) {
+  try {
+    await updateSectorFolderMetadataPathsByPrefix(params)
+  } catch (error) {
+    if (isSectorFolderMetadataSchemaMissingError(error)) {
+      warnMissingSectorMetadataSchemaOnce()
+      return
     }
 
     throw error
@@ -3010,17 +3031,20 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
       "Pastas do Historico de Versoes nao podem ser renomeadas manualmente.",
     )
     const previousItemPath = buildItemPathFromSector(currentItem, sector)
+    const previousItemWebUrl = String(currentItem.webUrl ?? "").trim()
 
     const updatedItem = await updateSharePointItemName({
       itemId,
       name,
     })
+    const updatedItemPath = buildItemPathFromSector(updatedItem, sector)
+    const updatedItemWebUrl = String(updatedItem.webUrl ?? "").trim()
     const existingMetadata = await getSectorMetadataSafely(itemId)
     const metadata = await upsertSectorMetadataSafely({
       itemId: updatedItem.id,
       sector: sector.label,
       name: updatedItem.name,
-      path: buildItemPathFromSector(updatedItem, sector),
+      path: updatedItemPath,
       createdByName: existingMetadata?.createdByName ?? actor.displayName,
       createdByEmail: existingMetadata?.createdByEmail ?? actor.email,
       createdByUsername: existingMetadata?.createdByUsername ?? actor.username,
@@ -3032,11 +3056,17 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
         parseDateOrNull(updatedItem.createdDateTime),
       updatedAt: new Date(),
     })
+    await updateSectorMetadataPathsByPrefixSafely({
+      sector: sector.label,
+      oldPathPrefix: previousItemPath,
+      newPathPrefix: updatedItemPath,
+    })
     await updateSectorFolderExternalItemPathsByPrefixSafely({
       sectorKey: sector.key,
       oldPathPrefix: previousItemPath,
-      newPathPrefix: buildItemPathFromSector(updatedItem, sector),
+      newPathPrefix: updatedItemPath,
     })
+    await updateMaterialPathsByPrefix(previousItemWebUrl, updatedItemWebUrl)
     const metadataRows = await listSectorMetadataSafely(sector.label)
     const metadataByItemId = new Map(
       metadataRows.map((metadataRow) => [metadataRow.itemId, metadataRow]),
