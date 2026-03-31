@@ -5,7 +5,6 @@ import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import { normalizeCpf } from "../utils/normalizeCpf"
 import {
-  downloadSharePointFileContentByItemId,
   createPdf,
   deletePdf,
   getPdfById,
@@ -24,6 +23,7 @@ import {
   toFsPath,
 } from "../utils/storage"
 import {
+  downloadSharePointFileContentByItemId,
   downloadSharePointFileByUrl,
   listSharePointFolderChildren,
   listSharePointFolderChildrenByItemId,
