@@ -8,6 +8,10 @@ import {
   listProcedimentoVersionChangesReport,
   listUserTrainingStatusReport,
 } from "../models/reportModel"
+import { getTrilhaTrainingStatusReport } from "../models/provaAttemptModel"
+
+const GUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function parseOptionalDate(value: unknown, fieldName: string) {
   if (value === undefined || value === null || String(value).trim() === "") {
@@ -74,4 +78,18 @@ export const listProcedimentoVersionReport = asyncHandler(async (req: Request, r
 
   const report = await listProcedimentoVersionChangesReport({ inicio, fim })
   res.json(report)
+})
+
+export const listTrilhaTrainingReport = asyncHandler(async (req: Request, res: Response) => {
+  const trilhaId = String(req.params.trilhaId ?? "").trim()
+  if (!GUID_REGEX.test(trilhaId)) {
+    throw new HttpError(400, "trilhaId invalido")
+  }
+
+  const report = await getTrilhaTrainingStatusReport(trilhaId)
+  if (!report) {
+    throw new HttpError(404, "Trilha nao encontrada")
+  }
+
+  res.json({ report })
 })

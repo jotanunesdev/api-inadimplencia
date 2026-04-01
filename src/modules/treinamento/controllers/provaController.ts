@@ -6,6 +6,7 @@ import { normalizeCpf } from "../utils/normalizeCpf"
 import { mapReadViewToUser } from "../utils/userMapping"
 import { upsertUser } from "../models/userModel"
 import {
+  archiveTrainingProgressByTrilhaIds,
   getUserCurrentVideoProgressByTrilha,
   recordUserTraining,
 } from "../models/userTrainingModel"
@@ -93,6 +94,17 @@ async function resolveTrilhaPath(trilhaId: string) {
 
   await updateTrilha(trilha.ID, { path: trilhaPath })
   return { trilha, trilhaPath }
+}
+
+function parseBooleanFlag(value: unknown) {
+  if (typeof value === "boolean") return value
+  if (typeof value === "number") return value === 1
+
+  const normalized = String(value ?? "")
+    .trim()
+    .toLowerCase()
+
+  return normalized === "1" || normalized === "true" || normalized === "sim" || normalized === "yes"
 }
 
 export const list = asyncHandler(async (req: Request, res: Response) => {
@@ -823,12 +835,13 @@ export const getEfficacyByTrilha = asyncHandler(async (req: Request, res: Respon
 
 export const createOrVersionObjective = asyncHandler(async (req: Request, res: Response) => {
   const { trilhaId } = req.params
-  const { actorName, actorUsername, titulo, questoes, modoAplicacao } = req.body as {
+  const { actorName, actorUsername, titulo, questoes, modoAplicacao, requireRetraining } = req.body as {
     actorName?: string
     actorUsername?: string
     titulo?: string
     questoes?: ObjectiveQuestionPayload[]
     modoAplicacao?: string
+    requireRetraining?: boolean | string | number
   }
 
   if (!titulo?.trim()) {
@@ -851,6 +864,9 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
   const finalModoAplicacao = mustBeCollective
     ? PROVA_MODO_APLICACAO.COLETIVA
     : requestedModoAplicacao
+  const existingProof = await getObjectiveProvaByTrilhaId(trilhaId)
+  const shouldRequireRetraining =
+    Boolean(existingProof?.ID) && parseBooleanFlag(requireRetraining)
 
   let prova
   try {
@@ -871,6 +887,13 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
     throw error
   }
 
+  const archivedProgress = shouldRequireRetraining
+    ? await archiveTrainingProgressByTrilhaIds([trilhaId], new Date())
+    : {
+        materiaisArquivados: 0,
+        provasArquivadas: 0,
+      }
+
   const hrPendingNotification = await notifyHumanResourcesPendingEfficacy({
     actorName,
     actorUsername,
@@ -879,8 +902,11 @@ export const createOrVersionObjective = asyncHandler(async (req: Request, res: R
 
   res.status(201).json({
     prova,
+    archivedMaterialsCount: archivedProgress.materiaisArquivados,
+    archivedProofsCount: archivedProgress.provasArquivadas,
     rhPendingNotificationRecipientCount: hrPendingNotification.recipientCount,
     rhPendingNotificationSent: hrPendingNotification.sent,
+    retrainingRequested: shouldRequireRetraining,
   })
 })
 
