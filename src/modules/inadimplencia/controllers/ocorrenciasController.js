@@ -1,6 +1,4 @@
-const { formToJSON } = require('axios');
 const model = require('../models/ocorrenciasModel');
-const { DateTime } = require('mssql');
 
 const GUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
 
@@ -30,6 +28,21 @@ function validateAndFormat(dateStr, timeStr) {
     date: cleanDate, 
     time: timeStr
   };
+}
+
+async function validateReferencedNumVenda(numVendaFk, res) {
+  const validation = await model.validateNumVendaFk(numVendaFk);
+
+  if (validation.exists) {
+    return false;
+  }
+
+  const referenceLabel = validation.reference?.tableLabel ?? 'tabela referenciada';
+  res.status(409).json({
+    error: `NUM_VENDA_FK ${numVendaFk} nao existe na tabela referenciada ${referenceLabel}.`,
+  });
+
+  return true;
 }
 
 function formatarResposta(data) {
@@ -176,6 +189,9 @@ async function create(req, res, next) {
     if (!formatted) {
       return res.status(400).json({ error: 'HORA_OCORRENCIA invalida.' });
     }
+    if (await validateReferencedNumVenda(numVendaFk, res)) {
+      return;
+    }
 
     const data = await model.create({
       numVendaFk,
@@ -255,6 +271,9 @@ async function update(req, res, next) {
     const formatted = validateAndFormat(dtOcorrencia, horaOcorrencia);
     if (!formatted) {
       return res.status(400).json({ error: 'HORA_OCORRENCIA invalida.' });
+    }
+    if (await validateReferencedNumVenda(numVendaFk, res)) {
+      return;
     }
 
     const data = await model.update(id, {

@@ -1,0 +1,72 @@
+BEGIN TRY
+  BEGIN TRAN;
+
+  IF EXISTS (
+    SELECT 1
+    FROM dbo.OCORRENCIAS o
+    LEFT JOIN dw.fat_analise_inadimplencia_v4 v4 ON v4.NUM_VENDA = o.NUM_VENDA_FK
+    WHERE v4.NUM_VENDA IS NULL
+  )
+  BEGIN
+    SELECT
+      o.NUM_VENDA_FK,
+      COUNT(*) AS TOTAL_OCORRENCIAS,
+      MIN(o.DT_OCORRENCIA) AS PRIMEIRA_OCORRENCIA,
+      MAX(o.DT_OCORRENCIA) AS ULTIMA_OCORRENCIA
+    FROM dbo.OCORRENCIAS o
+    LEFT JOIN dw.fat_analise_inadimplencia_v4 v4 ON v4.NUM_VENDA = o.NUM_VENDA_FK
+    WHERE v4.NUM_VENDA IS NULL
+    GROUP BY o.NUM_VENDA_FK
+    ORDER BY TOTAL_OCORRENCIAS DESC, o.NUM_VENDA_FK DESC;
+
+    THROW 50001, 'Existem registros em dbo.OCORRENCIAS com NUM_VENDA_FK ausente em dw.fat_analise_inadimplencia_v4. Corrija os dados ou mantenha a FK atual antes de migrar.', 1;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE object_id = OBJECT_ID('dw.fat_analise_inadimplencia_v4')
+      AND name = 'UQ_FAT_INAD_V4_NUM_VENDA'
+  )
+  BEGIN
+    ALTER TABLE dw.fat_analise_inadimplencia_v4
+      ADD CONSTRAINT UQ_FAT_INAD_V4_NUM_VENDA UNIQUE (NUM_VENDA);
+  END;
+
+  IF EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE parent_object_id = OBJECT_ID('dbo.OCORRENCIAS')
+      AND name = 'FK_OCORRENCIAS_FAT_NUMVENDA_V2'
+  )
+  BEGIN
+    ALTER TABLE dbo.OCORRENCIAS
+      DROP CONSTRAINT FK_OCORRENCIAS_FAT_NUMVENDA_V2;
+  END;
+
+  IF NOT EXISTS (
+    SELECT 1
+    FROM sys.foreign_keys
+    WHERE parent_object_id = OBJECT_ID('dbo.OCORRENCIAS')
+      AND name = 'FK_OCORRENCIAS_FAT_NUMVENDA_V4'
+  )
+  BEGIN
+    ALTER TABLE dbo.OCORRENCIAS WITH CHECK
+      ADD CONSTRAINT FK_OCORRENCIAS_FAT_NUMVENDA_V4
+      FOREIGN KEY (NUM_VENDA_FK)
+      REFERENCES dw.fat_analise_inadimplencia_v4 (NUM_VENDA);
+  END;
+
+  ALTER TABLE dbo.OCORRENCIAS
+    CHECK CONSTRAINT FK_OCORRENCIAS_FAT_NUMVENDA_V4;
+
+  COMMIT TRAN;
+END TRY
+BEGIN CATCH
+  IF @@TRANCOUNT > 0
+  BEGIN
+    ROLLBACK TRAN;
+  END;
+
+  THROW;
+END CATCH;
