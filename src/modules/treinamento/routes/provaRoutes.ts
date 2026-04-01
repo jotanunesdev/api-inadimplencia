@@ -11,6 +11,7 @@ import {
   getObjectiveByTrilha,
   getById,
   listAttemptsReport,
+  listTrainedCollaboratorsReport,
   list,
   remove,
   resolveCollectiveIndividualProofToken,
@@ -25,6 +26,7 @@ const router = Router()
 
 router.get("/", list)
 router.get("/attempts/report", listAttemptsReport)
+router.get("/trilha/:trilhaId/trained-collaborators", listTrainedCollaboratorsReport)
 router.get("/trilha/:trilhaId/eficacia", getEfficacyByTrilha)
 router.get("/trilha/:trilhaId/objectiva", getObjectiveByTrilha)
 router.get("/trilha/:trilhaId/objectiva/player", getObjectiveForPlayer)

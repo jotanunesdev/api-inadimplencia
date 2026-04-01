@@ -165,6 +165,8 @@ export async function listFaceDescriptorsForMatch(maxPerUser = 3) {
           f.ID,
           f.USUARIO_CPF,
           u.NOME AS USUARIO_NOME,
+          u.CARGO AS USUARIO_FUNCAO,
+          u.SETOR AS USUARIO_SETOR,
           f.DESCRIPTOR_JSON,
           f.CRIADO_EM,
           ROW_NUMBER() OVER (
@@ -178,6 +180,8 @@ export async function listFaceDescriptorsForMatch(maxPerUser = 3) {
         ID,
         USUARIO_CPF,
         USUARIO_NOME,
+        USUARIO_FUNCAO,
+        USUARIO_SETOR,
         DESCRIPTOR_JSON,
         CRIADO_EM
       FROM RANKED
@@ -189,6 +193,8 @@ export async function listFaceDescriptorsForMatch(maxPerUser = 3) {
     ID: string
     USUARIO_CPF: string
     USUARIO_NOME: string | null
+    USUARIO_FUNCAO: string | null
+    USUARIO_SETOR: string | null
     DESCRIPTOR_JSON: string
     CRIADO_EM: Date
   }>

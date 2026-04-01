@@ -46,6 +46,14 @@ export type ProvaAttemptReportFilter = {
   trilhaId?: string
 }
 
+export type TrilhaTrainedCollaboratorRecord = {
+  USUARIO_CPF: string
+  USUARIO_NOME: string | null
+  USUARIO_FUNCAO: string | null
+  DT_FINALIZACAO: Date
+  NOTA: number | null
+}
+
 export async function createProvaAttempt(input: ProvaAttemptInput) {
   const pool = await getPool()
   const id = randomUUID()
@@ -177,4 +185,75 @@ export async function listProvaAttemptsReport(filters?: ProvaAttemptReportFilter
     `)
 
   return result.recordset as ProvaAttemptReportRecord[]
+}
+
+export async function listTrainedCollaboratorsByTrilha(trilhaId: string) {
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input("TRILHA_ID", sql.UniqueIdentifier, trilhaId)
+    .query(`
+      WITH PROVA_COMPLETIONS AS (
+        SELECT
+          ut.USUARIO_CPF,
+          ut.DT_CONCLUSAO,
+          prova_match.ID AS PROVA_ID,
+          prova_match.VERSAO AS PROVA_VERSAO,
+          ROW_NUMBER() OVER (
+            PARTITION BY ut.USUARIO_CPF
+            ORDER BY ut.DT_CONCLUSAO DESC, ISNULL(prova_match.VERSAO, 0) DESC, ut.MATERIAL_ID
+          ) AS RN
+        FROM dbo.TUSUARIO_TREINAMENTOS ut
+        OUTER APPLY (
+          SELECT TOP 1
+            p.ID,
+            p.VERSAO
+          FROM dbo.TPROVAS p
+          WHERE p.ID = ut.MATERIAL_ID
+            AND p.TRILHA_FK_ID = @TRILHA_ID
+            AND (
+              ut.MATERIAL_VERSAO IS NULL
+              OR p.VERSAO = ut.MATERIAL_VERSAO
+            )
+          ORDER BY
+            CASE WHEN ut.MATERIAL_VERSAO IS NULL THEN p.VERSAO ELSE 0 END DESC,
+            p.VERSAO DESC
+        ) prova_match
+        WHERE ut.TIPO = 'prova'
+          AND ut.ARQUIVADO_EM IS NULL
+          AND prova_match.ID IS NOT NULL
+      )
+      SELECT
+        pc.USUARIO_CPF,
+        u.NOME AS USUARIO_NOME,
+        u.CARGO AS USUARIO_FUNCAO,
+        pc.DT_CONCLUSAO AS DT_FINALIZACAO,
+        COALESCE(exact_attempt.NOTA, latest_attempt.NOTA, 0) AS NOTA
+      FROM PROVA_COMPLETIONS pc
+      LEFT JOIN dbo.TUSUARIOS u ON u.CPF = pc.USUARIO_CPF
+      OUTER APPLY (
+        SELECT TOP 1
+          a.NOTA
+        FROM dbo.TUSUARIO_PROVA_TENTATIVAS a
+        WHERE a.USUARIO_CPF = pc.USUARIO_CPF
+          AND a.PROVA_ID = pc.PROVA_ID
+          AND (
+            pc.PROVA_VERSAO IS NULL
+            OR a.PROVA_VERSAO = pc.PROVA_VERSAO
+          )
+        ORDER BY a.DT_REALIZACAO DESC
+      ) exact_attempt
+      OUTER APPLY (
+        SELECT TOP 1
+          a.NOTA
+        FROM dbo.TUSUARIO_PROVA_TENTATIVAS a
+        WHERE a.USUARIO_CPF = pc.USUARIO_CPF
+          AND a.TRILHA_ID = @TRILHA_ID
+        ORDER BY a.DT_REALIZACAO DESC
+      ) latest_attempt
+      WHERE pc.RN = 1
+      ORDER BY pc.DT_CONCLUSAO DESC
+    `)
+
+  return result.recordset as TrilhaTrainedCollaboratorRecord[]
 }

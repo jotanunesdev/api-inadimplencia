@@ -217,6 +217,8 @@ export const matchFace = asyncHandler(async (req: Request, res: Response) => {
           faceId: row.ID,
           cpf: row.USUARIO_CPF,
           nome: row.USUARIO_NOME,
+          cargo: row.USUARIO_FUNCAO,
+          setor: row.USUARIO_SETOR,
           distance,
           createdAt: row.CRIADO_EM,
         }

@@ -14,6 +14,7 @@ import {
   createProvaAttempt,
   getLatestProvaAttemptByTrilha,
   listProvaAttemptsReport,
+  listTrainedCollaboratorsByTrilha,
   type ProvaAttemptStatus,
 } from "../models/provaAttemptModel"
 import {
@@ -1459,4 +1460,15 @@ export const listAttemptsReport = asyncHandler(async (req: Request, res: Respons
   })
 
   res.json({ report })
+})
+
+export const listTrainedCollaboratorsReport = asyncHandler(async (req: Request, res: Response) => {
+  const { trilhaId } = req.params
+
+  if (!GUID_REGEX.test(trilhaId)) {
+    throw new HttpError(400, "trilhaId invalido")
+  }
+
+  const rows = await listTrainedCollaboratorsByTrilha(trilhaId)
+  res.json({ rows })
 })
