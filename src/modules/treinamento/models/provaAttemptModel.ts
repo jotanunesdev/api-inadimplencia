@@ -258,17 +258,99 @@ export async function listProvaAttemptsReport(filters?: ProvaAttemptReportFilter
 }
 
 export async function listTrainedCollaboratorsByTrilha(trilhaId: string) {
-  const report = await getTrilhaTrainingStatusReport(trilhaId)
+  try {
+    const report = await getTrilhaTrainingStatusReport(trilhaId)
 
-  return report?.currentRows.map((row) => ({
-    USUARIO_CPF: row.USUARIO_CPF,
-    USUARIO_NOME: row.USUARIO_NOME,
-    USUARIO_FUNCAO: row.USUARIO_FUNCAO,
-    OBRA_NOME: row.OBRA_NOME,
-    SETOR_OBRA: row.SETOR_OBRA,
-    DT_FINALIZACAO: row.DT_FINALIZACAO ?? row.DT_ATRIBUICAO ?? new Date(),
-    NOTA: row.NOTA,
-  })) ?? []
+    return report?.currentRows.map((row) => ({
+      USUARIO_CPF: row.USUARIO_CPF,
+      USUARIO_NOME: row.USUARIO_NOME,
+      USUARIO_FUNCAO: row.USUARIO_FUNCAO,
+      OBRA_NOME: row.OBRA_NOME,
+      SETOR_OBRA: row.SETOR_OBRA,
+      DT_FINALIZACAO: row.DT_FINALIZACAO ?? row.DT_ATRIBUICAO ?? new Date(),
+      NOTA: row.NOTA,
+    })) ?? []
+  } catch (error) {
+    console.warn(
+      `[treinamento] fallback legado aplicado para trained-collaborators da trilha ${trilhaId}`,
+      error,
+    )
+    return listTrainedCollaboratorsByTrilhaLegacy(trilhaId)
+  }
+}
+
+async function listTrainedCollaboratorsByTrilhaLegacy(trilhaId: string) {
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input("TRILHA_ID", sql.UniqueIdentifier, trilhaId)
+    .query(`
+      WITH PROVA_COMPLETIONS AS (
+        SELECT
+          ut.USUARIO_CPF,
+          ut.DT_CONCLUSAO,
+          prova_match.ID AS PROVA_ID,
+          prova_match.VERSAO AS PROVA_VERSAO,
+          ROW_NUMBER() OVER (
+            PARTITION BY ut.USUARIO_CPF
+            ORDER BY ut.DT_CONCLUSAO DESC, ISNULL(prova_match.VERSAO, 0) DESC, ut.MATERIAL_ID
+          ) AS RN
+        FROM dbo.TUSUARIO_TREINAMENTOS ut
+        OUTER APPLY (
+          SELECT TOP 1
+            p.ID,
+            p.VERSAO
+          FROM dbo.TPROVAS p
+          WHERE p.ID = ut.MATERIAL_ID
+            AND p.TRILHA_FK_ID = @TRILHA_ID
+            AND (
+              ut.MATERIAL_VERSAO IS NULL
+              OR p.VERSAO = ut.MATERIAL_VERSAO
+            )
+          ORDER BY
+            CASE WHEN ut.MATERIAL_VERSAO IS NULL THEN p.VERSAO ELSE 0 END DESC,
+            p.VERSAO DESC
+        ) prova_match
+        WHERE ut.TIPO = 'prova'
+          AND ut.ARQUIVADO_EM IS NULL
+          AND prova_match.ID IS NOT NULL
+      )
+      SELECT
+        pc.USUARIO_CPF,
+        u.NOME AS USUARIO_NOME,
+        u.CARGO AS USUARIO_FUNCAO,
+        loc.OBRA_NOME,
+        loc.SETOR_OBRA,
+        pc.DT_CONCLUSAO AS DT_FINALIZACAO,
+        COALESCE(exact_attempt.NOTA, latest_attempt.NOTA, 0) AS NOTA
+      FROM PROVA_COMPLETIONS pc
+      LEFT JOIN dbo.TUSUARIOS u ON u.CPF = pc.USUARIO_CPF
+      ${LOCATION_APPLY_CLAUSE}
+      OUTER APPLY (
+        SELECT TOP 1
+          a.NOTA
+        FROM dbo.TUSUARIO_PROVA_TENTATIVAS a
+        WHERE a.USUARIO_CPF = pc.USUARIO_CPF
+          AND a.PROVA_ID = pc.PROVA_ID
+          AND (
+            pc.PROVA_VERSAO IS NULL
+            OR a.PROVA_VERSAO = pc.PROVA_VERSAO
+          )
+        ORDER BY a.DT_REALIZACAO DESC
+      ) exact_attempt
+      OUTER APPLY (
+        SELECT TOP 1
+          a.NOTA
+        FROM dbo.TUSUARIO_PROVA_TENTATIVAS a
+        WHERE a.USUARIO_CPF = pc.USUARIO_CPF
+          AND a.TRILHA_ID = @TRILHA_ID
+        ORDER BY a.DT_REALIZACAO DESC
+      ) latest_attempt
+      WHERE pc.RN = 1
+      ORDER BY pc.DT_CONCLUSAO DESC
+    `)
+
+  return result.recordset as TrilhaTrainedCollaboratorRecord[]
 }
 
 export async function getTrilhaTrainingStatusReport(
@@ -458,55 +540,70 @@ export async function getTrilhaTrainingStatusReport(
         FROM PENDING_ASSIGNMENTS_BASE
         WHERE RN = 1
       )
+      ALL_ROWS AS (
+        SELECT
+          cc.USUARIO_CPF,
+          cc.USUARIO_NOME,
+          cc.USUARIO_FUNCAO,
+          cc.OBRA_NOME,
+          cc.SETOR_OBRA,
+          cc.DT_ATRIBUICAO,
+          cc.DT_FINALIZACAO,
+          cc.NOTA,
+          cc.EH_VERSAO_ANTERIOR,
+          cc.ARQUIVADO_EM,
+          CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
+          CAST('Atual' AS NVARCHAR(30)) AS TIPO_VERSAO
+        FROM CURRENT_COMPLETIONS cc
+
+        UNION ALL
+
+        SELECT
+          pc.USUARIO_CPF,
+          pc.USUARIO_NOME,
+          pc.USUARIO_FUNCAO,
+          pc.OBRA_NOME,
+          pc.SETOR_OBRA,
+          pc.DT_ATRIBUICAO,
+          pc.DT_FINALIZACAO,
+          pc.NOTA,
+          pc.EH_VERSAO_ANTERIOR,
+          pc.ARQUIVADO_EM,
+          CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
+          CAST('Versao Anterior' AS NVARCHAR(30)) AS TIPO_VERSAO
+        FROM PREVIOUS_COMPLETIONS pc
+
+        UNION ALL
+
+        SELECT
+          pa.USUARIO_CPF,
+          pa.USUARIO_NOME,
+          pa.USUARIO_FUNCAO,
+          pa.OBRA_NOME,
+          pa.SETOR_OBRA,
+          pa.DT_ATRIBUICAO,
+          pa.DT_FINALIZACAO,
+          pa.NOTA,
+          pa.EH_VERSAO_ANTERIOR,
+          pa.ARQUIVADO_EM,
+          CAST('Pendente' AS NVARCHAR(30)) AS STATUS,
+          CAST('Atual' AS NVARCHAR(30)) AS TIPO_VERSAO
+        FROM PENDING_ASSIGNMENTS pa
+      )
       SELECT
-        cc.USUARIO_CPF,
-        cc.USUARIO_NOME,
-        cc.USUARIO_FUNCAO,
-        cc.OBRA_NOME,
-        cc.SETOR_OBRA,
-        cc.DT_ATRIBUICAO,
-        cc.DT_FINALIZACAO,
-        cc.NOTA,
-        cc.EH_VERSAO_ANTERIOR,
-        cc.ARQUIVADO_EM,
-        CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
-        CAST('Atual' AS NVARCHAR(30)) AS TIPO_VERSAO
-      FROM CURRENT_COMPLETIONS cc
-
-      UNION ALL
-
-      SELECT
-        pc.USUARIO_CPF,
-        pc.USUARIO_NOME,
-        pc.USUARIO_FUNCAO,
-        pc.OBRA_NOME,
-        pc.SETOR_OBRA,
-        pc.DT_ATRIBUICAO,
-        pc.DT_FINALIZACAO,
-        pc.NOTA,
-        pc.EH_VERSAO_ANTERIOR,
-        pc.ARQUIVADO_EM,
-        CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
-        CAST('Versao Anterior' AS NVARCHAR(30)) AS TIPO_VERSAO
-      FROM PREVIOUS_COMPLETIONS pc
-
-      UNION ALL
-
-      SELECT
-        pa.USUARIO_CPF,
-        pa.USUARIO_NOME,
-        pa.USUARIO_FUNCAO,
-        pa.OBRA_NOME,
-        pa.SETOR_OBRA,
-        pa.DT_ATRIBUICAO,
-        pa.DT_FINALIZACAO,
-        pa.NOTA,
-        pa.EH_VERSAO_ANTERIOR,
-        pa.ARQUIVADO_EM,
-        CAST('Pendente' AS NVARCHAR(30)) AS STATUS,
-        CAST('Atual' AS NVARCHAR(30)) AS TIPO_VERSAO
-      FROM PENDING_ASSIGNMENTS pa
-
+        USUARIO_CPF,
+        USUARIO_NOME,
+        USUARIO_FUNCAO,
+        OBRA_NOME,
+        SETOR_OBRA,
+        DT_ATRIBUICAO,
+        DT_FINALIZACAO,
+        NOTA,
+        EH_VERSAO_ANTERIOR,
+        ARQUIVADO_EM,
+        STATUS,
+        TIPO_VERSAO
+      FROM ALL_ROWS
       ORDER BY
         CASE
           WHEN STATUS = 'Concluido' AND EH_VERSAO_ANTERIOR = 0 THEN 0
