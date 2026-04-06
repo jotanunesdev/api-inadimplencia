@@ -453,6 +453,49 @@ export async function getTrilhaTrainingStatusReport(
         FROM CURRENT_COMPLETIONS_BASE
         WHERE RN = 1
       ),
+      TRILHA_COMPLETIONS_BASE AS (
+        SELECT
+          ut.USUARIO_CPF,
+          u.NOME AS USUARIO_NOME,
+          u.CARGO AS USUARIO_FUNCAO,
+          loc.OBRA_NOME,
+          loc.SETOR_OBRA,
+          CAST(NULL AS DATETIME2) AS DT_ATRIBUICAO,
+          ut.DT_CONCLUSAO AS DT_FINALIZACAO,
+          CAST(0 AS DECIMAL(5, 2)) AS NOTA,
+          CAST(0 AS BIT) AS EH_VERSAO_ANTERIOR,
+          CAST(NULL AS DATETIME2) AS ARQUIVADO_EM,
+          ROW_NUMBER() OVER (
+            PARTITION BY ut.USUARIO_CPF
+            ORDER BY ut.DT_CONCLUSAO DESC
+          ) AS RN
+        FROM dbo.TUSUARIO_TREINAMENTOS ut
+        LEFT JOIN dbo.TUSUARIOS u ON u.CPF = ut.USUARIO_CPF
+        ${LOCATION_APPLY_CLAUSE}
+        WHERE ut.TIPO = 'trilha'
+          AND ut.MATERIAL_ID = @TRILHA_ID
+          AND ut.ARQUIVADO_EM IS NULL
+          AND ISNULL(u.ATIVO, 1) = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM CURRENT_COMPLETIONS cc
+            WHERE cc.USUARIO_CPF = ut.USUARIO_CPF
+          )
+      ),
+      TRILHA_COMPLETIONS AS (
+        SELECT
+          USUARIO_CPF,
+          USUARIO_NOME,
+          USUARIO_FUNCAO,
+          OBRA_NOME,
+          SETOR_OBRA,
+          DT_ATRIBUICAO,
+          DT_FINALIZACAO,
+          NOTA,
+          EH_VERSAO_ANTERIOR,
+          ARQUIVADO_EM
+        FROM TRILHA_COMPLETIONS_BASE
+        WHERE RN = 1
+      ),
       PREVIOUS_COMPLETIONS AS (
         SELECT
           ut.USUARIO_CPF,
@@ -524,6 +567,11 @@ export async function getTrilhaTrainingStatusReport(
             FROM CURRENT_COMPLETIONS cc
             WHERE cc.USUARIO_CPF = ut.USUARIO_CPF
           )
+          AND NOT EXISTS (
+            SELECT 1
+            FROM TRILHA_COMPLETIONS tc
+            WHERE tc.USUARIO_CPF = ut.USUARIO_CPF
+          )
       ),
       PENDING_ASSIGNMENTS AS (
         SELECT
@@ -572,6 +620,23 @@ export async function getTrilhaTrainingStatusReport(
           CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
           CAST('Versao Anterior' AS NVARCHAR(30)) AS TIPO_VERSAO
         FROM PREVIOUS_COMPLETIONS pc
+
+        UNION ALL
+
+        SELECT
+          tc.USUARIO_CPF,
+          tc.USUARIO_NOME,
+          tc.USUARIO_FUNCAO,
+          tc.OBRA_NOME,
+          tc.SETOR_OBRA,
+          tc.DT_ATRIBUICAO,
+          tc.DT_FINALIZACAO,
+          tc.NOTA,
+          tc.EH_VERSAO_ANTERIOR,
+          tc.ARQUIVADO_EM,
+          CAST('Concluido' AS NVARCHAR(30)) AS STATUS,
+          CAST('Atual' AS NVARCHAR(30)) AS TIPO_VERSAO
+        FROM TRILHA_COMPLETIONS tc
 
         UNION ALL
 

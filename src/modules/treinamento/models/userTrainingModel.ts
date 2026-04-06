@@ -1426,3 +1426,73 @@ export async function getUserCurrentVideoProgressByTrilha(
     }
   )
 }
+
+export type UserTrilhaCompletionRecord = {
+  USUARIO_CPF: string
+  TRILHA_ID: string
+  TRILHA_TITULO: string
+  MODULO_ID: string
+  MODULO_NOME: string
+  DT_CONCLUSAO: Date
+}
+
+export async function recordTrilhaCompletion(input: {
+  cpf: string
+  trilhaId: string
+  concluidoEm?: Date | null
+  origem?: string | null
+}) {
+  const pool = await getPool()
+  const id = randomUUID()
+  const concluidoEm = input.concluidoEm ?? new Date()
+
+  await pool
+    .request()
+    .input("ID", sql.UniqueIdentifier, id)
+    .input("USUARIO_CPF", sql.VarChar(100), input.cpf)
+    .input("MATERIAL_ID", sql.UniqueIdentifier, input.trilhaId)
+    .input("DT_CONCLUSAO", sql.DateTime2, concluidoEm)
+    .input("ORIGEM", sql.VarChar(50), input.origem ?? "player")
+    .query(`
+      IF EXISTS (
+        SELECT 1 FROM dbo.TUSUARIO_TREINAMENTOS
+        WHERE USUARIO_CPF = @USUARIO_CPF AND TIPO = 'trilha' AND MATERIAL_ID = @MATERIAL_ID
+          AND ARQUIVADO_EM IS NULL
+      )
+        UPDATE dbo.TUSUARIO_TREINAMENTOS
+        SET DT_CONCLUSAO = @DT_CONCLUSAO,
+            ORIGEM = COALESCE(@ORIGEM, ORIGEM)
+        WHERE USUARIO_CPF = @USUARIO_CPF AND TIPO = 'trilha' AND MATERIAL_ID = @MATERIAL_ID
+          AND ARQUIVADO_EM IS NULL
+      ELSE
+        INSERT INTO dbo.TUSUARIO_TREINAMENTOS
+          (ID, USUARIO_CPF, TIPO, MATERIAL_ID, MATERIAL_VERSAO, TURMA_ID, DT_CONCLUSAO, ORIGEM)
+        VALUES
+          (@ID, @USUARIO_CPF, 'trilha', @MATERIAL_ID, NULL, NULL, @DT_CONCLUSAO, @ORIGEM)
+    `)
+}
+
+export async function listCompletedTrilhasByCpf(cpf: string) {
+  const pool = await getPool()
+  const result = await pool
+    .request()
+    .input("USUARIO_CPF", sql.VarChar(100), cpf)
+    .query(`
+      SELECT
+        ut.USUARIO_CPF,
+        ut.MATERIAL_ID AS TRILHA_ID,
+        ut.DT_CONCLUSAO,
+        t.TITULO AS TRILHA_TITULO,
+        m.ID AS MODULO_ID,
+        m.NOME AS MODULO_NOME
+      FROM dbo.TUSUARIO_TREINAMENTOS ut
+      JOIN dbo.TTRILHAS t ON t.ID = ut.MATERIAL_ID
+      JOIN dbo.TMODULOS m ON m.ID = t.MODULO_FK_ID
+      WHERE ut.TIPO = 'trilha'
+        AND ut.USUARIO_CPF = @USUARIO_CPF
+        AND ut.ARQUIVADO_EM IS NULL
+      ORDER BY ut.DT_CONCLUSAO DESC
+    `)
+
+  return result.recordset as UserTrilhaCompletionRecord[]
+}

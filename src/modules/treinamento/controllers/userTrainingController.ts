@@ -9,10 +9,12 @@ import {
   listArchivedCompletionReport,
   isVideoAssignedToUser,
   listCompletionReport,
+  listCompletedTrilhasByCpf,
   listUserVideoCompletions,
   listVideoCompletionsByMaterial,
   recordTrainingEficaciaByTrilha,
   recordTrainingEficaciaByTurma,
+  recordTrilhaCompletion,
   recordUserTraining,
   recordUserTrainings,
 } from "../models/userTrainingModel"
@@ -545,4 +547,42 @@ export const listArchivedCompletionReportByFunction = asyncHandler(async (req: R
     turma?.trim() || undefined,
   )
   res.json({ report })
+})
+
+export const completeTrilha = asyncHandler(async (req: Request, res: Response) => {
+  const { cpf, trilhaId, concluidoEm, origem } = req.body as {
+    cpf?: string
+    trilhaId?: string
+    concluidoEm?: string
+    origem?: string
+  }
+
+  if (!cpf || !trilhaId) {
+    throw new HttpError(400, "cpf e trilhaId sao obrigatorios")
+  }
+
+  const normalizedCpf = normalizeCpf(cpf)
+  if (!normalizedCpf) {
+    throw new HttpError(400, "CPF invalido")
+  }
+
+  await recordTrilhaCompletion({
+    cpf: normalizedCpf,
+    trilhaId,
+    concluidoEm: concluidoEm ? new Date(concluidoEm) : null,
+    origem: origem ?? "player",
+  })
+
+  res.json({ success: true })
+})
+
+export const listCompletedTrilhas = asyncHandler(async (req: Request, res: Response) => {
+  const rawCpf = String(req.params.cpf ?? "").trim()
+  const normalizedCpf = normalizeCpf(rawCpf)
+  if (!normalizedCpf) {
+    throw new HttpError(400, "CPF invalido")
+  }
+
+  const completions = await listCompletedTrilhasByCpf(normalizedCpf)
+  res.json({ completions })
 })

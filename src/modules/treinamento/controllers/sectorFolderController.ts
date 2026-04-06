@@ -151,7 +151,10 @@ const MAX_FOLDER_MEMBERS = 8
 const VERSION_HISTORY_FOLDER_NAME = "Historico de Versoes"
 const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".pdf",
+  ".ppt",
   ".pptx",
+  ".pps",
+  ".ppsx",
   ".mp4",
   ".mov",
   ".avi",
