@@ -7,13 +7,11 @@ import { mapReadViewToUser } from "../utils/userMapping"
 import { upsertUser } from "../models/userModel"
 import {
   archiveTrainingProgressByTrilhaIds,
-  getUserCurrentVideoProgressByTrilha,
   recordUserTraining,
 } from "../models/userTrainingModel"
 import { isUserAssignedToTrilha } from "../models/userTrilhaModel"
 import {
   createProvaAttempt,
-  getLatestProvaAttemptByTrilha,
   listProvaAttemptsReport,
   listTrainedCollaboratorsByTrilha,
   type ProvaAttemptStatus,
@@ -1367,59 +1365,8 @@ export const getLatestObjectiveResult = asyncHandler(async (req: Request, res: R
     throw new HttpError(400, "CPF invalido")
   }
 
-  const trilhaId = req.params.trilhaId
-  const [attempt, latestProva] = await Promise.all([
-    getLatestProvaAttemptByTrilha(cpfDigits, trilhaId),
-    getObjectiveProvaByTrilhaId(trilhaId),
-  ])
-
-  if (!attempt) {
-    res.json({ result: null })
-    return
-  }
-  if (!latestProva) {
-    res.json({ result: null })
-    return
-  }
-
-  if (attempt.PROVA_ID !== latestProva.ID || attempt.PROVA_VERSAO !== latestProva.VERSAO) {
-    res.json({ result: null })
-    return
-  }
-
-  const progress = await getUserCurrentVideoProgressByTrilha(cpfDigits, trilhaId)
-  if (
-    progress.TOTAL_VIDEOS_ATUAIS > 0 &&
-    progress.TOTAL_CONCLUIDOS_ATUAIS < progress.TOTAL_VIDEOS_ATUAIS
-  ) {
-    res.json({ result: null })
-    return
-  }
-
-  if (progress.ULTIMA_CONCLUSAO_ATUAL) {
-    const attemptDate = new Date(attempt.DT_REALIZACAO)
-    const latestVideoConclusion = new Date(progress.ULTIMA_CONCLUSAO_ATUAL)
-    if (attemptDate < latestVideoConclusion) {
-      res.json({ result: null })
-      return
-    }
-  }
-
-  let respostas = null as unknown
-  if (attempt.RESPOSTAS_JSON) {
-    try {
-      respostas = JSON.parse(attempt.RESPOSTAS_JSON)
-    } catch {
-      respostas = null
-    }
-  }
-
-  res.json({
-    result: {
-      ...attempt,
-      RESPOSTAS: respostas,
-    },
-  })
+  // Attempts remain stored for reports, but the player must always open a blank proof.
+  res.json({ result: null })
 })
 
 function parseDateRangeBoundary(raw: string | undefined, endOfDay = false) {
