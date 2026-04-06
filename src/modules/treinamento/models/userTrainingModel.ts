@@ -2,6 +2,20 @@ import { randomUUID } from "crypto"
 import { getPool, sql } from "../config/db"
 import { getTrilhaColumnState } from "./trilhaModel"
 
+// The production CHECK constraint still allows only video/pdf/prova.
+// Keep course-level completions compatible by tagging a prova row as a trilha marker.
+const TRILHA_COMPLETION_MARKER_TIPO = "prova"
+const TRILHA_COMPLETION_MARKER_ORIGIN_PREFIX = "trilha-"
+
+function buildTrilhaCompletionMarkerOrigin(origem?: string | null) {
+  const normalizedOrigin = String(origem ?? "player").trim() || "player"
+  const markerOrigin = normalizedOrigin.startsWith(TRILHA_COMPLETION_MARKER_ORIGIN_PREFIX)
+    ? normalizedOrigin
+    : `${TRILHA_COMPLETION_MARKER_ORIGIN_PREFIX}${normalizedOrigin}`
+
+  return markerOrigin.slice(0, 50)
+}
+
 export type UserTrainingInput = {
   cpf: string
   tipo: "video" | "pdf" | "prova"
@@ -1445,30 +1459,44 @@ export async function recordTrilhaCompletion(input: {
   const pool = await getPool()
   const id = randomUUID()
   const concluidoEm = input.concluidoEm ?? new Date()
+  const markerOrigin = buildTrilhaCompletionMarkerOrigin(input.origem)
 
   await pool
     .request()
     .input("ID", sql.UniqueIdentifier, id)
     .input("USUARIO_CPF", sql.VarChar(100), input.cpf)
+    .input("TIPO", sql.VarChar(20), TRILHA_COMPLETION_MARKER_TIPO)
     .input("MATERIAL_ID", sql.UniqueIdentifier, input.trilhaId)
     .input("DT_CONCLUSAO", sql.DateTime2, concluidoEm)
-    .input("ORIGEM", sql.VarChar(50), input.origem ?? "player")
+    .input("ORIGEM", sql.VarChar(50), markerOrigin)
     .query(`
-      IF EXISTS (
-        SELECT 1 FROM dbo.TUSUARIO_TREINAMENTOS
-        WHERE USUARIO_CPF = @USUARIO_CPF AND TIPO = 'trilha' AND MATERIAL_ID = @MATERIAL_ID
+      ;WITH EXISTENTE AS (
+        SELECT TOP 1 ID
+        FROM dbo.TUSUARIO_TREINAMENTOS WITH (UPDLOCK, HOLDLOCK)
+        WHERE USUARIO_CPF = @USUARIO_CPF
+          AND MATERIAL_ID = @MATERIAL_ID
           AND ARQUIVADO_EM IS NULL
+          AND (
+            TIPO = 'trilha'
+            OR (TIPO = @TIPO AND ORIGEM LIKE '${TRILHA_COMPLETION_MARKER_ORIGIN_PREFIX}%')
+          )
+        ORDER BY
+          CASE WHEN TIPO = 'trilha' THEN 0 ELSE 1 END,
+          DT_CONCLUSAO DESC
       )
-        UPDATE dbo.TUSUARIO_TREINAMENTOS
-        SET DT_CONCLUSAO = @DT_CONCLUSAO,
-            ORIGEM = COALESCE(@ORIGEM, ORIGEM)
-        WHERE USUARIO_CPF = @USUARIO_CPF AND TIPO = 'trilha' AND MATERIAL_ID = @MATERIAL_ID
-          AND ARQUIVADO_EM IS NULL
-      ELSE
+      UPDATE ut
+      SET DT_CONCLUSAO = @DT_CONCLUSAO,
+          ORIGEM = COALESCE(@ORIGEM, ORIGEM)
+      FROM dbo.TUSUARIO_TREINAMENTOS ut
+      JOIN EXISTENTE e ON e.ID = ut.ID;
+
+      IF @@ROWCOUNT = 0
+      BEGIN
         INSERT INTO dbo.TUSUARIO_TREINAMENTOS
           (ID, USUARIO_CPF, TIPO, MATERIAL_ID, MATERIAL_VERSAO, TURMA_ID, DT_CONCLUSAO, ORIGEM)
         VALUES
-          (@ID, @USUARIO_CPF, 'trilha', @MATERIAL_ID, NULL, NULL, @DT_CONCLUSAO, @ORIGEM)
+          (@ID, @USUARIO_CPF, @TIPO, @MATERIAL_ID, NULL, NULL, @DT_CONCLUSAO, @ORIGEM)
+      END
     `)
 }
 
@@ -1478,20 +1506,41 @@ export async function listCompletedTrilhasByCpf(cpf: string) {
     .request()
     .input("USUARIO_CPF", sql.VarChar(100), cpf)
     .query(`
+      WITH COMPLETIONS_BASE AS (
+        SELECT
+          ut.USUARIO_CPF,
+          ut.MATERIAL_ID AS TRILHA_ID,
+          ut.DT_CONCLUSAO,
+          t.TITULO AS TRILHA_TITULO,
+          m.ID AS MODULO_ID,
+          m.NOME AS MODULO_NOME,
+          ROW_NUMBER() OVER (
+            PARTITION BY ut.USUARIO_CPF, ut.MATERIAL_ID
+            ORDER BY ut.DT_CONCLUSAO DESC
+          ) AS RN
+        FROM dbo.TUSUARIO_TREINAMENTOS ut
+        JOIN dbo.TTRILHAS t ON t.ID = ut.MATERIAL_ID
+        JOIN dbo.TMODULOS m ON m.ID = t.MODULO_FK_ID
+        WHERE ut.USUARIO_CPF = @USUARIO_CPF
+          AND ut.ARQUIVADO_EM IS NULL
+          AND (
+            ut.TIPO = 'trilha'
+            OR (
+              ut.TIPO = '${TRILHA_COMPLETION_MARKER_TIPO}'
+              AND ut.ORIGEM LIKE '${TRILHA_COMPLETION_MARKER_ORIGIN_PREFIX}%'
+            )
+          )
+      )
       SELECT
-        ut.USUARIO_CPF,
-        ut.MATERIAL_ID AS TRILHA_ID,
-        ut.DT_CONCLUSAO,
-        t.TITULO AS TRILHA_TITULO,
-        m.ID AS MODULO_ID,
-        m.NOME AS MODULO_NOME
-      FROM dbo.TUSUARIO_TREINAMENTOS ut
-      JOIN dbo.TTRILHAS t ON t.ID = ut.MATERIAL_ID
-      JOIN dbo.TMODULOS m ON m.ID = t.MODULO_FK_ID
-      WHERE ut.TIPO = 'trilha'
-        AND ut.USUARIO_CPF = @USUARIO_CPF
-        AND ut.ARQUIVADO_EM IS NULL
-      ORDER BY ut.DT_CONCLUSAO DESC
+        USUARIO_CPF,
+        TRILHA_ID,
+        DT_CONCLUSAO,
+        TRILHA_TITULO,
+        MODULO_ID,
+        MODULO_NOME
+      FROM COMPLETIONS_BASE
+      WHERE RN = 1
+      ORDER BY DT_CONCLUSAO DESC
     `)
 
   return result.recordset as UserTrilhaCompletionRecord[]

@@ -453,7 +453,7 @@ export async function getTrilhaTrainingStatusReport(
         FROM CURRENT_COMPLETIONS_BASE
         WHERE RN = 1
       ),
-      TRILHA_COMPLETIONS_BASE AS (
+      TRILHA_COMPLETIONS_RAW AS (
         SELECT
           ut.USUARIO_CPF,
           u.NOME AS USUARIO_NOME,
@@ -464,11 +464,7 @@ export async function getTrilhaTrainingStatusReport(
           ut.DT_CONCLUSAO AS DT_FINALIZACAO,
           CAST(0 AS DECIMAL(5, 2)) AS NOTA,
           CAST(0 AS BIT) AS EH_VERSAO_ANTERIOR,
-          CAST(NULL AS DATETIME2) AS ARQUIVADO_EM,
-          ROW_NUMBER() OVER (
-            PARTITION BY ut.USUARIO_CPF
-            ORDER BY ut.DT_CONCLUSAO DESC
-          ) AS RN
+          CAST(NULL AS DATETIME2) AS ARQUIVADO_EM
         FROM dbo.TUSUARIO_TREINAMENTOS ut
         LEFT JOIN dbo.TUSUARIOS u ON u.CPF = ut.USUARIO_CPF
         ${LOCATION_APPLY_CLAUSE}
@@ -480,6 +476,39 @@ export async function getTrilhaTrainingStatusReport(
             SELECT 1 FROM CURRENT_COMPLETIONS cc
             WHERE cc.USUARIO_CPF = ut.USUARIO_CPF
           )
+        UNION ALL
+        SELECT
+          ut.USUARIO_CPF,
+          u.NOME AS USUARIO_NOME,
+          u.CARGO AS USUARIO_FUNCAO,
+          loc.OBRA_NOME,
+          loc.SETOR_OBRA,
+          CAST(NULL AS DATETIME2) AS DT_ATRIBUICAO,
+          ut.DT_CONCLUSAO AS DT_FINALIZACAO,
+          CAST(0 AS DECIMAL(5, 2)) AS NOTA,
+          CAST(0 AS BIT) AS EH_VERSAO_ANTERIOR,
+          CAST(NULL AS DATETIME2) AS ARQUIVADO_EM
+        FROM dbo.TUSUARIO_TREINAMENTOS ut
+        LEFT JOIN dbo.TUSUARIOS u ON u.CPF = ut.USUARIO_CPF
+        ${LOCATION_APPLY_CLAUSE}
+        WHERE ut.TIPO = 'prova'
+          AND ut.ORIGEM LIKE 'trilha-%'
+          AND ut.MATERIAL_ID = @TRILHA_ID
+          AND ut.ARQUIVADO_EM IS NULL
+          AND ISNULL(u.ATIVO, 1) = 1
+          AND NOT EXISTS (
+            SELECT 1 FROM CURRENT_COMPLETIONS cc
+            WHERE cc.USUARIO_CPF = ut.USUARIO_CPF
+          )
+      ),
+      TRILHA_COMPLETIONS_BASE AS (
+        SELECT
+          raw.*,
+          ROW_NUMBER() OVER (
+            PARTITION BY raw.USUARIO_CPF
+            ORDER BY raw.DT_FINALIZACAO DESC
+          ) AS RN
+        FROM TRILHA_COMPLETIONS_RAW raw
       ),
       TRILHA_COMPLETIONS AS (
         SELECT
@@ -587,7 +616,7 @@ export async function getTrilhaTrainingStatusReport(
           ARQUIVADO_EM
         FROM PENDING_ASSIGNMENTS_BASE
         WHERE RN = 1
-      )
+      ),
       ALL_ROWS AS (
         SELECT
           cc.USUARIO_CPF,
