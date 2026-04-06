@@ -1,5 +1,6 @@
 import { Router } from "express"
 import {
+  calculateFileReadingTime,
   create,
   createYouTubeLink,
   completeUploadFileSession,
@@ -29,6 +30,7 @@ router.get("/folders/:itemId/shares", listFolderShares)
 router.get("/items/:itemId/content", getItemContent)
 router.get("/items/:itemId/version-impact", getItemVersionImpact)
 router.post("/folders", create)
+router.post("/files/reading-time", upload.single("file"), calculateFileReadingTime)
 router.post("/files/upload/session", initUploadFileSession)
 router.post("/files/upload/session/:sessionId/complete", completeUploadFileSession)
 router.post("/files/upload", upload.single("file"), uploadFile)

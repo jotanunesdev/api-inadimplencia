@@ -81,7 +81,6 @@ import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import {
   calculateReadingTimeSeconds,
-  calculateReadingTimeSecondsFromBuffer,
   isDocumentExtensionForReadingTime,
 } from "../utils/readingTimeUtils"
 
@@ -113,6 +112,7 @@ type PendingSectorFolderUpload = {
   validityYears: number | null
   fullPath: string
   createdAt: number
+  tempoLeituraSegundos: number | null
 }
 
 type BreadcrumbItem = {
@@ -3107,6 +3107,22 @@ export const update = asyncHandler(async (req: Request, res: Response) => {
   }
 })
 
+/**
+ * Recebe um arquivo via multipart, extrai o texto e retorna o tempo estimado
+ * de leitura em segundos (200 palavras/min). Suporta PDF, PPT, PPTX, PPS, PPSX.
+ * O arquivo temporário é descartado após o cálculo — não vai ao SharePoint.
+ */
+export const calculateFileReadingTime = asyncHandler(async (req: Request, res: Response) => {
+  const file = req.file
+  if (!file) {
+    throw new HttpError(400, "Arquivo obrigatorio.")
+  }
+
+  const tempoLeituraSegundos = await calculateReadingTimeSeconds(file.path, file.originalname)
+
+  res.json({ tempoLeituraSegundos })
+})
+
 export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
   ensureSharePointIsAvailable()
 
@@ -3146,10 +3162,13 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     ) && sector.key === "sesmt"
   const fileValidity = parseNormasFileValidity(body, requiresValidity)
 
-  // Calcula tempo de leitura ANTES de fazer upload (arquivo temp ainda existe)
-  const tempoLeituraSegundos = isDocumentExtensionForReadingTime(file.originalname)
-    ? await calculateReadingTimeSeconds(file.path, file.originalname).catch(() => null)
-    : null
+  // Usa o tempo de leitura pré-calculado pelo frontend (enviado no FormData)
+  // Para garantir que o cálculo acontece antes do upload ao SharePoint
+  const rawTempoLeitura = body.tempoLeituraSegundos
+  const tempoLeituraSegundos =
+    rawTempoLeitura !== undefined && rawTempoLeitura !== null && Number.isFinite(Number(rawTempoLeitura))
+      ? Number(rawTempoLeitura)
+      : null
 
   const uploaded = await uploadFileToSharePoint({
     tempFilePath: file.path,
@@ -3239,6 +3258,11 @@ export const initUploadFileSession = asyncHandler(
         )?.requiresValidityForFiles,
       ) && sector.key === "sesmt"
     const fileValidity = parseNormasFileValidity(body, requiresValidity)
+    const rawTempoLeitura = body.tempoLeituraSegundos
+    const tempoLeituraSegundos =
+      rawTempoLeitura !== undefined && rawTempoLeitura !== null && Number.isFinite(Number(rawTempoLeitura))
+        ? Number(rawTempoLeitura)
+        : null
 
     const session = await createSharePointUploadSession({
       relativeFolderPath: parentContext.currentFolderPath,
@@ -3254,6 +3278,7 @@ export const initUploadFileSession = asyncHandler(
       validityYears: fileValidity.validityYears,
       fullPath: session.fullPath,
       createdAt: Date.now(),
+      tempoLeituraSegundos,
     })
 
     res.status(201).json({
@@ -3307,16 +3332,9 @@ export const completeUploadFileSession = asyncHandler(
       validityYears: pending.validityYears,
     })
 
-    // Para arquivos de documento (PDF/slide), baixa do SharePoint e calcula tempo de leitura
-    if (isDocumentExtensionForReadingTime(uploadedItem.name ?? "")) {
-      const fileBuffer = await downloadSharePointFileContentByItemId({ itemId: uploadedItem.id })
-      const tempoLeituraSegundos = await calculateReadingTimeSecondsFromBuffer(
-        fileBuffer,
-        uploadedItem.name ?? "",
-      )
-      if (tempoLeituraSegundos !== null) {
-        await updateSectorFolderItemReadingTime(uploadedItem.id, tempoLeituraSegundos)
-      }
+    // Salva o tempo de leitura calculado antes do upload (enviado pelo frontend)
+    if (pending.tempoLeituraSegundos !== null) {
+      await updateSectorFolderItemReadingTime(uploadedItem.id, pending.tempoLeituraSegundos)
     }
 
     const metadataByItemId = new Map<string, SectorFolderMetadata>()
