@@ -3145,6 +3145,11 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     ) && sector.key === "sesmt"
   const fileValidity = parseNormasFileValidity(body, requiresValidity)
 
+  // Calcula tempo de leitura ANTES de fazer upload (arquivo temp ainda existe)
+  const tempoLeituraSegundos = isDocumentExtensionForReadingTime(file.originalname)
+    ? await calculateReadingTimeSeconds(file.path, file.originalname).catch(() => null)
+    : null
+
   const uploaded = await uploadFileToSharePoint({
     tempFilePath: file.path,
     relativeFolderPath: parentContext.currentFolderPath,
@@ -3171,17 +3176,8 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     validityYears: fileValidity.validityYears,
   })
 
-  // Calcula tempo de leitura estimado para arquivos de documento (PDF, PPT, PPTX, PPS, PPSX)
-  if (file && isDocumentExtensionForReadingTime(file.originalname)) {
-    calculateReadingTimeSeconds(file.path, file.originalname)
-      .then((segundos) => {
-        if (segundos !== null) {
-          return updateSectorFolderItemReadingTime(uploadedItem.id, segundos)
-        }
-      })
-      .catch(() => {
-        // não bloqueia a resposta se o cálculo falhar
-      })
+  if (tempoLeituraSegundos !== null) {
+    await updateSectorFolderItemReadingTime(uploadedItem.id, tempoLeituraSegundos).catch(() => {})
   }
 
   const metadataByItemId = new Map<string, SectorFolderMetadata>()
