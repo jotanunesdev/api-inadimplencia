@@ -4,6 +4,7 @@ import { env } from "../config/env"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import { normalizeCpf } from "../utils/normalizeCpf"
+import { calculateReadingTimeSeconds } from "../utils/readingTimeUtils"
 import {
   createPdf,
   deletePdf,
@@ -337,6 +338,12 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
     throw new HttpError(400, "Arquivo de PDF e obrigatorio")
   }
 
+  // Calcula o tempo de leitura antes de mover o arquivo (temp path ainda válido)
+  const tempoLeituraSegundos = await calculateReadingTimeSeconds(
+    file.path,
+    file.originalname,
+  ).catch(() => null)
+
   const { trilhaPath } = await resolveTrilhaPath(trilhaId)
   const fileName = buildStoredFileName(file.originalname, "pdf")
   const relativePath = [trilhaPath, fileName].filter(Boolean).join("/")
@@ -353,6 +360,7 @@ export const createUpload = asyncHandler(async (req: Request, res: Response) => 
     pdfPath: relativePath,
     procedimentoId: procedimento,
     normaId: norma,
+    tempoLeituraSegundos,
   })
 
   res.status(201).json({ pdf })
@@ -409,6 +417,12 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
     throw new HttpError(400, "Arquivo de PDF e obrigatorio")
   }
 
+  // Calcula o tempo de leitura antes de mover o arquivo (temp path ainda válido)
+  const tempoLeituraSegundos = await calculateReadingTimeSeconds(
+    file.path,
+    file.originalname,
+  ).catch(() => null)
+
   const resolvedTrilhaId =
     trilhaId ?? (await getPdfById(req.params.id))?.TRILHA_FK_ID
   if (!resolvedTrilhaId) {
@@ -430,6 +444,7 @@ export const updateUpload = asyncHandler(async (req: Request, res: Response) => 
     pdfPath: relativePath,
     procedimentoId: procedimento,
     normaId: norma,
+    tempoLeituraSegundos,
   })
 
   if (!pdf) {

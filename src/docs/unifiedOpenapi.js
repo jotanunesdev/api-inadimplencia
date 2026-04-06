@@ -534,6 +534,7 @@ function buildUnifiedOpenapi(
 
   const tags = [
     ...(inadimplenciaOpenapi?.tags ?? []),
+    ...(treinamentoOpenapi?.tags ?? []),
     { name: 'Treinamento', description: 'Endpoints do modulo de treinamento' },
     { name: 'Fluig', description: 'Endpoints do modulo de auditoria Fluig' },
     { name: 'PM2', description: 'Endpoints do modulo de monitoramento PM2' },

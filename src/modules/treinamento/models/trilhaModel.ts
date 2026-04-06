@@ -5,6 +5,7 @@ import {
   OBJECTIVE_PLACEHOLDER_PATH,
 } from "./provaModel"
 import { resolveSectorDefinitionFromModuleName } from "../utils/sectorAccess"
+import { hasPdfReadingTimeColumn } from "./pdfModel"
 
 export type TrilhaRecord = {
   ID: string
@@ -109,9 +110,10 @@ function buildTrilhaSelectFragment(columnState: TrilhaColumnState) {
   return fragments.join(", ")
 }
 
-const TRILHA_DURATION_JOIN = `
+function buildTrihaDurationJoin(hasPdfReadingTime: boolean) {
+  return `
   LEFT JOIN (
-    SELECT v.TRILHA_FK_ID, SUM(ISNULL(v.DURACAO_SEGUNDOS, 0)) AS TOTAL_SEGUNDOS
+    SELECT v.TRILHA_FK_ID, SUM(ISNULL(v.DURACAO_SEGUNDOS, 0)) AS VIDEO_SEGUNDOS
     FROM (
       SELECT
         ID,
@@ -122,8 +124,22 @@ const TRILHA_DURATION_JOIN = `
     ) v
     WHERE v.RN = 1
     GROUP BY v.TRILHA_FK_ID
-  ) d ON d.TRILHA_FK_ID = t.ID
-`
+  ) vd ON vd.TRILHA_FK_ID = t.ID
+  LEFT JOIN (
+    SELECT p.TRILHA_FK_ID, SUM(ISNULL(${hasPdfReadingTime ? "p.TEMPO_LEITURA_SEGUNDOS" : "0"}, 0)) AS PDF_SEGUNDOS
+    FROM (
+      SELECT
+        ID,
+        TRILHA_FK_ID,
+        ${hasPdfReadingTime ? "TEMPO_LEITURA_SEGUNDOS," : ""}
+        ROW_NUMBER() OVER (PARTITION BY ID ORDER BY VERSAO DESC) AS RN
+      FROM dbo.TPDFS
+    ) p
+    WHERE p.RN = 1
+    GROUP BY p.TRILHA_FK_ID
+  ) pd ON pd.TRILHA_FK_ID = t.ID
+  `
+}
 
 const TRILHA_ASSIGNMENT_COUNT_JOIN = `
   LEFT JOIN (
@@ -150,19 +166,21 @@ const TRILHA_COMPLETION_COUNT_JOIN = `
 export async function listTrilhasByModulo(moduloId: string) {
   const columnState = await getTrilhaColumnState()
   const hasShareTable = await hasTrilhaShareTable()
+  const hasPdfReadingTime = await hasPdfReadingTimeColumn()
   const pool = await getPool()
+  const trilhaDurationJoin = buildTrihaDurationJoin(hasPdfReadingTime)
   const result = await pool
     .request()
     .input("MODULO_FK_ID", sql.UniqueIdentifier, moduloId)
     .query(`
       SELECT ${buildTrilhaSelectFragment(columnState)},
-        COALESCE(d.TOTAL_SEGUNDOS, 0) AS DURACAO_SEGUNDOS,
-        CAST(COALESCE(d.TOTAL_SEGUNDOS, 0) / 3600.0 AS DECIMAL(10, 2)) AS DURACAO_HORAS,
+        COALESCE(vd.VIDEO_SEGUNDOS, 0) + COALESCE(pd.PDF_SEGUNDOS, 0) AS DURACAO_SEGUNDOS,
+        CAST((COALESCE(vd.VIDEO_SEGUNDOS, 0) + COALESCE(pd.PDF_SEGUNDOS, 0)) / 3600.0 AS DECIMAL(10, 2)) AS DURACAO_HORAS,
         COALESCE(a.TOTAL_ATRIBUIDOS, 0) AS TOTAL_ATRIBUIDOS,
         COALESCE(c.TOTAL_CONCLUIDOS, 0) AS TOTAL_CONCLUIDOS,
         CAST(CASE WHEN t.MODULO_FK_ID = @MODULO_FK_ID THEN 0 ELSE 1 END AS BIT) AS ACESSO_COMPARTILHADO
       FROM dbo.TTRILHAS t
-      ${TRILHA_DURATION_JOIN}
+      ${trilhaDurationJoin}
       ${TRILHA_ASSIGNMENT_COUNT_JOIN}
       ${TRILHA_COMPLETION_COUNT_JOIN}
       WHERE t.MODULO_FK_ID = @MODULO_FK_ID
@@ -181,17 +199,19 @@ export async function listTrilhasByModulo(moduloId: string) {
 
 export async function listTrilhasByUser(cpf: string, moduloId?: string) {
   const columnState = await getTrilhaColumnState()
+  const hasPdfReadingTime = await hasPdfReadingTimeColumn()
   const pool = await getPool()
+  const trilhaDurationJoin = buildTrihaDurationJoin(hasPdfReadingTime)
   const request = pool.request().input("USUARIO_CPF", sql.VarChar(100), cpf)
   let query = `
     SELECT ${buildTrilhaSelectFragment(columnState)},
-      COALESCE(d.TOTAL_SEGUNDOS, 0) AS DURACAO_SEGUNDOS,
-      CAST(COALESCE(d.TOTAL_SEGUNDOS, 0) / 3600.0 AS DECIMAL(10, 2)) AS DURACAO_HORAS,
+      COALESCE(vd.VIDEO_SEGUNDOS, 0) + COALESCE(pd.PDF_SEGUNDOS, 0) AS DURACAO_SEGUNDOS,
+      CAST((COALESCE(vd.VIDEO_SEGUNDOS, 0) + COALESCE(pd.PDF_SEGUNDOS, 0)) / 3600.0 AS DECIMAL(10, 2)) AS DURACAO_HORAS,
       COALESCE(a.TOTAL_ATRIBUIDOS, 0) AS TOTAL_ATRIBUIDOS,
       COALESCE(c.TOTAL_CONCLUIDOS, 0) AS TOTAL_CONCLUIDOS
     FROM dbo.TTRILHAS t
     JOIN dbo.TUSUARIO_TRILHAS ut ON ut.TRILHA_ID = t.ID
-    ${TRILHA_DURATION_JOIN}
+    ${trilhaDurationJoin}
     ${TRILHA_ASSIGNMENT_COUNT_JOIN}
     ${TRILHA_COMPLETION_COUNT_JOIN}
     WHERE ut.USUARIO_CPF = @USUARIO_CPF

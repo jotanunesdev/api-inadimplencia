@@ -7,6 +7,7 @@ import {
   isSectorFolderMetadataSchemaMissingError,
   listSectorFolderMetadataBySector,
   type SectorFolderMetadata,
+  updateSectorFolderItemReadingTime,
   updateSectorFolderMetadataPathsByPrefix,
   upsertSectorFolderMetadata,
 } from "../models/sectorFolderModel"
@@ -78,6 +79,10 @@ import {
 import { resolveSectorDefinition } from "../utils/sectorAccess"
 import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
+import {
+  calculateReadingTimeSeconds,
+  isDocumentExtensionForReadingTime,
+} from "../utils/readingTimeUtils"
 
 type SectorDefinition = {
   key: string
@@ -3165,6 +3170,20 @@ export const uploadFile = asyncHandler(async (req: Request, res: Response) => {
     validityMonths: fileValidity.validityMonths,
     validityYears: fileValidity.validityYears,
   })
+
+  // Calcula tempo de leitura estimado para arquivos de documento (PDF, PPT, PPTX, PPS, PPSX)
+  if (file && isDocumentExtensionForReadingTime(file.originalname)) {
+    calculateReadingTimeSeconds(file.path, file.originalname)
+      .then((segundos) => {
+        if (segundos !== null) {
+          return updateSectorFolderItemReadingTime(uploadedItem.id, segundos)
+        }
+      })
+      .catch(() => {
+        // não bloqueia a resposta se o cálculo falhar
+      })
+  }
+
   const metadataByItemId = new Map<string, SectorFolderMetadata>()
   if (metadata) {
     metadataByItemId.set(metadata.itemId, metadata)

@@ -8,15 +8,27 @@ export type PdfRecord = {
   NORMA_ID: string | null
   ORDEM?: number | null
   VERSAO: number
+  TEMPO_LEITURA_SEGUNDOS?: number | null
 }
 
 export async function hasPdfOrderColumn() {
   const pool = await getPool()
   const result = await pool.request().query(`
-    SELECT COL_LENGTH('dbo.TPDFS', 'ORDEM') AS ORDEM_COL
+    SELECT
+      COL_LENGTH('dbo.TPDFS', 'ORDEM') AS ORDEM_COL,
+      COL_LENGTH('dbo.TPDFS', 'TEMPO_LEITURA_SEGUNDOS') AS TEMPO_LEITURA_COL
   `)
 
   return Boolean(result.recordset[0]?.ORDEM_COL)
+}
+
+export async function hasPdfReadingTimeColumn() {
+  const pool = await getPool()
+  const result = await pool.request().query(`
+    SELECT COL_LENGTH('dbo.TPDFS', 'TEMPO_LEITURA_SEGUNDOS') AS TEMPO_LEITURA_COL
+  `)
+
+  return Boolean(result.recordset[0]?.TEMPO_LEITURA_COL)
 }
 
 export async function listPdfs(trilhaId?: string, cpf?: string) {
@@ -39,8 +51,10 @@ export async function listPdfs(trilhaId?: string, cpf?: string) {
 
   const where = conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""
 
+  const hasReadingTime = await hasPdfReadingTimeColumn()
   const result = await request.query(`
-    SELECT ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO
+    SELECT ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO,
+      ${hasReadingTime ? "TEMPO_LEITURA_SEGUNDOS" : "CAST(NULL AS INT) AS TEMPO_LEITURA_SEGUNDOS"}
     FROM (
       SELECT
         p.ID,
@@ -49,6 +63,7 @@ export async function listPdfs(trilhaId?: string, cpf?: string) {
         p.PROCEDIMENTO_ID,
         p.NORMA_ID,
         ${hasOrderColumn ? "p.ORDEM" : "CAST(NULL AS INT) AS ORDEM"},
+        ${hasReadingTime ? "p.TEMPO_LEITURA_SEGUNDOS," : ""}
         p.VERSAO,
         ROW_NUMBER() OVER (PARTITION BY p.ID ORDER BY p.VERSAO DESC) AS RN
       FROM dbo.TPDFS p
@@ -86,10 +101,12 @@ export type PdfCreateInput = {
   procedimentoId?: string | null
   normaId?: string | null
   ordem?: number | null
+  tempoLeituraSegundos?: number | null
 }
 
 export async function createPdf(input: PdfCreateInput) {
   const hasOrderColumn = await hasPdfOrderColumn()
+  const hasReadingTime = await hasPdfReadingTimeColumn()
   const pool = await getPool()
   let ordem = hasOrderColumn ? input.ordem ?? null : null
 
@@ -112,12 +129,27 @@ export async function createPdf(input: PdfCreateInput) {
     .input("NORMA_ID", sql.UniqueIdentifier, input.normaId ?? null)
     .input("VERSAO", sql.Int, 1)
 
-  if (hasOrderColumn) {
+  const tempoLeitura = hasReadingTime ? (input.tempoLeituraSegundos ?? null) : null
+  if (hasReadingTime) {
+    request.input("TEMPO_LEITURA_SEGUNDOS", sql.Int, tempoLeitura)
+  }
+
+  if (hasOrderColumn && hasReadingTime) {
+    await request
+      .input("ORDEM", sql.Int, ordem)
+      .query(
+        "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO, TEMPO_LEITURA_SEGUNDOS) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO, @TEMPO_LEITURA_SEGUNDOS)",
+      )
+  } else if (hasOrderColumn) {
     await request
       .input("ORDEM", sql.Int, ordem)
       .query(
         "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)",
       )
+  } else if (hasReadingTime) {
+    await request.query(
+      "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO, TEMPO_LEITURA_SEGUNDOS) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO, @TEMPO_LEITURA_SEGUNDOS)",
+    )
   } else {
     await request.query(
       "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)",
@@ -133,10 +165,12 @@ export type PdfUpdateInput = {
   procedimentoId?: string | null
   normaId?: string | null
   ordem?: number | null
+  tempoLeituraSegundos?: number | null
 }
 
 export async function updatePdf(id: string, input: PdfUpdateInput) {
   const hasOrderColumn = await hasPdfOrderColumn()
+  const hasReadingTime = await hasPdfReadingTimeColumn()
   const pool = await getPool()
   const latestResult = await pool
     .request()
@@ -162,6 +196,11 @@ export async function updatePdf(id: string, input: PdfUpdateInput) {
   const ordem = hasOrderColumn
     ? input.ordem ?? latest.ORDEM ?? 0
     : null
+  const tempoLeitura = hasReadingTime
+    ? (input.tempoLeituraSegundos !== undefined
+        ? input.tempoLeituraSegundos
+        : (latest.TEMPO_LEITURA_SEGUNDOS ?? null))
+    : null
 
   const request = pool
     .request()
@@ -172,12 +211,26 @@ export async function updatePdf(id: string, input: PdfUpdateInput) {
     .input("NORMA_ID", sql.UniqueIdentifier, normaId ?? null)
     .input("VERSAO", sql.Int, nextVersion)
 
-  if (hasOrderColumn) {
+  if (hasReadingTime) {
+    request.input("TEMPO_LEITURA_SEGUNDOS", sql.Int, tempoLeitura)
+  }
+
+  if (hasOrderColumn && hasReadingTime) {
+    await request
+      .input("ORDEM", sql.Int, ordem)
+      .query(
+        "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO, TEMPO_LEITURA_SEGUNDOS) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO, @TEMPO_LEITURA_SEGUNDOS)",
+      )
+  } else if (hasOrderColumn) {
     await request
       .input("ORDEM", sql.Int, ordem)
       .query(
         "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, ORDEM, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @ORDEM, @VERSAO)",
       )
+  } else if (hasReadingTime) {
+    await request.query(
+      "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO, TEMPO_LEITURA_SEGUNDOS) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO, @TEMPO_LEITURA_SEGUNDOS)",
+    )
   } else {
     await request.query(
       "INSERT INTO dbo.TPDFS (ID, TRILHA_FK_ID, PDF_PATH, PROCEDIMENTO_ID, NORMA_ID, VERSAO) VALUES (@ID, @TRILHA_FK_ID, @PDF_PATH, @PROCEDIMENTO_ID, @NORMA_ID, @VERSAO)",

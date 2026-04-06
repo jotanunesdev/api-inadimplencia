@@ -408,6 +408,30 @@ export async function deleteSectorFolderMetadataByItemId(itemId: string) {
     .query(`DELETE FROM ${TABLE_NAME} WHERE SHAREPOINT_ITEM_ID = @SHAREPOINT_ITEM_ID`)
 }
 
+/**
+ * Atualiza o tempo estimado de leitura (em segundos) de um item do gerenciador de arquivos.
+ * Falha silenciosamente se a coluna TEMPO_LEITURA_SEGUNDOS ainda não existir no banco.
+ */
+export async function updateSectorFolderItemReadingTime(
+  itemId: string,
+  segundos: number | null,
+): Promise<void> {
+  try {
+    const pool = await getPool()
+    await pool
+      .request()
+      .input("SHAREPOINT_ITEM_ID", sql.NVarChar(255), itemId)
+      .input("TEMPO_LEITURA_SEGUNDOS", sql.Int, segundos)
+      .query(`
+        UPDATE ${TABLE_NAME}
+        SET TEMPO_LEITURA_SEGUNDOS = @TEMPO_LEITURA_SEGUNDOS
+        WHERE SHAREPOINT_ITEM_ID = @SHAREPOINT_ITEM_ID
+      `)
+  } catch {
+    // coluna pode ainda não existir — não bloqueia o upload
+  }
+}
+
 export async function updateSectorFolderMetadataPathsByPrefix(params: {
   sector: string
   oldPathPrefix: string
