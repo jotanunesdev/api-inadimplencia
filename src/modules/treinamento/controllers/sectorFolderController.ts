@@ -81,6 +81,7 @@ import { asyncHandler } from "../utils/asyncHandler"
 import { HttpError } from "../utils/httpError"
 import {
   calculateReadingTimeSeconds,
+  calculateReadingTimeSecondsFromBuffer,
   isDocumentExtensionForReadingTime,
 } from "../utils/readingTimeUtils"
 
@@ -3305,6 +3306,18 @@ export const completeUploadFileSession = asyncHandler(
       validityMonths: pending.validityMonths,
       validityYears: pending.validityYears,
     })
+
+    // Para arquivos de documento (PDF/slide), baixa do SharePoint e calcula tempo de leitura
+    if (isDocumentExtensionForReadingTime(uploadedItem.name ?? "")) {
+      const fileBuffer = await downloadSharePointFileContentByItemId({ itemId: uploadedItem.id })
+      const tempoLeituraSegundos = await calculateReadingTimeSecondsFromBuffer(
+        fileBuffer,
+        uploadedItem.name ?? "",
+      )
+      if (tempoLeituraSegundos !== null) {
+        await updateSectorFolderItemReadingTime(uploadedItem.id, tempoLeituraSegundos)
+      }
+    }
 
     const metadataByItemId = new Map<string, SectorFolderMetadata>()
     if (metadata) {
