@@ -1,4 +1,5 @@
 const model = require('../models/kanbanStatusModel');
+const atendimentosModel = require('../models/atendimentosModel');
 
 function parseNumVenda(value) {
   if (value === undefined || value === null) {
@@ -67,6 +68,7 @@ function parseDateTime(value) {
 
 async function getAll(req, res, next) {
   try {
+    await expireAllTimedOut();
     const data = await model.findAll();
     res.json({ data });
   } catch (err) {
@@ -100,6 +102,25 @@ async function upsert(req, res, next) {
       return res.status(400).json({ error: 'STATUS_DATA e obrigatorio.' });
     }
 
+    if (status === 'inProgress') {
+      await expireTimedOutByNumVenda(numVenda);
+
+      const active = await model.findActiveByNumVenda(numVenda);
+
+      if (active) {
+        const activeUser = String(active.NOME_USUARIO_FK ?? '').trim().toLowerCase();
+        const currentUser = String(nomeUsuario ?? '').trim().toLowerCase();
+
+        if (activeUser && currentUser && activeUser != currentUser){
+          return res.status(409).json({
+            error: `Atendimento ja está em andamento por ${active.NOME_USUARIO_FK}`
+          });
+        }
+
+        return res.status(200).json({ data: active });
+      }
+    }
+
     const data = await model.upsert({
       numVenda,
       proximaAcao,
@@ -108,10 +129,42 @@ async function upsert(req, res, next) {
       nomeUsuario: nomeUsuario ? String(nomeUsuario).trim() : null,
     });
 
+    if (status === 'done' || status === 'todo') {
+      const atendimentos = await atendimentosModel.findByNumVenda(numVenda);
+      const latest = atendimentos[0] || null;
+
+      if (latest?.PROTOCOLO) {
+        await atendimentosModel.updateStatusProtocolo(latest.PROTOCOLO, false);
+      }
+    }
+
+
     res.status(200).json({ data });
   } catch (err) {
     next(err);
   }
+}
+
+async function expireTimedOutByNumVenda(numVenda) {
+  const changed = await model.moveTimedOutToTodo(numVenda);
+  if (!changed) return false;
+
+  const atendimentos = await atendimentosModel.findByNumVenda(numVenda);
+  const latest = atendimentos[0] || null;
+
+  if (latest?.PROTOCOLO) {
+    await atendimentosModel.updateStatusProtocolo(latest.PROTOCOLO, false);
+  }
+
+  return true;
+}
+
+async function expireAllTimedOut() {
+  const rows = await model.findTimedOutInProgress();
+
+  for (const row of rows) {[
+    await expireTimedOutByNumVenda(row.NUM_VENDA_FK)
+  ]}
 }
 
 module.exports = {

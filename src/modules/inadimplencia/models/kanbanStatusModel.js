@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 
 const TABLE = 'dbo.KANBAN_STATUS';
+const LOCK_TIMEOUT_SECONDS = 300;
 
 async function findAll() {
   const pool = await getPool();
@@ -37,12 +38,16 @@ async function upsert({ numVenda, proximaAcao, status, statusDate, nomeUsuario }
          UPDATE SET STATUS = @status,
                     STATUS_DATA = @statusDate,
                     NOME_USUARIO_FK = @nomeUsuario,
-                    DT_ATUALIZACAO = GETDATE()
-       WHEN NOT MATCHED THEN
-         INSERT (NUM_VENDA_FK, PROXIMA_ACAO, STATUS, STATUS_DATA, NOME_USUARIO_FK)
-         VALUES (@numVenda, @proximaAcao, @status, @statusDate, @nomeUsuario);
-
-       SELECT NUM_VENDA_FK,
+                    DT_ATUALIZACAO = CASE
+                      WHEN target.STATUS = 'inProgress' AND @status = 'inProgress'
+                        THEN target.DT_ATUALIZACAO
+                      ELSE GETDATE()
+                    END
+        WHEN NOT MATCHED THEN
+          INSERT (NUM_VENDA_FK, PROXIMA_ACAO, STATUS, STATUS_DATA, NOME_USUARIO_FK, DT_ATUALIZACAO)
+          VALUES (@numVenda, @proximaAcao, @status, @statusDate, @nomeUsuario, GETDATE());
+       
+        SELECT NUM_VENDA_FK,
               PROXIMA_ACAO,
               STATUS,
               STATUS_DATA,
@@ -55,7 +60,65 @@ async function upsert({ numVenda, proximaAcao, status, statusDate, nomeUsuario }
   return result.recordset[0] || null;
 }
 
+async function findActiveByNumVenda(numVenda) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVenda', sql.Int, numVenda)
+    .query(
+      `SELECT TOP 1
+        NUM_VENDA_FK,
+        PROXIMA_ACAO,
+        STATUS,
+        STATUS_DATA,
+        NOME_USUARIO_FK,
+        DT_ATUALIZACAO
+      FROM ${TABLE}
+      WHERE NUM_VENDA_FK = @numVenda
+        AND STATUS = 'inProgress'
+      ORDER BY DT_ATUALIZACAO DESC, PROXIMA_ACAO DESC`
+    );
+
+    return result.recordset[0] || null;
+}
+
+async function findTimedOutInProgress() {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .query(
+      `SELECT DISTINCT NUM_VENDA_FK
+      FROM ${TABLE}
+      WHERE STATUS = 'inProgress'
+        AND DT_ATUALIZACAO IS NOT NULL
+        AND DATEDIFF(SECOND, DT_ATUALIZACAO, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}`
+    );
+
+    return result.recordset;
+}
+
+async function moveTimedOutToTodo(numVenda) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVenda', sql.Int, numVenda)
+    .query(
+      `UPDATE ${TABLE}
+      SET STATUS = 'todo',
+        DT_ATUALIZACAO = GETDATE()
+      WHERE NUM_VENDA_FK = @numVenda
+        AND STATUS = 'inProgress'
+        AND DT_ATUALIZACAO IS NOT NULL
+        AND DATEDIFF(SECOND, DT_ATUALIZACAO, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}`
+    );
+
+    return result.rowsAffected[0] > 0;
+}
+
 module.exports = {
   findAll,
   upsert,
+  findActiveByNumVenda,
+  findTimedOutInProgress,
+  moveTimedOutToTodo,
 };

@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 
 const TABLE = 'dbo.ATENDIMENTOS';
+const OPEN_TIMEOUT_SECONDS = 300;
 
 function pad2(value) {
   return String(value).padStart(2, '0');
@@ -87,6 +88,32 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
 
   try {
+    const lockRequest = new sql.Request(transaction);
+    const activeResult = await lockRequest
+      .input('numVendaFk', sql.Int, numVendaFk)
+      .query(`
+        UPDATE ${TABLE}
+        SET STATUS_PROTOCOLO = 0
+        WHERE NUM_VENDA_FK = @numVendaFk
+          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
+          AND CRIADO_EM IS NOT NULL
+          AND DATEDIFF(SECOND, CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS};
+          
+        SELECT TOP 1 * 
+          FROM ${TABLE} WITH (UPDLOCK, HOLDLOCK)
+        WHERE NUM_VENDA_FK = @numVendaFk
+          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
+        ORDER BY CRIADO_EM DESC;`
+      );
+
+    const activeAttendance = attachSnapshot(activeResult.recordset[0] || null);
+    if (activeAttendance) {
+      const error = new Error('ATENDIMENTO_ATIVO');
+      error.code = 'ATENDIMENTO_ATIVO';
+      error.activeAttendance = activeAttendance;
+      throw error;
+    }
+
     const protocolo = await generateProtocol(transaction);
     const serialized = serializeVenda(vendaSnapshot);
 
@@ -99,9 +126,9 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
       .input('empreendimento', sql.NVarChar(255), vendaSnapshot?.EMPREENDIMENTO ?? null)
       .input('dadosVenda', sql.NVarChar(sql.MAX), serialized)
       .query(
-        `INSERT INTO ${TABLE} (PROTOCOLO, NUM_VENDA_FK, CPF_CNPJ, CLIENTE, EMPREENDIMENTO, DADOS_VENDA)
+        `INSERT INTO ${TABLE} (PROTOCOLO, NUM_VENDA_FK, CPF_CNPJ, CLIENTE, EMPREENDIMENTO, DADOS_VENDA, STATUS_PROTOCOLO)
          OUTPUT inserted.*
-         VALUES (@protocolo, @numVendaFk, @cpfCnpj, @cliente, @empreendimento, @dadosVenda)`
+         VALUES (@protocolo, @numVendaFk, @cpfCnpj, @cliente, @empreendimento, @dadosVenda, 1)`
       );
 
     await transaction.commit();
@@ -179,10 +206,59 @@ async function findbyNomeCliente(nomeCliente) {
     return result.recordset;
 }
 
+async function updateStatusProtocolo(protocolo, status) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('protocolo', sql.VarChar(20), protocolo)
+    .input('statusProtocolo', sql.Bit, status)
+    .query(
+      `UPDATE ${TABLE}
+        SET STATUS_PROTOCOLO = @statusProtocolo
+        WHERE PROTOCOLO = @protocolo`
+    )
+} 
+
+async function findActiveByNumVenda(numVendaFk) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVendaFk', sql.Int, numVendaFk)
+    .query(
+      `SELECT TOP 1 *
+      FROM ${TABLE}
+      WHERE NUM_VENDA_FK = @numVendaFk
+        AND ISNULL(STATUS_PROTOCOLO, 0) = 1
+      ORDER BY CRIADO_EM DESC`
+    );
+
+  return attachSnapshot(result.recordset[0] || null);
+}
+
+async function expireTimedOutByNumVenda(numVendaFk) {
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVendaFk', sql.Int, numVendaFk)
+    .query(
+      `UPDATE ${TABLE}
+        SET STATUS_PROTOCOLO = 0
+        WHERE NUM_VENDA_FK = @numVendaFk
+          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
+          AND CRIADO_EM IS NOT NULL
+          AND DATEDIFF(SECOND, CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}`
+    );
+
+  return result.rowsAffected[0] > 0;
+}
+
 module.exports = {
   createFromVenda,
   findByProtocolo,
   findByCpf,
   findByNumVenda,
-  findbyNomeCliente
+  findbyNomeCliente,
+  updateStatusProtocolo,
+  findActiveByNumVenda,
+  expireTimedOutByNumVenda,
 };
