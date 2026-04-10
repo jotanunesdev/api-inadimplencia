@@ -1,6 +1,7 @@
 const { getPool, sql } = require('../config/db');
 
 const TABLE = 'dbo.ATENDIMENTOS';
+const TABLE_OC = 'dbo.OCORRENCIAS';
 const OPEN_TIMEOUT_SECONDS = 300;
 
 function pad2(value) {
@@ -84,29 +85,45 @@ function attachSnapshot(record) {
 
 async function createFromVenda(numVendaFk, vendaSnapshot) {
   const pool = await getPool();
+  console.log('>>> createFromVenda chamado com:', numVendaFk);
   const transaction = new sql.Transaction(pool);
   await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
 
   try {
+    const expireRequest = new sql.Request(transaction);
+    await expireRequest
+      .input('numVendaFk', sql.Int, numVendaFk)
+      .query(
+        `UPDATE a
+         SET a.STATUS_PROTOCOLO = 0
+         FROM ${TABLE} a
+         WHERE a.NUM_VENDA_FK = @numVendaFk
+           AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
+           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}
+           AND NOT EXISTS (
+             SELECT 1 FROM ${TABLE_OC} oc
+             WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
+           )`
+      );
+
     const lockRequest = new sql.Request(transaction);
     const activeResult = await lockRequest
       .input('numVendaFk', sql.Int, numVendaFk)
-      .query(`
-        UPDATE ${TABLE}
-        SET STATUS_PROTOCOLO = 0
-        WHERE NUM_VENDA_FK = @numVendaFk
-          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
-          AND CRIADO_EM IS NOT NULL
-          AND DATEDIFF(SECOND, CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS};
-          
-        SELECT TOP 1 * 
-          FROM ${TABLE} WITH (UPDLOCK, HOLDLOCK)
-        WHERE NUM_VENDA_FK = @numVendaFk
-          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
-        ORDER BY CRIADO_EM DESC;`
+      .query(
+        `SELECT TOP 1 *
+         FROM ${TABLE} a WITH (UPDLOCK, HOLDLOCK)
+         WHERE a.NUM_VENDA_FK = @numVendaFk
+           AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
+           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${OPEN_TIMEOUT_SECONDS}
+           AND NOT EXISTS (
+             SELECT 1 FROM ${TABLE_OC} oc
+             WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
+           )
+         ORDER BY a.CRIADO_EM DESC`
       );
 
     const activeAttendance = attachSnapshot(activeResult.recordset[0] || null);
+
     if (activeAttendance) {
       const error = new Error('ATENDIMENTO_ATIVO');
       error.code = 'ATENDIMENTO_ATIVO';
@@ -117,8 +134,8 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
     const protocolo = await generateProtocol(transaction);
     const serialized = serializeVenda(vendaSnapshot);
 
-    const request = new sql.Request(transaction);
-    const result = await request
+    const insertRequest = new sql.Request(transaction);
+    const result = await insertRequest
       .input('protocolo', sql.VarChar(20), protocolo)
       .input('numVendaFk', sql.Int, numVendaFk)
       .input('cpfCnpj', sql.VarChar(40), vendaSnapshot?.CPF_CNPJ ?? null)
@@ -132,9 +149,7 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
       );
 
     await transaction.commit();
-
-    const record = result.recordset[0] || null;
-    return attachSnapshot(record);
+    return attachSnapshot(result.recordset[0] || null);
   } catch (err) {
     await transaction.rollback();
     throw err;
@@ -181,6 +196,7 @@ async function findByCpf(cpfInput) {
 
 async function findByNumVenda(numVendaFk) {
   const pool = await getPool();
+  console.log('>>> findByNumVenda chamado com:', numVendaFk);
   const result = await pool
     .request()
     .input('numVendaFk', sql.Int, numVendaFk)
@@ -216,20 +232,27 @@ async function updateStatusProtocolo(protocolo, status) {
       `UPDATE ${TABLE}
         SET STATUS_PROTOCOLO = @statusProtocolo
         WHERE PROTOCOLO = @protocolo`
-    )
+    );
+  return result.rowsAffected[0] > 0;
 } 
 
 async function findActiveByNumVenda(numVendaFk) {
   const pool = await getPool();
+  console.log('>>> findActiveByNumVenda chamado com:', numVendaFk);
   const result = await pool
     .request()
     .input('numVendaFk', sql.Int, numVendaFk)
     .query(
       `SELECT TOP 1 *
-      FROM ${TABLE}
-      WHERE NUM_VENDA_FK = @numVendaFk
-        AND ISNULL(STATUS_PROTOCOLO, 0) = 1
-      ORDER BY CRIADO_EM DESC`
+      FROM ${TABLE} a
+      WHERE a.NUM_VENDA_FK = @numVendaFk
+        AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
+        AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${OPEN_TIMEOUT_SECONDS}
+        AND NOT EXISTS (
+          SELECT 1 FROM ${TABLE_OC} oc
+          WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
+        )
+      ORDER BY a.CRIADO_EM DESC`
     );
 
   return attachSnapshot(result.recordset[0] || null);
@@ -241,12 +264,16 @@ async function expireTimedOutByNumVenda(numVendaFk) {
     .request()
     .input('numVendaFk', sql.Int, numVendaFk)
     .query(
-      `UPDATE ${TABLE}
-        SET STATUS_PROTOCOLO = 0
-        WHERE NUM_VENDA_FK = @numVendaFk
-          AND ISNULL(STATUS_PROTOCOLO, 0) = 1
-          AND CRIADO_EM IS NOT NULL
-          AND DATEDIFF(SECOND, CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}`
+      `UPDATE a
+        SET a.STATUS_PROTOCOLO = 0
+        FROM ${TABLE} a
+        WHERE a.NUM_VENDA_FK = @numVendaFk
+          AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
+          AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}
+          AND NOT EXISTS (
+            SELECT 1 FROM ${TABLE_OC} oc 
+            WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
+          )`
     );
 
   return result.rowsAffected[0] > 0;

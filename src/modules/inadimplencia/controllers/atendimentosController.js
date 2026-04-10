@@ -24,28 +24,6 @@ async function create(req, res, next) {
       return res.status(400).json({ error: 'NUM_VENDA_FK e obrigatorio.' });
     }
     
-    const active = await kanbanStatusModel.findActiveByNumVenda(numVenda);
-
-    if (active) {
-      const expired = await kanbanStatusModel.moveTimedOutToTodo(numVenda);
-
-      if (expired) {
-        const atendimentosAnteriores = await atendimentosModel.findByNumVenda(numVenda);
-        const latest = atendimentosAnteriores[0] || null;
-
-        if (latest?.PROTOCOLO) {
-          await atendimentosModel.updateStatusProtocolo(latest.PROTOCOLO, false);
-        }
-      } else {
-        return res.status(409).json({
-          error: active.NOME_USUARIO_FK
-            ? `Já existe atendimento em andamento por ${active.NOME_USUARIO_FK}.`
-            : 'Já existe atendimento em andamento para esta venda.'
-        });
-      }
-    }
-
-
     const vendaRecords = await inadimplenciaModel.findByNumVenda(String(numVenda));
     if (!vendaRecords || vendaRecords.length === 0) {
       return res.status(404).json({ error: 'Venda nao encontrada.' });
@@ -65,23 +43,19 @@ async function create(req, res, next) {
     try {
       atendimento = await atendimentosModel.createFromVenda(numVenda, vendaSnapshotWithResponsavel);
     } catch (err) {
-      const isActiveAttendanceError = 
-        err?.code === 'ATENDIMENTO_ATIVO';
-
-      if (isActiveAttendanceError) {
+      if (err?.code === 'ATENDIMENTO_ATIVO') {
         const activeKanban = await kanbanStatusModel.findActiveByNumVenda(numVenda);
         const nomeResponsavel = activeKanban?.NOME_USUARIO_FK ??
           err?.activeAttendance?.RESPONSAVEL ??
           err?.activeAttendance?.NOME_USUARIO_FK ??
           null;
 
-          return res.status(409).json({
-            error: nomeResponsavel
-              ? `Já existe atendimento em andamento por ${nomeResponsavel}.`
-              : 'Já existe atendimento em andamento para esta venda.'
-          });
+        return res.status(409).json({
+          error: nomeResponsavel
+            ? `Já existe atendimento em andamento por ${nomeResponsavel}.`
+            : 'Já existe atendimento em andamento para esta venda.'
+        });
       }
-
       throw err;
     }
     

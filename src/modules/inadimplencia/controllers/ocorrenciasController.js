@@ -67,6 +67,18 @@ function formatarResposta(data) {
       novoItem.HORA_OCORRENCIA = `${horas}:${minutos}:${segundos}`;
     }
 
+    if(item.PROXIMA_ACAO instanceof Date) {
+      const d = item.PROXIMA_ACAO;
+      const ano = d.getUTCFullYear();
+      const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dia = String(d.getUTCDate()).padStart(2, '0');
+      const hora = String(d.getUTCHours()).padStart(2, '0');
+      const min = String(d.getUTCMinutes()).padStart(2, '0');
+      const seg = String(d.getUTCSeconds()).padStart(2, '0');
+
+      novoItem.PROXIMA_ACAO = `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+    }
+
     return novoItem;
   };
   return Array.isArray(data) ? data.map(formatarItem) : formatarItem(data);

@@ -3,6 +3,20 @@ const { getPool, sql } = require('../config/db');
 const TABLE = 'dbo.KANBAN_STATUS';
 const LOCK_TIMEOUT_SECONDS = 300;
 
+function normalizeProximaAcao(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value;
+  }
+
+  const text = String(value).trim();
+  return text ? text : null;
+}
+
+
 async function findAll() {
   const pool = await getPool();
   const result = await pool.request().query(
@@ -20,12 +34,13 @@ async function findAll() {
 
 async function upsert({ numVenda, proximaAcao, status, statusDate, nomeUsuario }) {
   const pool = await getPool();
+
   const result = await pool
     .request()
     .input('numVenda', sql.Int, numVenda)
-    .input('proximaAcao', sql.DateTime2, proximaAcao)
+    .input('proximaAcao', sql.VarChar(50), proximaAcao)
     .input('status', sql.VarChar(20), status)
-    .input('statusDate', sql.Date, statusDate)
+    .input('statusDate', sql.VarChar(50), statusDate)
     .input('nomeUsuario', sql.VarChar(255), nomeUsuario || null)
     .query(
       `MERGE ${TABLE} AS target
