@@ -11,6 +11,29 @@ import {
   type UserRecord,
 } from "../models/userModel"
 import { mapReadViewToUser } from "../utils/userMapping"
+import {
+  grantSharePointFolderViewPermission,
+  isSharePointEnabled,
+} from "../services/sharePointService"
+
+function extractEmailFromPFunc(pfunc: Record<string, string> | null): string | null {
+  if (!pfunc) return null
+  const candidates = ["EMAIL", "ENDERECOELETR", "EMAIL1", "EMAILCORPORATIVO"]
+  for (const key of candidates) {
+    const value = pfunc[key]?.trim()
+    if (value && value.includes("@")) {
+      return value.toLowerCase()
+    }
+  }
+  return null
+}
+
+function tryGrantSharePointPermission(email: string | null) {
+  if (!email || !isSharePointEnabled()) return
+  grantSharePointFolderViewPermission({ userEmail: email }).catch(() => {
+    // nao bloqueia o login se a concessao de permissao falhar
+  })
+}
 
 function sanitizeUser(user?: UserRecord | null) {
   if (!user) return null
@@ -65,6 +88,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     throw new HttpError(401, "Senha invalida")
   }
 
+  tryGrantSharePointPermission(extractEmailFromPFunc(pfunc as Record<string, string>))
+
   res.json({ user: safeUser })
 })
 
@@ -100,6 +125,8 @@ export const firstAccess = asyncHandler(async (req: Request, res: Response) => {
   const passwordHash = await hashPassword(password)
   const mapped = mapReadViewToUser({ ...pfunc, CPF: cpfDigits })
   const user = await upsertUser({ ...mapped, hashSenha: passwordHash })
+
+  tryGrantSharePointPermission(extractEmailFromPFunc(pfunc as Record<string, string>))
 
   res.status(201).json({ user: sanitizeUser(user) })
 })

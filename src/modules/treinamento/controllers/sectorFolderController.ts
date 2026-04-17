@@ -113,6 +113,7 @@ type PendingSectorFolderUpload = {
   fullPath: string
   createdAt: number
   tempoLeituraSegundos: number | null
+  expectedFileSize: number | null
 }
 
 type BreadcrumbItem = {
@@ -3264,6 +3265,12 @@ export const initUploadFileSession = asyncHandler(
         ? Number(rawTempoLeitura)
         : null
 
+    const rawFileSize = body.fileSize
+    const expectedFileSize =
+      rawFileSize !== undefined && rawFileSize !== null && Number.isFinite(Number(rawFileSize)) && Number(rawFileSize) > 0
+        ? Number(rawFileSize)
+        : null
+
     const session = await createSharePointUploadSession({
       relativeFolderPath: parentContext.currentFolderPath,
       fileName,
@@ -3279,6 +3286,7 @@ export const initUploadFileSession = asyncHandler(
       fullPath: session.fullPath,
       createdAt: Date.now(),
       tempoLeituraSegundos,
+      expectedFileSize,
     })
 
     res.status(201).json({
@@ -3313,6 +3321,19 @@ export const completeUploadFileSession = asyncHandler(
     }
 
     const uploadedFile = await getSharePointFileByPath(pending.fullPath)
+
+    if (
+      pending.expectedFileSize !== null &&
+      uploadedFile.size !== undefined &&
+      uploadedFile.size !== pending.expectedFileSize
+    ) {
+      pendingSectorFolderUploads.delete(req.params.sessionId)
+      throw new HttpError(
+        422,
+        `Arquivo no SharePoint (${uploadedFile.size} bytes) difere do tamanho esperado (${pending.expectedFileSize} bytes). O upload pode estar incompleto.`,
+      )
+    }
+
     const uploadedItem = await getSharePointItemById(uploadedFile.id)
     const now = new Date()
     const metadata = await upsertSectorMetadataSafely({

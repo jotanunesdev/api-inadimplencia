@@ -40,6 +40,7 @@ type PendingSharePointUpload = {
   fullPath: string
   previousPath: string | null
   duracaoSegundos: number | null
+  expectedFileSize: number | null
   createdAt: number
 }
 
@@ -453,7 +454,7 @@ export const initSharePointUploadSession = asyncHandler(
 
     cleanupPendingSharePointUploads()
 
-    const { mode, id, canalId, fileName, duracaoSegundos, tipoConteudo, procedimentoId, normaId } = req.body as {
+    const { mode, id, canalId, fileName, duracaoSegundos, tipoConteudo, procedimentoId, normaId, fileSize } = req.body as {
       mode?: "create" | "update"
       id?: string
       canalId?: string
@@ -462,7 +463,11 @@ export const initSharePointUploadSession = asyncHandler(
       tipoConteudo?: "video" | "pdf"
       procedimentoId?: string
       normaId?: string
+      fileSize?: number
     }
+    const parsedFileSize = fileSize !== undefined && Number.isFinite(Number(fileSize)) && Number(fileSize) > 0
+      ? Number(fileSize)
+      : null
 
     if (!fileName?.trim()) {
       throw new HttpError(400, "fileName e obrigatorio")
@@ -498,6 +503,7 @@ export const initSharePointUploadSession = asyncHandler(
         fullPath: session.fullPath,
         previousPath: null,
         duracaoSegundos: duration ?? null,
+        expectedFileSize: parsedFileSize,
         createdAt: Date.now(),
       })
 
@@ -542,6 +548,7 @@ export const initSharePointUploadSession = asyncHandler(
         fullPath: session.fullPath,
         previousPath: latestBeforeUpdate.PATH_VIDEO ?? null,
         duracaoSegundos: duration ?? null,
+        expectedFileSize: parsedFileSize,
         createdAt: Date.now(),
       })
 
@@ -588,6 +595,18 @@ export const completeSharePointUploadSession = asyncHandler(
       throw new HttpError(
         500,
         "Upload concluido sem webUrl do arquivo no SharePoint",
+      )
+    }
+
+    if (
+      pending.expectedFileSize !== null &&
+      uploadedFile.size !== undefined &&
+      uploadedFile.size !== pending.expectedFileSize
+    ) {
+      pendingSharePointUploads.delete(req.params.sessionId)
+      throw new HttpError(
+        422,
+        `Arquivo no SharePoint (${uploadedFile.size} bytes) difere do tamanho esperado (${pending.expectedFileSize} bytes). O upload pode estar incompleto.`,
       )
     }
 

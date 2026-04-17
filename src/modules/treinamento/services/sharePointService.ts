@@ -227,6 +227,53 @@ async function graphBinaryRequest(
   return Buffer.from(arrayBuffer)
 }
 
+const CHUNK_UPLOAD_MAX_RETRIES = 3
+const CHUNK_UPLOAD_RETRY_BASE_MS = 1000
+const CHUNK_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000 // 5 min por chunk
+
+async function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms))
+}
+
+async function uploadChunkToUploadUrlOnce(params: {
+  uploadUrl: string
+  start: number
+  end: number
+  total: number
+  buffer: Buffer
+}) {
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), CHUNK_UPLOAD_TIMEOUT_MS)
+
+  try {
+    const response = await fetch(params.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "Content-Length": String(params.buffer.length),
+        "Content-Range": `bytes ${params.start}-${params.end}/${params.total}`,
+        "Content-Type": "application/octet-stream",
+      },
+      body: params.buffer as unknown as BodyInit,
+      signal: controller.signal,
+    })
+
+    if (![200, 201, 202].includes(response.status)) {
+      const payload = await response.text()
+      throw new Error(
+        `Erro no upload em partes SharePoint (${response.status}): ${payload}`,
+      )
+    }
+
+    if (response.status === 202) {
+      return null
+    }
+
+    return (await response.json()) as SharePointDriveItem
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 async function uploadChunkToUploadUrl(params: {
   uploadUrl: string
   start: number
@@ -234,28 +281,32 @@ async function uploadChunkToUploadUrl(params: {
   total: number
   buffer: Buffer
 }) {
-  const response = await fetch(params.uploadUrl, {
-    method: "PUT",
-    headers: {
-      "Content-Length": String(params.buffer.length),
-      "Content-Range": `bytes ${params.start}-${params.end}/${params.total}`,
-      "Content-Type": "application/octet-stream",
-    },
-    body: params.buffer as unknown as Uint8Array,
-  })
+  let lastError: unknown
+  for (let attempt = 0; attempt <= CHUNK_UPLOAD_MAX_RETRIES; attempt++) {
+    try {
+      return await uploadChunkToUploadUrlOnce(params)
+    } catch (error) {
+      lastError = error
+      const message = error instanceof Error ? error.message : String(error)
+      const isRetryable =
+        message.includes("fetch failed") ||
+        message.includes("network") ||
+        message.includes("abort") ||
+        message.includes("timeout") ||
+        message.includes("(500)") ||
+        message.includes("(502)") ||
+        message.includes("(503)") ||
+        message.includes("(504)")
 
-  if (![200, 201, 202].includes(response.status)) {
-    const payload = await response.text()
-    throw new Error(
-      `Erro no upload em partes SharePoint (${response.status}): ${payload}`,
-    )
+      if (!isRetryable || attempt === CHUNK_UPLOAD_MAX_RETRIES) {
+        break
+      }
+
+      const delay = CHUNK_UPLOAD_RETRY_BASE_MS * Math.pow(2, attempt)
+      await sleep(delay)
+    }
   }
-
-  if (response.status === 202) {
-    return null
-  }
-
-  return (await response.json()) as SharePointDriveItem
+  throw lastError
 }
 
 async function getDriveContext() {
@@ -861,6 +912,48 @@ export async function deleteSharePointItemById(itemId: string) {
     }
     throw error
   }
+}
+
+export async function grantSharePointFolderViewPermission(params: {
+  userEmail: string
+}) {
+  const config = getSharePointConfig()
+  if (!config) {
+    return
+  }
+
+  const trimmedEmail = params.userEmail.trim().toLowerCase()
+  if (!trimmedEmail || !trimmedEmail.includes("@")) {
+    return
+  }
+
+  const { driveId } = await getDriveContext()
+  const rootFolderPath = config.rootFolder
+
+  const folder = await graphRequest<SharePointDriveItem>(
+    `/drives/${driveId}/root:/${encodeDrivePath(rootFolderPath)}?$select=id`,
+    {},
+    [200],
+  )
+
+  if (!folder?.id) {
+    return
+  }
+
+  await graphRequest(
+    `/drives/${driveId}/items/${encodeURIComponent(folder.id)}/invite`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        requireSignIn: true,
+        sendInvitation: false,
+        roles: ["read"],
+        recipients: [{ email: trimmedEmail }],
+        retainInheritedPermissions: false,
+      }),
+    },
+    [200, 201],
+  )
 }
 
 export async function downloadSharePointFileByUrl(fileUrl: string, format?: string) {
