@@ -10,6 +10,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const kanbanStatusRoutes = require('./routes/kanbanStatusRoutes');
 const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
+const notificationsRoutes = require('./routes/notificationsRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const swaggerSpec = require('./swagger');
 const { env } = require('./config/env');
@@ -49,6 +50,7 @@ app.use('/dashboard', dashboardRoutes);
 app.use('/kanban-status', kanbanStatusRoutes);
 app.use('/atendimentos', atendimentosRoutes);
 app.use('/relatorios', relatoriosRoutes);
+app.use('/notifications', notificationsRoutes);
 
 app.use(errorHandler);
 

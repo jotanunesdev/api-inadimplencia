@@ -26,6 +26,62 @@ const genericRequestBody = {
   },
 };
 
+const responsavelRequestSchema = {
+  type: 'object',
+  required: ['nomeUsuario', 'adminUserCode'],
+  properties: {
+    nomeUsuario: {
+      type: 'string',
+      description: 'Nome do operador que recebera a venda.',
+      example: 'joao.silva',
+    },
+    adminUserCode: {
+      type: 'string',
+      description: 'USER_CODE do usuario admin logado que esta realizando a atribuicao.',
+      example: 'wffluig',
+    },
+  },
+};
+
+const responsavelCreateRequestBody = {
+  required: true,
+  content: {
+    'application/json': {
+      schema: {
+        type: 'object',
+        required: ['numVenda', 'nomeUsuario', 'adminUserCode'],
+        properties: {
+          numVenda: {
+            type: 'integer',
+            description: 'Numero da venda que sera atribuida.',
+            example: 12345,
+          },
+          ...responsavelRequestSchema.properties,
+        },
+      },
+      example: {
+        numVenda: 12345,
+        nomeUsuario: 'joao.silva',
+        adminUserCode: 'wffluig',
+      },
+    },
+  },
+};
+
+const responsavelUpdateRequestBody = {
+  required: true,
+  content: {
+    'application/json': {
+      schema: responsavelRequestSchema,
+      example: {
+        nomeUsuario: 'maria.souza',
+        adminUserCode: 'wffluig',
+      },
+    },
+  },
+};
+
+
 const pathParam = (name, description, example) => ({
   name,
   in: 'path',
@@ -229,7 +285,7 @@ const swaggerSpec = {
       post: {
         tags: ['Responsaveis'],
         summary: 'Cria responsável',
-        requestBody: genericRequestBody,
+        requestBody: responsavelCreateRequestBody,
         responses: jsonResponse,
       },
     },
@@ -244,7 +300,7 @@ const swaggerSpec = {
         tags: ['Responsaveis'],
         summary: 'Atualiza responsável por número da venda',
         parameters: [pathParam('numVenda', 'Número da venda', '12345')],
-        requestBody: genericRequestBody,
+        requestBody: responsavelUpdateRequestBody,
         responses: jsonResponse,
       },
       delete: {

@@ -2,7 +2,7 @@ const { getPool, sql } = require('../config/db');
 
 const TABLE = 'dbo.ATENDIMENTOS';
 const TABLE_OC = 'dbo.OCORRENCIAS';
-const OPEN_TIMEOUT_SECONDS = 300;
+const LOCK_TIMEOUT_SECONDS = 300;
 
 function pad2(value) {
   return String(value).padStart(2, '0');
@@ -99,7 +99,7 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
          FROM ${TABLE} a
          WHERE a.NUM_VENDA_FK = @numVendaFk
            AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
-           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}
+           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}
            AND NOT EXISTS (
              SELECT 1 FROM ${TABLE_OC} oc
              WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
@@ -114,7 +114,7 @@ async function createFromVenda(numVendaFk, vendaSnapshot) {
          FROM ${TABLE} a WITH (UPDLOCK, HOLDLOCK)
          WHERE a.NUM_VENDA_FK = @numVendaFk
            AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
-           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${OPEN_TIMEOUT_SECONDS}
+           AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${LOCK_TIMEOUT_SECONDS}
            AND NOT EXISTS (
              SELECT 1 FROM ${TABLE_OC} oc
              WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
@@ -238,7 +238,6 @@ async function updateStatusProtocolo(protocolo, status) {
 
 async function findActiveByNumVenda(numVendaFk) {
   const pool = await getPool();
-  console.log('>>> findActiveByNumVenda chamado com:', numVendaFk);
   const result = await pool
     .request()
     .input('numVendaFk', sql.Int, numVendaFk)
@@ -247,7 +246,7 @@ async function findActiveByNumVenda(numVendaFk) {
       FROM ${TABLE} a
       WHERE a.NUM_VENDA_FK = @numVendaFk
         AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
-        AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${OPEN_TIMEOUT_SECONDS}
+        AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) < ${LOCK_TIMEOUT_SECONDS}
         AND NOT EXISTS (
           SELECT 1 FROM ${TABLE_OC} oc
           WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
@@ -269,7 +268,7 @@ async function expireTimedOutByNumVenda(numVendaFk) {
         FROM ${TABLE} a
         WHERE a.NUM_VENDA_FK = @numVendaFk
           AND ISNULL(a.STATUS_PROTOCOLO, 0) = 1
-          AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${OPEN_TIMEOUT_SECONDS}
+          AND DATEDIFF(SECOND, a.CRIADO_EM, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}
           AND NOT EXISTS (
             SELECT 1 FROM ${TABLE_OC} oc 
             WHERE LTRIM(RTRIM(oc.PROTOCOLO)) = LTRIM(RTRIM(a.PROTOCOLO))
