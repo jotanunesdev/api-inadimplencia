@@ -9,6 +9,7 @@ const dashboardRoutes = require('./routes/dashboardRoutes');
 const kanbanStatusRoutes = require('./routes/kanbanStatusRoutes');
 const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
+const fiadoresRoutes = require('./routes/fiadoresRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const openapi = require('./swagger');
 const { env } = require('./config/env');
@@ -43,6 +44,7 @@ function createInadimplenciaModule() {
   router.use('/kanban-status', kanbanStatusRoutes);
   router.use('/atendimentos', atendimentosRoutes);
   router.use('/relatorios', relatoriosRoutes);
+  router.use('/fiadores', fiadoresRoutes);
 
   router.use((_, res) => {
     res.status(404).json({ error: 'Endpoint nao encontrado' });

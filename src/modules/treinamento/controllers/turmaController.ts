@@ -189,9 +189,11 @@ export const saveCollectiveTurmaEvidencias = asyncHandler(async (req: Request, r
   })
 
   const movedPaths: string[] = []
+  // Capturar estado inicial do SharePoint para decisão de cleanup determinística
+  const useSharePoint = isSharePointEnabled()
+
   try {
     const evidencias = []
-    const useSharePoint = isSharePointEnabled()
 
     if (!useSharePoint) {
       const relativeFolder = `turmas/${turmaId}/evidencias`
@@ -244,9 +246,19 @@ export const saveCollectiveTurmaEvidencias = asyncHandler(async (req: Request, r
       })),
     })
   } catch (error) {
-    if (!isSharePointEnabled()) {
+    // Usar estado capturado para decisão de cleanup (não estado atual)
+    if (!useSharePoint) {
       await Promise.allSettled(
-        movedPaths.map((relativePath) => fs.unlink(path.normalize(toFsPath(relativePath)))),
+        movedPaths.map((relativePath) =>
+          fs.unlink(path.normalize(toFsPath(relativePath))).catch((err) => {
+            console.warn({
+              level: "WARN",
+              event: "CLEANUP_FILE_FAILED",
+              path: relativePath,
+              error: err.message,
+            })
+          }),
+        ),
       )
     }
 
@@ -263,8 +275,18 @@ export const saveCollectiveTurmaEvidencias = asyncHandler(async (req: Request, r
     if (error instanceof HttpError) throw error
     throw error
   } finally {
+    // Cleanup sempre executado com log de falha individual
     await Promise.allSettled(
-      files.map((file) => fs.unlink(file.path).catch(() => undefined)),
+      files.map((file) =>
+        fs.unlink(file.path).catch((err) => {
+          console.warn({
+            level: "WARN",
+            event: "CLEANUP_TEMP_FILE_FAILED",
+            path: file.path,
+            error: err.message,
+          })
+        }),
+      ),
     )
   }
 })

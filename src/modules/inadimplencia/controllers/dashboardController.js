@@ -1,4 +1,5 @@
 const model = require('../models/dashboardModel');
+const { parseDateRange } = require('../helpers/dateRange');
 
 function parseLimit(value) {
   if (value === undefined || value === null) {
@@ -52,7 +53,8 @@ async function getKpis(req, res, next) {
 
 async function getVendasPorResponsavel(req, res, next) {
   try {
-    const data = await model.vendasPorResponsavel();
+    const range = parseDateRange(req.query);
+    const data = await model.vendasPorResponsavel(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -124,7 +126,8 @@ async function getUsuariosAtivos(req, res, next) {
 
 async function getOcorrenciasPorUsuario(req, res, next) {
   try {
-    const data = await model.ocorrenciasPorUsuario();
+    const range = parseDateRange(req.query);
+    const data = await model.ocorrenciasPorUsuario(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -133,8 +136,9 @@ async function getOcorrenciasPorUsuario(req, res, next) {
 
 async function getOcorrenciasPorVenda(req, res, next) {
   try {
+    const range = parseDateRange(req.query);
     const limit = parseLimit(req.query.limit);
-    const data = await model.ocorrenciasPorVenda(limit);
+    const data = await model.ocorrenciasPorVenda(limit, range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -143,7 +147,8 @@ async function getOcorrenciasPorVenda(req, res, next) {
 
 async function getOcorrenciasPorDia(req, res, next) {
   try {
-    const data = await model.ocorrenciasPorDia();
+    const range = parseDateRange(req.query);
+    const data = await model.ocorrenciasPorDia(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -152,7 +157,8 @@ async function getOcorrenciasPorDia(req, res, next) {
 
 async function getOcorrenciasPorHora(req, res, next) {
   try {
-    const data = await model.ocorrenciasPorHora();
+    const range = parseDateRange(req.query);
+    const data = await model.ocorrenciasPorHora(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -161,7 +167,8 @@ async function getOcorrenciasPorHora(req, res, next) {
 
 async function getOcorrenciasPorDiaHora(req, res, next) {
   try {
-    const data = await model.ocorrenciasPorDiaHora();
+    const range = parseDateRange(req.query);
+    const data = await model.ocorrenciasPorDiaHora(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -170,7 +177,8 @@ async function getOcorrenciasPorDiaHora(req, res, next) {
 
 async function getProximasAcoesPorDia(req, res, next) {
   try {
-    const data = await model.proximasAcoesPorDia();
+    const range = parseDateRange(req.query);
+    const data = await model.proximasAcoesPorDia(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -179,7 +187,8 @@ async function getProximasAcoesPorDia(req, res, next) {
 
 async function getAcoesDefinidas(req, res, next) {
   try {
-    const data = await model.acoesDefinidas();
+    const range = parseDateRange(req.query);
+    const data = await model.acoesDefinidas(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -263,7 +272,8 @@ async function getPerfilRiscoEmpreendimento(req, res, next) {
 
 async function getAtendentesProximaAcao(req, res, next) {
   try {
-    const data = await model.atendentesProximaAcao();
+    const range = parseDateRange(req.query);
+    const data = await model.atendentesProximaAcao(range);
     res.json({ data });
   } catch (err) {
     next(err);
@@ -289,9 +299,10 @@ async function getAgingDetalhes(req, res, next) {
 
 async function getTodasOcorrencias(req, res, next) {
   try {
-    const data = await model.todasOcorrencias();
+    const range = parseDateRange(req.query);
+    const data = await model.todasOcorrencias(range);
     res.json({ data });
-  } catch (err){
+  } catch (err) {
     next(err);
   }
 }

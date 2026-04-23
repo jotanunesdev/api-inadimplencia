@@ -92,6 +92,8 @@ export const env = {
   DB_PASSWORD: requireEnv("DB_PASSWORD"),
   DB_ENCRYPT: (envSource.DB_ENCRYPT ?? "false").toLowerCase() === "true",
   DB_TRUST_CERT: (envSource.DB_TRUST_CERT ?? "true").toLowerCase() === "true",
+  DB_CONNECTION_TIMEOUT_MS: parsePositiveNumber("DB_CONNECTION_TIMEOUT_MS", 30000),
+  DB_REQUEST_TIMEOUT_MS: parsePositiveNumber("DB_REQUEST_TIMEOUT_MS", 30000),
   PUBLIC_ASSETS_ROOT:
     envSource.PUBLIC_ASSETS_ROOT ??
     "C:\\gestao-trienamento\\gestao-treinamento\\public",

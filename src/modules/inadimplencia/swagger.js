@@ -26,6 +26,75 @@ const genericRequestBody = {
   },
 };
 
+// Catalogo informativo dos scripts de ocorrencia aceitos em STATUS_OCORRENCIA.
+// O backend continua aceitando qualquer string; este enum serve apenas
+// para documentar no Swagger os valores sincronizados com o frontend
+// (ver src/shared/constants/occurrence.ts do projeto jnc_inadimplencia).
+const OCCURRENCE_STATUS_ENUM = [
+  'Promessa de pagamento',
+  'Confirmar pagamento',
+  'Negociação em andamento',
+  'Cobrança ativa (telefonema)',
+  'Cobrança via WhatsApp',
+  'Verificar leitura AR (Comprovante de leitura)',
+  'Acompanhar prazo de notificação (Prazo de resolução)',
+  'Retorno agendado com o cliente',
+  'Alerta de risco de distrato',
+  'Contrato em Processo Jurídico',
+  'Aguardando Assinatura',
+  'Alteração de Data',
+];
+
+const ocorrenciaRequestBody = {
+  required: true,
+  content: {
+    'application/json': {
+      schema: {
+        type: 'object',
+        additionalProperties: true,
+        properties: {
+          NUM_VENDA_FK: { type: 'integer', example: 20988 },
+          NOME_USUARIO_FK: { type: 'string', example: 'joao.silva' },
+          DESCRICAO: { type: 'string' },
+          STATUS_OCORRENCIA: {
+            type: 'string',
+            description:
+              'Script/status da ocorrencia. Os valores abaixo sao os sugeridos ' +
+              'pelo frontend; o backend aceita qualquer string.',
+            enum: OCCURRENCE_STATUS_ENUM,
+            example: 'Alteração de Data',
+          },
+          DT_OCORRENCIA: { type: 'string', format: 'date', example: '2026-04-22' },
+          HORA_OCORRENCIA: { type: 'string', example: '14:30:00' },
+          PROXIMA_ACAO: { type: 'string', format: 'date-time' },
+          PROTOCOLO: { type: 'string' },
+        },
+      },
+    },
+  },
+};
+
+const dateRangeParams = [
+  {
+    name: 'dataInicio',
+    in: 'query',
+    required: false,
+    description:
+      'Data inicial do filtro (YYYY-MM-DD). Deve ser informada em conjunto com dataFim.',
+    schema: { type: 'string', format: 'date' },
+    example: '2026-04-01',
+  },
+  {
+    name: 'dataFim',
+    in: 'query',
+    required: false,
+    description:
+      'Data final do filtro (YYYY-MM-DD). Deve ser informada em conjunto com dataInicio.',
+    schema: { type: 'string', format: 'date' },
+    example: '2026-04-15',
+  },
+];
+
 const pathParam = (name, description, example) => ({
   name,
   in: 'path',
@@ -54,6 +123,7 @@ const swaggerSpec = {
     { name: 'KanbanStatus', description: 'Status do Kanban' },
     { name: 'Atendimentos', description: 'Atendimentos' },
     { name: 'Relatorios', description: 'Relatórios' },
+    { name: 'Fiadores', description: 'Fiadores/associados da venda' },
   ],
   paths: {
     '/health': {
@@ -145,7 +215,7 @@ const swaggerSpec = {
       post: {
         tags: ['Ocorrencias'],
         summary: 'Cria ocorrência',
-        requestBody: genericRequestBody,
+        requestBody: ocorrenciaRequestBody,
         responses: jsonResponse,
       },
     },
@@ -176,7 +246,7 @@ const swaggerSpec = {
         tags: ['Ocorrencias'],
         summary: 'Atualiza ocorrência por ID',
         parameters: [pathParam('id', 'ID da ocorrência', '1')],
-        requestBody: genericRequestBody,
+        requestBody: ocorrenciaRequestBody,
         responses: jsonResponse,
       },
       delete: {
@@ -265,6 +335,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Vendas por responsável',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -321,6 +392,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por usuário',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -328,6 +400,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por venda',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -335,6 +408,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por dia',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -342,6 +416,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por hora',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -349,6 +424,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ocorrências por dia e hora',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -356,6 +432,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Todas as ocorrências',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -363,6 +440,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Próximas ações por dia',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -370,6 +448,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Ações definidas',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -426,6 +505,7 @@ const swaggerSpec = {
       get: {
         tags: ['Dashboard'],
         summary: 'Atendentes por próxima ação',
+        parameters: dateRangeParams,
         responses: jsonResponse,
       },
     },
@@ -493,6 +573,22 @@ const swaggerSpec = {
       get: {
         tags: ['Relatorios'],
         summary: 'Relatório de ficha financeira',
+        responses: jsonResponse,
+      },
+    },
+    '/fiadores/num-venda/{numVenda}': {
+      get: {
+        tags: ['Fiadores'],
+        summary: 'Lista fiadores/associados de uma venda',
+        parameters: [pathParam('numVenda', 'Número da venda', '20988')],
+        responses: jsonResponse,
+      },
+    },
+    '/fiadores/cpf/{cpf}': {
+      get: {
+        tags: ['Fiadores'],
+        summary: 'Lista fiadores cujo DOCUMENTO bate com o CPF/CNPJ informado',
+        parameters: [pathParam('cpf', 'CPF (11 dígitos) ou CNPJ (14 dígitos)', '60142340553')],
         responses: jsonResponse,
       },
     },
