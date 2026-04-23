@@ -439,6 +439,66 @@ describe('notificationService', () => {
     });
   });
 
+  describe('notifyUnassignmentForSale', () => {
+    it('should soft delete assignment notifications for the previous responsible and emit update', async () => {
+      const mockRow = {
+        ID: 'uuid-789',
+        TIPO: 'VENDA_ATRIBUIDA',
+        USUARIO_DESTINATARIO: 'joao',
+        ORIGEM_USUARIO: 'admin',
+        NUM_VENDA: 12345,
+        PROXIMA_ACAO: null,
+        PAYLOAD: '{"numVenda":12345,"cliente":"Test Client","responsavel":"joao"}',
+        LIDA: 0,
+        DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+        DT_LEITURA: null,
+        DT_EXCLUSAO: new Date('2025-10-01T12:00:00.000Z'),
+      };
+
+      notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername.mockResolvedValue([
+        mockRow,
+      ]);
+      sseHub.emitUpdate.mockImplementation(() => {});
+
+      const result = await notificationService.notifyUnassignmentForSale({
+        numVenda: 12345,
+        previousUsername: 'Joao',
+      });
+
+      expect(notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername).toHaveBeenCalledWith({
+        numVenda: 12345,
+        username: 'joao',
+      });
+      expect(sseHub.emitUpdate).toHaveBeenCalledWith(
+        'joao',
+        expect.objectContaining({
+          id: 'uuid-789',
+          tipo: 'VENDA_ATRIBUIDA',
+          deletedAt: '2025-10-01T12:00:00.000Z',
+        })
+      );
+      expect(result).toHaveLength(1);
+      expect(result[0].deletedAt).toBe('2025-10-01T12:00:00.000Z');
+    });
+
+    it('should return an empty array and skip SSE when no assignment notifications are found', async () => {
+      notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername.mockResolvedValue([]);
+      sseHub.emitUpdate.mockImplementation(() => {});
+
+      const result = await notificationService.notifyUnassignmentForSale({
+        numVenda: 12345,
+        previousUsername: 'joao',
+      });
+
+      expect(notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername).toHaveBeenCalledWith({
+        numVenda: 12345,
+        username: 'joao',
+      });
+      expect(sseHub.emitUpdate).not.toHaveBeenCalled();
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('getPaginated', () => {
     it('should return paginated notifications', async () => {
       const mockRows = [
@@ -458,7 +518,7 @@ describe('notificationService', () => {
           UnreadCount: 3,
         },
       ];
-      notificationsRepository.listPaginated.mockResolvedValue({
+      notificationsRepository.listPaginatedForCurrentResponsibility.mockResolvedValue({
         rows: mockRows,
         total: 10,
         unreadCount: 3,
@@ -470,6 +530,12 @@ describe('notificationService', () => {
         pageSize: 20,
       });
 
+      expect(notificationsRepository.listPaginatedForCurrentResponsibility).toHaveBeenCalledWith({
+        username: 'joao',
+        page: 1,
+        pageSize: 20,
+        lida: undefined,
+      });
       expect(result.page).toBe(1);
       expect(result.pageSize).toBe(20);
       expect(result.total).toBe(10);
@@ -496,14 +562,14 @@ describe('notificationService', () => {
           DT_EXCLUSAO: null,
         },
       ];
-      notificationsRepository.listUnread.mockResolvedValue({
+      notificationsRepository.listUnreadForCurrentResponsibility.mockResolvedValue({
         rows: mockRows,
         totalUnread: 1,
       });
 
       const result = await notificationService.getSnapshotForUser('joao');
 
-      expect(notificationsRepository.listUnread).toHaveBeenCalledWith({
+      expect(notificationsRepository.listUnreadForCurrentResponsibility).toHaveBeenCalledWith({
         username: 'joao',
         limit: 20,
       });
@@ -528,7 +594,7 @@ describe('notificationService', () => {
         DT_LEITURA: null,
         DT_EXCLUSAO: null,
       }));
-      notificationsRepository.listUnread.mockResolvedValue({
+      notificationsRepository.listUnreadForCurrentResponsibility.mockResolvedValue({
         rows: mockRows,
         totalUnread: 25, // More than the 20 rows returned
       });

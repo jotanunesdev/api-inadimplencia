@@ -187,8 +187,51 @@ async function softDelete({ id, username }) {
   return dto;
 }
 
+async function notifyUnassignmentForSale({ numVenda, previousUsername }) {
+  if (!Number.isSafeInteger(numVenda)) {
+    throw buildError('NUM_VENDA invalido.', 400);
+  }
+
+  const normalizedPreviousUsername = normalizeUsername(previousUsername);
+  if (!normalizedPreviousUsername) {
+    return [];
+  }
+
+  try {
+    const rows = await notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername({
+      numVenda,
+      username: normalizedPreviousUsername,
+    });
+
+    const dtExclusao = rows[0]?.DT_EXCLUSAO || null;
+    const dtExclusaoIso = dtExclusao ? dtExclusao.toISOString() : null;
+
+    const updatedNotifications = rows.map(mapRowToDTO);
+
+    updatedNotifications.forEach((dto) => {
+      sseHub.emitUpdate(normalizedPreviousUsername, dto);
+    });
+
+    if (updatedNotifications.length === 0) {
+      return [];
+    }
+
+    return updatedNotifications.map((dto) => ({
+      ...dto,
+      deletedAt: dtExclusaoIso,
+    }));
+  } catch (error) {
+    console.error('[notificationService] unassignment update failed', {
+      numVenda,
+      previousUsername,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
 async function getPaginated({ username, page = 1, pageSize = 20, lida }) {
-  const result = await notificationsRepository.listPaginated({
+  const result = await notificationsRepository.listPaginatedForCurrentResponsibility({
     username,
     page,
     pageSize,
@@ -205,7 +248,7 @@ async function getPaginated({ username, page = 1, pageSize = 20, lida }) {
 }
 
 async function getSnapshotForUser(username) {
-  const { rows, totalUnread } = await notificationsRepository.listUnread({
+  const { rows, totalUnread } = await notificationsRepository.listUnreadForCurrentResponsibility({
     username,
     limit: 20,
   });
@@ -225,6 +268,7 @@ module.exports = {
   markAsRead,
   markAllAsRead,
   softDelete,
+  notifyUnassignmentForSale,
   getPaginated,
   getSnapshotForUser,
 };

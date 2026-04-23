@@ -380,6 +380,145 @@ describe('notificationsRepository', () => {
     });
   });
 
+  describe('listPaginatedForCurrentResponsibility', () => {
+    it('should return only notifications visible for the current responsible user', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn(),
+      };
+      const mockPool = {
+        request: jest.fn().mockReturnValue(mockRequest),
+      };
+      getPool.mockResolvedValue(mockPool);
+
+      const mockRows = [
+        {
+          ID: 'uuid-1',
+          TIPO: 'VENDA_ATRIBUIDA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: 'admin',
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
+          PAYLOAD: '{"numVenda":12345}',
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: null,
+          Total: 1,
+          UnreadCount: 1,
+        },
+      ];
+      mockRequest.query.mockResolvedValue({ recordset: mockRows });
+
+      const result = await notificationsRepository.listPaginatedForCurrentResponsibility({
+        username: 'Joao',
+        page: 2,
+        pageSize: 10,
+        lida: false,
+      });
+
+      expect(mockRequest.input).toHaveBeenCalledWith('username', sql.VarChar(255), 'joao');
+      expect(mockRequest.input).toHaveBeenCalledWith('offset', sql.Int, 10);
+      expect(mockRequest.input).toHaveBeenCalledWith('pageSize', sql.Int, 10);
+      expect(result.rows).toEqual(mockRows);
+      expect(result.total).toBe(1);
+      expect(result.unreadCount).toBe(1);
+
+      const queryCall = mockRequest.query.mock.calls[0][0];
+      expect(queryCall).toContain("n.TIPO <> 'VENDA_ATRIBUIDA'");
+      expect(queryCall).toContain('EXISTS (');
+      expect(queryCall).toContain('dbo.VENDA_RESPONSAVEL');
+      expect(queryCall).toContain('LOWER(LTRIM(RTRIM(vr.NOME_USUARIO_FK))) = @username');
+    });
+
+    it('should still allow non-assignment notifications regardless of responsibility', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn(),
+      };
+      const mockPool = {
+        request: jest.fn().mockReturnValue(mockRequest),
+      };
+      getPool.mockResolvedValue(mockPool);
+
+      mockRequest.query.mockResolvedValue({
+        recordset: [
+          {
+            ID: 'uuid-2',
+            TIPO: 'VENDA_ATRASADA',
+            USUARIO_DESTINATARIO: 'joao',
+            ORIGEM_USUARIO: null,
+            NUM_VENDA: 99999,
+            PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
+            PAYLOAD: '{"numVenda":99999}',
+            LIDA: 1,
+            DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+            DT_LEITURA: new Date('2025-10-01T11:00:00.000Z'),
+            DT_EXCLUSAO: null,
+            Total: 1,
+            UnreadCount: 0,
+          },
+        ],
+      });
+
+      const result = await notificationsRepository.listPaginatedForCurrentResponsibility({
+        username: 'joao',
+        page: 1,
+        pageSize: 20,
+      });
+
+      expect(result.rows).toHaveLength(1);
+      expect(result.total).toBe(1);
+      expect(result.unreadCount).toBe(0);
+    });
+  });
+
+  describe('listUnreadForCurrentResponsibility', () => {
+    it('should count unread notifications only when current responsibility exists', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn(),
+      };
+      const mockPool = {
+        request: jest.fn().mockReturnValue(mockRequest),
+      };
+      getPool.mockResolvedValue(mockPool);
+
+      const mockRows = [
+        {
+          ID: 'uuid-3',
+          TIPO: 'VENDA_ATRIBUIDA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: 'admin',
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: null,
+          PAYLOAD: '{"numVenda":12345}',
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: null,
+          TotalUnread: 2,
+        },
+      ];
+      mockRequest.query.mockResolvedValue({ recordset: mockRows });
+
+      const result = await notificationsRepository.listUnreadForCurrentResponsibility({
+        username: 'Joao',
+        limit: 5,
+      });
+
+      expect(mockRequest.input).toHaveBeenCalledWith('username', sql.VarChar(255), 'joao');
+      expect(mockRequest.input).toHaveBeenCalledWith('limit', sql.Int, 5);
+      expect(result.rows).toEqual(mockRows);
+      expect(result.totalUnread).toBe(2);
+
+      const queryCall = mockRequest.query.mock.calls[0][0];
+      expect(queryCall).toContain('UnreadCTE');
+      expect(queryCall).toContain('AND n.DT_EXCLUSAO IS NULL');
+      expect(queryCall).toContain("n.TIPO <> 'VENDA_ATRIBUIDA'");
+    });
+  });
+
   describe('markRead', () => {
     it('should mark notification as read', async () => {
       const mockRequest = {
@@ -576,6 +715,51 @@ describe('notificationsRepository', () => {
 
       // One should succeed, one should return null
       expect([result1, result2]).toContainEqual(null);
+    });
+  });
+
+  describe('softDeleteAssignmentNotificationsBySaleAndUsername', () => {
+    it('should soft delete assignment notifications for a sale and responsible user', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn(),
+      };
+      const mockPool = {
+        request: jest.fn().mockReturnValue(mockRequest),
+      };
+      getPool.mockResolvedValue(mockPool);
+
+      const mockRows = [
+        {
+          ID: 'uuid-321',
+          TIPO: 'VENDA_ATRIBUIDA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: 'admin',
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: null,
+          PAYLOAD: '{"numVenda":12345}',
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: new Date('2025-10-01T12:00:00.000Z'),
+        },
+      ];
+      mockRequest.query.mockResolvedValue({ recordset: mockRows });
+
+      const result = await notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername({
+        numVenda: 12345,
+        username: 'Joao',
+      });
+
+      expect(mockRequest.input).toHaveBeenCalledWith('numVenda', sql.Int, 12345);
+      expect(mockRequest.input).toHaveBeenCalledWith('username', sql.VarChar(255), 'joao');
+      expect(result).toEqual(mockRows);
+
+      const queryCall = mockRequest.query.mock.calls[0][0];
+      expect(queryCall).toContain("TIPO = 'VENDA_ATRIBUIDA'");
+      expect(queryCall).toContain('NUM_VENDA = @numVenda');
+      expect(queryCall).toContain('USUARIO_DESTINATARIO = @username');
+      expect(queryCall).toContain('DT_EXCLUSAO IS NULL');
     });
   });
 });

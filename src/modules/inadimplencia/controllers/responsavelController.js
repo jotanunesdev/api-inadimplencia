@@ -1,5 +1,5 @@
 const model = require('../models/responsavelModel');
-const { assignResponsavel } = require('../services/responsavelAssignmentService');
+const { assignResponsavel, removeResponsavel } = require('../services/responsavelAssignmentService');
 
 function parseNumVenda(value) {
   if (value === undefined || value === null) {
@@ -71,7 +71,6 @@ async function create(req, res, next) {
   }
 }
 
-
 async function update(req, res, next) {
   try {
     const numVenda = parseNumVenda(req.params.numVenda);
@@ -109,10 +108,7 @@ async function remove(req, res, next) {
       return res.status(400).json({ error: 'NUM_VENDA invalido.' });
     }
 
-    const deleted = await model.remove(numVenda);
-    if (!deleted) {
-      return res.status(404).json({ error: 'Responsavel nao encontrado.' });
-    }
+    await removeResponsavel(numVenda);
 
     res.status(204).send();
   } catch (err) {

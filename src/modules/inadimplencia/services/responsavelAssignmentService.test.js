@@ -55,6 +55,11 @@ describe('responsavelAssignmentService', () => {
         }),
       });
 
+      expect(notificationService.notifyUnassignmentForSale).toHaveBeenCalledWith({
+        numVenda: 12345,
+        previousUsername: 'joao',
+      });
+
       expect(result.changed).toBe(true);
     });
 
@@ -87,6 +92,7 @@ describe('responsavelAssignmentService', () => {
       });
 
       expect(notificationService.createAssignmentNotification).not.toHaveBeenCalled();
+      expect(notificationService.notifyUnassignmentForSale).not.toHaveBeenCalled();
     });
 
     it('should NOT create notification when deleting responsável (no new responsável)', async () => {
@@ -155,6 +161,10 @@ describe('responsavelAssignmentService', () => {
           destinatario: 'maria',
         })
       );
+      expect(notificationService.notifyUnassignmentForSale).toHaveBeenCalledWith({
+        numVenda: 12345,
+        previousUsername: 'joao',
+      });
     });
 
     it('should not fail assignment if notification creation fails', async () => {
@@ -192,6 +202,10 @@ describe('responsavelAssignmentService', () => {
       // Assignment should still succeed
       expect(result.data).toEqual(mockResponsavelAtualizado);
       expect(result.changed).toBe(true);
+      expect(notificationService.notifyUnassignmentForSale).toHaveBeenCalledWith({
+        numVenda: 12345,
+        previousUsername: 'joao',
+      });
     });
 
     it('should handle case where there is no previous responsável', async () => {
@@ -226,6 +240,54 @@ describe('responsavelAssignmentService', () => {
       expect(notificationService.createAssignmentNotification).toHaveBeenCalled();
       expect(result.changed).toBe(true);
       expect(result.previousUsername).toBeNull();
+    });
+  });
+
+  describe('removeResponsavel', () => {
+    it('should delete responsável and notify the previous user about unassignment', async () => {
+      responsavelModel.findByNumVenda.mockResolvedValue({
+        NOME_USUARIO_FK: 'joao',
+      });
+      responsavelModel.remove.mockResolvedValue(true);
+      notificationService.notifyUnassignmentForSale.mockResolvedValue([]);
+
+      const result = await responsavelAssignmentService.removeResponsavel(12345);
+
+      expect(responsavelModel.findByNumVenda).toHaveBeenCalledWith(12345);
+      expect(responsavelModel.remove).toHaveBeenCalledWith(12345);
+      expect(notificationService.notifyUnassignmentForSale).toHaveBeenCalledWith({
+        numVenda: 12345,
+        previousUsername: 'joao',
+      });
+      expect(result).toEqual({
+        deleted: true,
+        previousUsername: 'joao',
+      });
+    });
+
+    it('should throw 404 when responsável is not found', async () => {
+      responsavelModel.findByNumVenda.mockResolvedValue(null);
+      responsavelModel.remove.mockResolvedValue(false);
+
+      await expect(responsavelAssignmentService.removeResponsavel(12345)).rejects.toThrow(
+        'Responsavel nao encontrado.'
+      );
+      expect(notificationService.notifyUnassignmentForSale).not.toHaveBeenCalled();
+    });
+
+    it('should not fail removal if notification update fails', async () => {
+      responsavelModel.findByNumVenda.mockResolvedValue({
+        NOME_USUARIO_FK: 'joao',
+      });
+      responsavelModel.remove.mockResolvedValue(true);
+      notificationService.notifyUnassignmentForSale.mockRejectedValue(new Error('SSE error'));
+
+      const result = await responsavelAssignmentService.removeResponsavel(12345);
+
+      expect(result).toEqual({
+        deleted: true,
+        previousUsername: 'joao',
+      });
     });
   });
 });

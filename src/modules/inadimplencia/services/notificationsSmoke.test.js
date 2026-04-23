@@ -90,11 +90,14 @@ describe('Notifications Smoke Tests - Critical Business Scenarios', () => {
           DT_EXCLUSAO: null,
         },
       ];
-      notificationsRepository.listUnread.mockResolvedValue(mockRows);
+      notificationsRepository.listUnreadForCurrentResponsibility.mockResolvedValue({
+        rows: mockRows,
+        totalUnread: mockRows.length,
+      });
 
       const snapshot = await notificationService.getSnapshotForUser('joao');
 
-      expect(notificationsRepository.listUnread).toHaveBeenCalledWith({
+      expect(notificationsRepository.listUnreadForCurrentResponsibility).toHaveBeenCalledWith({
         username: 'joao',
         limit: 20,
       });
@@ -120,7 +123,7 @@ describe('Notifications Smoke Tests - Critical Business Scenarios', () => {
           DT_EXCLUSAO: null,
         },
       ];
-      notificationsRepository.listPaginated.mockResolvedValue({
+      notificationsRepository.listPaginatedForCurrentResponsibility.mockResolvedValue({
         rows: mockRows,
         total: 50,
         unreadCount: 10,
@@ -133,7 +136,7 @@ describe('Notifications Smoke Tests - Critical Business Scenarios', () => {
         lida: false,
       });
 
-      expect(notificationsRepository.listPaginated).toHaveBeenCalledWith({
+      expect(notificationsRepository.listPaginatedForCurrentResponsibility).toHaveBeenCalledWith({
         username: 'joao',
         page: 2,
         pageSize: 25,
@@ -286,6 +289,46 @@ describe('Notifications Smoke Tests - Critical Business Scenarios', () => {
       // Should create notification (different day)
       expect(result).not.toBeNull();
       expect(notificationsRepository.insert).toHaveBeenCalled();
+    });
+  });
+
+  describe('7.5 Reassignment and Unassignment Cleanup', () => {
+    it('should remove stale assignment notifications for the previous responsible user', async () => {
+      const mockRows = [
+        {
+          ID: 'uuid-789',
+          TIPO: 'VENDA_ATRIBUIDA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: 'admin123',
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: null,
+          PAYLOAD: JSON.stringify({ numVenda: 12345, cliente: 'Client A', responsavel: 'joao' }),
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: new Date('2025-10-01T12:00:00.000Z'),
+        },
+      ];
+      notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername.mockResolvedValue(mockRows);
+      sseHub.emitUpdate.mockImplementation(() => {});
+
+      const result = await notificationService.notifyUnassignmentForSale({
+        numVenda: 12345,
+        previousUsername: 'Joao',
+      });
+
+      expect(notificationsRepository.softDeleteAssignmentNotificationsBySaleAndUsername).toHaveBeenCalledWith({
+        numVenda: 12345,
+        username: 'joao',
+      });
+      expect(sseHub.emitUpdate).toHaveBeenCalledWith(
+        'joao',
+        expect.objectContaining({
+          id: 'uuid-789',
+          deletedAt: '2025-10-01T12:00:00.000Z',
+        }),
+      );
+      expect(result).toHaveLength(1);
     });
   });
 

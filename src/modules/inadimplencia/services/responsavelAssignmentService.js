@@ -92,6 +92,21 @@ async function assignResponsavel(params) {
         error: error.message,
       });
     }
+
+    if (nomeResponsavelAnterior) {
+      try {
+        await notificationService.notifyUnassignmentForSale({
+          numVenda,
+          previousUsername: nomeResponsavelAnterior,
+        });
+      } catch (error) {
+        console.error('[responsavelAssignmentService] failed to remove previous notification', {
+          numVenda,
+          previousUsername: nomeResponsavelAnterior,
+          error: error.message,
+        });
+      }
+    }
   }
 
   return {
@@ -103,6 +118,44 @@ async function assignResponsavel(params) {
   };
 }
 
+async function removeResponsavel(numVenda) {
+  if (!Number.isSafeInteger(numVenda)) {
+    throw buildError('NUM_VENDA invalido.', 400);
+  }
+
+  const responsavelAnterior = await responsavelModel.findByNumVenda(numVenda);
+  const previousUsername = responsavelAnterior?.NOME_USUARIO_FK
+    ? String(responsavelAnterior.NOME_USUARIO_FK).trim()
+    : null;
+
+  const deleted = await responsavelModel.remove(numVenda);
+
+  if (!deleted) {
+    throw buildError('Responsavel nao encontrado.', 404);
+  }
+
+  if (previousUsername) {
+    try {
+      await notificationService.notifyUnassignmentForSale({
+        numVenda,
+        previousUsername,
+      });
+    } catch (error) {
+      console.error('[responsavelAssignmentService] failed to notify unassignment', {
+        numVenda,
+        previousUsername,
+        error: error.message,
+      });
+    }
+  }
+
+  return {
+    deleted: true,
+    previousUsername,
+  };
+}
+
 module.exports = {
   assignResponsavel,
+  removeResponsavel,
 };

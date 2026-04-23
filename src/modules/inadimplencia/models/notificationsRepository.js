@@ -9,6 +9,18 @@ function normalizeUsername(value) {
   return value.trim().toLowerCase();
 }
 
+function buildResponsibilityVisibilityClause(alias = 'n') {
+  return `(
+    ${alias}.TIPO <> 'VENDA_ATRIBUIDA'
+    OR EXISTS (
+      SELECT 1
+      FROM dbo.VENDA_RESPONSAVEL vr
+      WHERE vr.NUM_VENDA_FK = ${alias}.NUM_VENDA
+        AND LOWER(LTRIM(RTRIM(vr.NOME_USUARIO_FK))) = @username
+    )
+  )`;
+}
+
 async function insert({ tipo, usuarioDestinatario, origemUsuario, numVenda, proximaAcao, payload }) {
   const normalizedDestinatario = normalizeUsername(usuarioDestinatario);
   const normalizedOrigem = origemUsuario ? normalizeUsername(origemUsuario) : null;
@@ -228,6 +240,123 @@ async function listUnread({ username, limit = 20 }) {
   return { rows, totalUnread };
 }
 
+async function listPaginatedForCurrentResponsibility({ username, page = 1, pageSize = 20, lida }) {
+  const normalizedUsername = normalizeUsername(username);
+  const offset = (page - 1) * pageSize;
+
+  const pool = await getPool();
+
+  let lidaFilter = '';
+  if (lida !== undefined) {
+    lidaFilter = `AND n.LIDA = ${lida ? 1 : 0}`;
+  }
+
+  const responsibilityClause = buildResponsibilityVisibilityClause('n');
+
+  const result = await pool
+    .request()
+    .input('username', sql.VarChar(255), normalizedUsername)
+    .input('offset', sql.Int, offset)
+    .input('pageSize', sql.Int, pageSize)
+    .query(`
+      ;WITH CountCTE AS (
+        SELECT COUNT(*) as Total
+        FROM ${TABLE} n
+        WHERE n.USUARIO_DESTINATARIO = @username
+          AND n.DT_EXCLUSAO IS NULL
+          AND ${responsibilityClause}
+          ${lidaFilter}
+      ),
+      UnreadCTE AS (
+        SELECT COUNT(*) as UnreadCount
+        FROM ${TABLE} n
+        WHERE n.USUARIO_DESTINATARIO = @username
+          AND n.LIDA = 0
+          AND n.DT_EXCLUSAO IS NULL
+          AND ${responsibilityClause}
+      )
+      SELECT
+        n.ID,
+        n.TIPO,
+        n.USUARIO_DESTINATARIO,
+        n.ORIGEM_USUARIO,
+        n.NUM_VENDA,
+        n.PROXIMA_ACAO,
+        n.PAYLOAD,
+        n.LIDA,
+        n.DT_CRIACAO,
+        n.DT_LEITURA,
+        n.DT_EXCLUSAO,
+        c.Total,
+        u.UnreadCount
+      FROM ${TABLE} n
+      CROSS JOIN CountCTE c
+      CROSS JOIN UnreadCTE u
+      WHERE n.USUARIO_DESTINATARIO = @username
+        AND n.DT_EXCLUSAO IS NULL
+        AND ${responsibilityClause}
+        ${lidaFilter}
+      ORDER BY n.LIDA ASC, n.DT_CRIACAO DESC
+      OFFSET @offset ROWS
+      FETCH NEXT @pageSize ROWS ONLY
+    `);
+
+  const rows = result.recordset;
+  const total = rows[0]?.Total || 0;
+  const unreadCount = rows[0]?.UnreadCount || 0;
+
+  return { rows, total, unreadCount };
+}
+
+async function listUnreadForCurrentResponsibility({ username, limit = 20 }) {
+  const normalizedUsername = normalizeUsername(username);
+
+  const pool = await getPool();
+  const responsibilityClause = buildResponsibilityVisibilityClause('n');
+
+  const result = await pool
+    .request()
+    .input('username', sql.VarChar(255), normalizedUsername)
+    .input('limit', sql.Int, limit)
+    .query(`
+      ;WITH UnreadCTE AS (
+        SELECT COUNT(*) as TotalUnread
+        FROM ${TABLE} n
+        WHERE n.USUARIO_DESTINATARIO = @username
+          AND n.LIDA = 0
+          AND n.DT_EXCLUSAO IS NULL
+          AND ${responsibilityClause}
+      )
+      SELECT
+        n.ID,
+        n.TIPO,
+        n.USUARIO_DESTINATARIO,
+        n.ORIGEM_USUARIO,
+        n.NUM_VENDA,
+        n.PROXIMA_ACAO,
+        n.PAYLOAD,
+        n.LIDA,
+        n.DT_CRIACAO,
+        n.DT_LEITURA,
+        n.DT_EXCLUSAO,
+        u.TotalUnread
+      FROM ${TABLE} n
+      CROSS JOIN UnreadCTE u
+      WHERE n.USUARIO_DESTINATARIO = @username
+        AND n.LIDA = 0
+        AND n.DT_EXCLUSAO IS NULL
+        AND ${responsibilityClause}
+      ORDER BY n.DT_CRIACAO DESC
+      OFFSET 0 ROWS
+      FETCH NEXT @limit ROWS ONLY
+    `);
+
+  const rows = result.recordset;
+  const totalUnread = rows[0]?.TotalUnread || 0;
+
+  return { rows, totalUnread };
+}
+
 async function markRead(id, username) {
   const normalizedUsername = normalizeUsername(username);
 
@@ -342,13 +471,48 @@ async function softDelete(id, username) {
   return row;
 }
 
+async function softDeleteAssignmentNotificationsBySaleAndUsername({ numVenda, username }) {
+  const normalizedUsername = normalizeUsername(username);
+
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVenda', sql.Int, numVenda)
+    .input('username', sql.VarChar(255), normalizedUsername)
+    .query(`
+      UPDATE ${TABLE}
+      SET DT_EXCLUSAO = SYSUTCDATETIME()
+      OUTPUT
+        INSERTED.ID,
+        INSERTED.TIPO,
+        INSERTED.USUARIO_DESTINATARIO,
+        INSERTED.ORIGEM_USUARIO,
+        INSERTED.NUM_VENDA,
+        INSERTED.PROXIMA_ACAO,
+        INSERTED.PAYLOAD,
+        INSERTED.LIDA,
+        INSERTED.DT_CRIACAO,
+        INSERTED.DT_LEITURA,
+        INSERTED.DT_EXCLUSAO
+      WHERE TIPO = 'VENDA_ATRIBUIDA'
+        AND NUM_VENDA = @numVenda
+        AND USUARIO_DESTINATARIO = @username
+        AND DT_EXCLUSAO IS NULL
+    `);
+
+  return result.recordset;
+}
+
 module.exports = {
   insert,
   findById,
   findByDedupeKey,
   listPaginated,
   listUnread,
+  listPaginatedForCurrentResponsibility,
+  listUnreadForCurrentResponsibility,
   markRead,
   markAllRead,
   softDelete,
+  softDeleteAssignmentNotificationsBySaleAndUsername,
 };
