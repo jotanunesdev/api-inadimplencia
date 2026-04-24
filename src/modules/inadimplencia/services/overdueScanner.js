@@ -41,6 +41,7 @@ async function tick() {
         cpfCnpj: sale.CPF_CNPJ,
         empreendimento: sale.EMPREENDIMENTO,
         valorInadimplente: sale.VALOR_INADIMPLENTE,
+        score: sale.SCORE,
         responsavel: sale.RESPONSAVEL,
         proximaAcao: sale.PROXIMA_ACAO,
         statusKanban: sale.KANBAN_STATUS,

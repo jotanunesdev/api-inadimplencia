@@ -44,6 +44,7 @@ async function findOverdueSalesByUsername(username) {
         i.CPF_CNPJ,
         i.EMPREENDIMENTO,
         i.VALOR_INADIMPLENTE,
+        i.SCORE,
         r.NOME_USUARIO_FK AS RESPONSAVEL,
         r.DT_ATRIBUICAO,
         kb.STATUS AS KANBAN_STATUS,
@@ -91,6 +92,7 @@ async function findAllOverdue({ username } = {}) {
     i.CPF_CNPJ,
     i.EMPREENDIMENTO,
     i.VALOR_INADIMPLENTE,
+    i.SCORE,
     r.NOME_USUARIO_FK AS RESPONSAVEL,
     r.DT_ATRIBUICAO,
     kb.STATUS AS KANBAN_STATUS,
@@ -144,6 +146,7 @@ async function getInadimplenciaNotificationSnapshot(username) {
         : null,
         status: venda.KANBAN_STATUS ?? 'todo',
         valorInadimplente: Number(venda.VALOR_INADIMPLENTE ?? 0),
+        score: Number(venda.SCORE),
         createdAt: venda.PROXIMA_ACAO
         ? new Date(venda.PROXIMA_ACAO).toISOString()
         : new Date().toISOString(),

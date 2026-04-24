@@ -74,6 +74,7 @@ async function assignResponsavel(params) {
         cpfCnpj: responsavelAtualizado.CPF_CNPJ || null,
         empreendimento: responsavelAtualizado.EMPREENDIMENTO || null,
         valorInadimplente: responsavelAtualizado.VALOR_INADIMPLENTE || 0,
+        score: responsavelAtualizado.SCORE ?? null,
         responsavel: nomeResponsavelAtual,
         dtAtribuicao: responsavelAtualizado.DT_ATRIBUICAO || new Date(),
       };

@@ -3,6 +3,25 @@ const { getPool, sql } = require('../config/db');
 const TABLE = 'dbo.KANBAN_STATUS';
 const LOCK_TIMEOUT_SECONDS = 300;
 
+function buildLatestRowsCte() {
+  return `
+    WITH UltimoKanban AS (
+      SELECT
+        ks.NUM_VENDA_FK,
+        ks.PROXIMA_ACAO,
+        ks.STATUS,
+        ks.STATUS_DATA,
+        ks.NOME_USUARIO_FK,
+        ks.DT_ATUALIZACAO,
+        ROW_NUMBER() OVER (
+          PARTITION BY ks.NUM_VENDA_FK, ks.NOME_USUARIO_FK
+          ORDER BY ks.DT_ATUALIZACAO DESC, ks.PROXIMA_ACAO DESC
+        ) AS RN
+      FROM ${TABLE} ks
+    )
+  `;
+}
+
 function normalizeProximaAcao(value) {
   if (value === undefined || value === null) {
     return null;
@@ -20,13 +39,16 @@ function normalizeProximaAcao(value) {
 async function findAll() {
   const pool = await getPool();
   const result = await pool.request().query(
-    `SELECT NUM_VENDA_FK,
+    `${buildLatestRowsCte()}
+     SELECT NUM_VENDA_FK,
             PROXIMA_ACAO,
             STATUS,
             STATUS_DATA,
             NOME_USUARIO_FK,
             DT_ATUALIZACAO
-     FROM ${TABLE}`
+     FROM UltimoKanban
+     WHERE RN = 1
+     ORDER BY DT_ATUALIZACAO DESC, PROXIMA_ACAO DESC`
   );
 
   return result.recordset;
@@ -81,15 +103,17 @@ async function findActiveByNumVenda(numVenda) {
     .request()
     .input('numVenda', sql.Int, numVenda)
     .query(
-      `SELECT TOP 1
+      `${buildLatestRowsCte()}
+      SELECT TOP 1
         NUM_VENDA_FK,
         PROXIMA_ACAO,
         STATUS,
         STATUS_DATA,
         NOME_USUARIO_FK,
         DT_ATUALIZACAO
-      FROM ${TABLE}
+      FROM UltimoKanban
       WHERE NUM_VENDA_FK = @numVenda
+        AND RN = 1
         AND STATUS = 'inProgress'
       ORDER BY DT_ATUALIZACAO DESC, PROXIMA_ACAO DESC`
     );
@@ -102,9 +126,11 @@ async function findTimedOutInProgress() {
   const result = await pool
     .request()
     .query(
-      `SELECT DISTINCT NUM_VENDA_FK
-      FROM ${TABLE}
-      WHERE STATUS = 'inProgress'
+      `${buildLatestRowsCte()}
+      SELECT DISTINCT NUM_VENDA_FK
+      FROM UltimoKanban
+      WHERE RN = 1
+        AND STATUS = 'inProgress'
         AND DT_ATUALIZACAO IS NOT NULL
         AND DATEDIFF(SECOND, DT_ATUALIZACAO, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}`
     );
@@ -118,13 +144,23 @@ async function moveTimedOutToTodo(numVenda) {
     .request()
     .input('numVenda', sql.Int, numVenda)
     .query(
-      `UPDATE ${TABLE}
-      SET STATUS = 'todo',
-        DT_ATUALIZACAO = GETDATE()
-      WHERE NUM_VENDA_FK = @numVenda
-        AND STATUS = 'inProgress'
-        AND DT_ATUALIZACAO IS NOT NULL
-        AND DATEDIFF(SECOND, DT_ATUALIZACAO, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}`
+      `${buildLatestRowsCte()}
+      UPDATE target
+      SET target.STATUS = 'todo',
+          target.DT_ATUALIZACAO = GETDATE()
+      FROM ${TABLE} target
+      INNER JOIN UltimoKanban uk
+        ON uk.NUM_VENDA_FK = target.NUM_VENDA_FK
+       AND uk.NOME_USUARIO_FK = target.NOME_USUARIO_FK
+       AND (
+         (uk.PROXIMA_ACAO IS NULL AND target.PROXIMA_ACAO IS NULL)
+         OR uk.PROXIMA_ACAO = target.PROXIMA_ACAO
+       )
+      WHERE uk.NUM_VENDA_FK = @numVenda
+        AND uk.RN = 1
+        AND uk.STATUS = 'inProgress'
+        AND uk.DT_ATUALIZACAO IS NOT NULL
+        AND DATEDIFF(SECOND, uk.DT_ATUALIZACAO, GETDATE()) >= ${LOCK_TIMEOUT_SECONDS}`
     );
 
     return result.rowsAffected[0] > 0;

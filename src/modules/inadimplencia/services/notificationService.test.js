@@ -19,7 +19,7 @@ describe('notificationService', () => {
         ORIGEM_USUARIO: 'admin',
         NUM_VENDA: 12345,
         PROXIMA_ACAO: null,
-        PAYLOAD: '{"numVenda":12345,"cliente":"Test Client"}',
+        PAYLOAD: '{"numVenda":12345,"cliente":"Test Client","score":87}',
         LIDA: 0,
         DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
         DT_LEITURA: null,
@@ -33,6 +33,7 @@ describe('notificationService', () => {
         cpfCnpj: '12345678900',
         empreendimento: 'Empreendimento A',
         valorInadimplente: 1000,
+        score: 87,
         responsavel: 'joao',
         dtAtribuicao: new Date('2025-10-01T10:00:00.000Z'),
       };
@@ -56,6 +57,7 @@ describe('notificationService', () => {
           cpfCnpj: '12345678900',
           empreendimento: 'Empreendimento A',
           valorInadimplente: 1000,
+          score: 87,
           responsavel: 'joao',
           dtAtribuicao: saleSnapshot.dtAtribuicao,
         },
@@ -65,6 +67,7 @@ describe('notificationService', () => {
         tipo: 'VENDA_ATRIBUIDA',
         type: 'assignment',
         adminUserCode: 'admin',
+        score: 87,
       }));
 
       expect(result.tipo).toBe('VENDA_ATRIBUIDA');
@@ -106,7 +109,7 @@ describe('notificationService', () => {
         ORIGEM_USUARIO: null,
         NUM_VENDA: 12345,
         PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
-        PAYLOAD: '{"numVenda":12345}',
+        PAYLOAD: '{"numVenda":12345,"score":73}',
         LIDA: 0,
         DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
         DT_LEITURA: null,
@@ -121,6 +124,7 @@ describe('notificationService', () => {
         cpfCnpj: '12345678900',
         empreendimento: 'Empreendimento A',
         valorInadimplente: 1000,
+        score: 73,
         responsavel: 'joao',
         proximaAcao: new Date('2025-10-01T13:45:00.000Z'),
         statusKanban: 'todo',
@@ -144,7 +148,7 @@ describe('notificationService', () => {
         origemUsuario: null,
         numVenda: 12345,
         proximaAcao: saleSnapshot.proximaAcao,
-        payload: expect.objectContaining({ numVenda: 12345 }),
+        payload: expect.objectContaining({ numVenda: 12345, score: 73 }),
       });
 
       expect(sseHub.emitNew).toHaveBeenCalled();
@@ -496,6 +500,43 @@ describe('notificationService', () => {
       });
       expect(sseHub.emitUpdate).not.toHaveBeenCalled();
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('clearOverdueNotificationsForSale', () => {
+    it('should soft delete overdue notifications and broadcast updates', async () => {
+      const mockRows = [
+        {
+          ID: 'uuid-overdue',
+          TIPO: 'VENDA_ATRASADA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: null,
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
+          PAYLOAD: JSON.stringify({ numVenda: 12345, responsavel: 'joao' }),
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: new Date('2025-10-01T12:00:00.000Z'),
+        },
+      ];
+      notificationsRepository.softDeleteOverdueNotificationsBySaleAndUsername.mockResolvedValue(mockRows);
+      sseHub.emitUpdate.mockImplementation(() => {});
+
+      const result = await notificationService.clearOverdueNotificationsForSale({
+        numVenda: 12345,
+        username: 'Joao',
+      });
+
+      expect(notificationsRepository.softDeleteOverdueNotificationsBySaleAndUsername).toHaveBeenCalledWith({
+        numVenda: 12345,
+        username: 'joao',
+      });
+      expect(sseHub.emitUpdate).toHaveBeenCalledWith('joao', expect.objectContaining({
+        id: 'uuid-overdue',
+        deletedAt: '2025-10-01T12:00:00.000Z',
+      }));
+      expect(result).toHaveLength(1);
     });
   });
 

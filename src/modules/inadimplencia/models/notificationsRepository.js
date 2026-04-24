@@ -78,21 +78,23 @@ async function findById(id, username) {
     .input('username', sql.VarChar(255), normalizedUsername)
     .query(`
       SELECT
-        ID,
-        TIPO,
-        USUARIO_DESTINATARIO,
-        ORIGEM_USUARIO,
-        NUM_VENDA,
-        PROXIMA_ACAO,
-        PAYLOAD,
-        LIDA,
-        DT_CRIACAO,
-        DT_LEITURA,
-        DT_EXCLUSAO
-      FROM ${TABLE}
-      WHERE ID = @id
-        AND USUARIO_DESTINATARIO = @username
-        AND DT_EXCLUSAO IS NULL
+        n.ID,
+        n.TIPO,
+        n.USUARIO_DESTINATARIO,
+        n.ORIGEM_USUARIO,
+        n.NUM_VENDA,
+        f.SCORE AS SCORE,
+        n.PROXIMA_ACAO,
+        n.PAYLOAD,
+        n.LIDA,
+        n.DT_CRIACAO,
+        n.DT_LEITURA,
+        n.DT_EXCLUSAO
+      FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
+      WHERE n.ID = @id
+        AND n.USUARIO_DESTINATARIO = @username
+        AND n.DT_EXCLUSAO IS NULL
     `);
 
   return result.recordset[0] || null;
@@ -110,23 +112,25 @@ async function findByDedupeKey({ tipo, usuarioDestinatario, numVenda, proximaAca
     .input('proximaAcao', sql.DateTime, proximaAcao)
     .query(`
       SELECT
-        ID,
-        TIPO,
-        USUARIO_DESTINATARIO,
-        ORIGEM_USUARIO,
-        NUM_VENDA,
-        PROXIMA_ACAO,
-        PAYLOAD,
-        LIDA,
-        DT_CRIACAO,
-        DT_LEITURA,
-        DT_EXCLUSAO
-      FROM ${TABLE}
-      WHERE TIPO = @tipo
-        AND USUARIO_DESTINATARIO = @usuarioDestinatario
-        AND NUM_VENDA = @numVenda
-        AND PROXIMA_ACAO_DIA = CAST(@proximaAcao AS date)
-        AND DT_EXCLUSAO IS NULL
+        n.ID,
+        n.TIPO,
+        n.USUARIO_DESTINATARIO,
+        n.ORIGEM_USUARIO,
+        n.NUM_VENDA,
+        f.SCORE AS SCORE,
+        n.PROXIMA_ACAO,
+        n.PAYLOAD,
+        n.LIDA,
+        n.DT_CRIACAO,
+        n.DT_LEITURA,
+        n.DT_EXCLUSAO
+      FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
+      WHERE n.TIPO = @tipo
+        AND n.USUARIO_DESTINATARIO = @usuarioDestinatario
+        AND n.NUM_VENDA = @numVenda
+        AND n.PROXIMA_ACAO_DIA = CAST(@proximaAcao AS date)
+        AND n.DT_EXCLUSAO IS NULL
     `);
 
   return result.recordset[0] || null;
@@ -169,6 +173,7 @@ async function listPaginated({ username, page = 1, pageSize = 20, lida }) {
         n.USUARIO_DESTINATARIO,
         n.ORIGEM_USUARIO,
         n.NUM_VENDA,
+        f.SCORE AS SCORE,
         n.PROXIMA_ACAO,
         n.PAYLOAD,
         n.LIDA,
@@ -178,6 +183,7 @@ async function listPaginated({ username, page = 1, pageSize = 20, lida }) {
         c.Total,
         u.UnreadCount
       FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
       CROSS JOIN CountCTE c
       CROSS JOIN UnreadCTE u
       WHERE n.USUARIO_DESTINATARIO = @username
@@ -217,6 +223,7 @@ async function listUnread({ username, limit = 20 }) {
         n.USUARIO_DESTINATARIO,
         n.ORIGEM_USUARIO,
         n.NUM_VENDA,
+        f.SCORE AS SCORE,
         n.PROXIMA_ACAO,
         n.PAYLOAD,
         n.LIDA,
@@ -225,6 +232,7 @@ async function listUnread({ username, limit = 20 }) {
         n.DT_EXCLUSAO,
         u.TotalUnread
       FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
       CROSS JOIN UnreadCTE u
       WHERE n.USUARIO_DESTINATARIO = @username
         AND n.LIDA = 0
@@ -281,6 +289,7 @@ async function listPaginatedForCurrentResponsibility({ username, page = 1, pageS
         n.USUARIO_DESTINATARIO,
         n.ORIGEM_USUARIO,
         n.NUM_VENDA,
+        f.SCORE AS SCORE,
         n.PROXIMA_ACAO,
         n.PAYLOAD,
         n.LIDA,
@@ -290,6 +299,7 @@ async function listPaginatedForCurrentResponsibility({ username, page = 1, pageS
         c.Total,
         u.UnreadCount
       FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
       CROSS JOIN CountCTE c
       CROSS JOIN UnreadCTE u
       WHERE n.USUARIO_DESTINATARIO = @username
@@ -333,6 +343,7 @@ async function listUnreadForCurrentResponsibility({ username, limit = 20 }) {
         n.USUARIO_DESTINATARIO,
         n.ORIGEM_USUARIO,
         n.NUM_VENDA,
+        f.SCORE AS SCORE,
         n.PROXIMA_ACAO,
         n.PAYLOAD,
         n.LIDA,
@@ -341,6 +352,7 @@ async function listUnreadForCurrentResponsibility({ username, limit = 20 }) {
         n.DT_EXCLUSAO,
         u.TotalUnread
       FROM ${TABLE} n
+      LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = n.NUM_VENDA
       CROSS JOIN UnreadCTE u
       WHERE n.USUARIO_DESTINATARIO = @username
         AND n.LIDA = 0
@@ -503,6 +515,38 @@ async function softDeleteAssignmentNotificationsBySaleAndUsername({ numVenda, us
   return result.recordset;
 }
 
+async function softDeleteOverdueNotificationsBySaleAndUsername({ numVenda, username }) {
+  const normalizedUsername = normalizeUsername(username);
+
+  const pool = await getPool();
+  const result = await pool
+    .request()
+    .input('numVenda', sql.Int, numVenda)
+    .input('username', sql.VarChar(255), normalizedUsername)
+    .query(`
+      UPDATE ${TABLE}
+      SET DT_EXCLUSAO = SYSUTCDATETIME()
+      OUTPUT
+        INSERTED.ID,
+        INSERTED.TIPO,
+        INSERTED.USUARIO_DESTINATARIO,
+        INSERTED.ORIGEM_USUARIO,
+        INSERTED.NUM_VENDA,
+        INSERTED.PROXIMA_ACAO,
+        INSERTED.PAYLOAD,
+        INSERTED.LIDA,
+        INSERTED.DT_CRIACAO,
+        INSERTED.DT_LEITURA,
+        INSERTED.DT_EXCLUSAO
+      WHERE TIPO = 'VENDA_ATRASADA'
+        AND NUM_VENDA = @numVenda
+        AND USUARIO_DESTINATARIO = @username
+        AND DT_EXCLUSAO IS NULL
+    `);
+
+  return result.recordset;
+}
+
 module.exports = {
   insert,
   findById,
@@ -515,4 +559,5 @@ module.exports = {
   markAllRead,
   softDelete,
   softDeleteAssignmentNotificationsBySaleAndUsername,
+  softDeleteOverdueNotificationsBySaleAndUsername,
 };

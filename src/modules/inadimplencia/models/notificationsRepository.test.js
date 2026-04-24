@@ -762,4 +762,49 @@ describe('notificationsRepository', () => {
       expect(queryCall).toContain('DT_EXCLUSAO IS NULL');
     });
   });
+
+  describe('softDeleteOverdueNotificationsBySaleAndUsername', () => {
+    it('should soft delete overdue notifications for a sale and responsible user', async () => {
+      const mockRequest = {
+        input: jest.fn().mockReturnThis(),
+        query: jest.fn(),
+      };
+      const mockPool = {
+        request: jest.fn().mockReturnValue(mockRequest),
+      };
+      getPool.mockResolvedValue(mockPool);
+
+      const mockRows = [
+        {
+          ID: 'uuid-654',
+          TIPO: 'VENDA_ATRASADA',
+          USUARIO_DESTINATARIO: 'joao',
+          ORIGEM_USUARIO: null,
+          NUM_VENDA: 12345,
+          PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
+          PAYLOAD: '{"numVenda":12345}',
+          LIDA: 0,
+          DT_CRIACAO: new Date('2025-10-01T10:00:00.000Z'),
+          DT_LEITURA: null,
+          DT_EXCLUSAO: new Date('2025-10-01T12:00:00.000Z'),
+        },
+      ];
+      mockRequest.query.mockResolvedValue({ recordset: mockRows });
+
+      const result = await notificationsRepository.softDeleteOverdueNotificationsBySaleAndUsername({
+        numVenda: 12345,
+        username: 'Joao',
+      });
+
+      expect(mockRequest.input).toHaveBeenCalledWith('numVenda', sql.Int, 12345);
+      expect(mockRequest.input).toHaveBeenCalledWith('username', sql.VarChar(255), 'joao');
+      expect(result).toEqual(mockRows);
+
+      const queryCall = mockRequest.query.mock.calls[0][0];
+      expect(queryCall).toContain("TIPO = 'VENDA_ATRASADA'");
+      expect(queryCall).toContain('NUM_VENDA = @numVenda');
+      expect(queryCall).toContain('USUARIO_DESTINATARIO = @username');
+      expect(queryCall).toContain('DT_EXCLUSAO IS NULL');
+    });
+  });
 });

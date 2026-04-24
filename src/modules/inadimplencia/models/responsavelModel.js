@@ -8,8 +8,10 @@ async function findAll() {
     `SELECT vr.NUM_VENDA_FK,
             vr.NOME_USUARIO_FK,
             vr.DT_ATRIBUICAO,
+            f.SCORE,
             u.COR_HEX
      FROM ${TABLE} vr
+     LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = vr.NUM_VENDA_FK
      LEFT JOIN dbo.USUARIO u ON u.NOME = vr.NOME_USUARIO_FK`
   );
 
@@ -25,8 +27,10 @@ async function findByNumVenda(numVenda) {
       `SELECT vr.NUM_VENDA_FK,
               vr.NOME_USUARIO_FK,
               vr.DT_ATRIBUICAO,
+              f.SCORE,
               u.COR_HEX
        FROM ${TABLE} vr
+       LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = vr.NUM_VENDA_FK
        LEFT JOIN dbo.USUARIO u ON u.NOME = vr.NOME_USUARIO_FK
        WHERE vr.NUM_VENDA_FK = @numVenda`
     );
@@ -54,8 +58,10 @@ async function upsert(numVenda, nomeUsuario) {
        SELECT vr.NUM_VENDA_FK,
               vr.NOME_USUARIO_FK,
               vr.DT_ATRIBUICAO,
+              f.SCORE,
               u.COR_HEX
        FROM ${TABLE} vr
+       LEFT JOIN DW.fat_analise_inadimplencia_v4 f ON f.NUM_VENDA = vr.NUM_VENDA_FK
        LEFT JOIN dbo.USUARIO u ON u.NOME = vr.NOME_USUARIO_FK
        WHERE vr.NUM_VENDA_FK = @numVenda;`
     );

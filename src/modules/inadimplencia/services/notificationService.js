@@ -31,6 +31,7 @@ function mapRowToDTO(row) {
     cpfCnpj: payload.cpfCnpj,
     empreendimento: payload.empreendimento,
     valorInadimplente: payload.valorInadimplente,
+    score: row.SCORE ?? payload.score ?? null,
     responsavel: payload.responsavel,
     proximaAcao: row.PROXIMA_ACAO ? row.PROXIMA_ACAO.toISOString() : null,
     status: payload.status,
@@ -59,6 +60,7 @@ async function createAssignmentNotification({ numVenda, destinatario, adminUserC
       cpfCnpj: saleSnapshot.cpfCnpj,
       empreendimento: saleSnapshot.empreendimento,
       valorInadimplente: saleSnapshot.valorInadimplente,
+      score: saleSnapshot.score ?? saleSnapshot.SCORE ?? null,
       responsavel: saleSnapshot.responsavel,
       dtAtribuicao: saleSnapshot.dtAtribuicao,
     };
@@ -120,6 +122,7 @@ async function createOverdueNotification({ destinatario, saleSnapshot }) {
       cpfCnpj: saleSnapshot.cpfCnpj,
       empreendimento: saleSnapshot.empreendimento,
       valorInadimplente: saleSnapshot.valorInadimplente,
+      score: saleSnapshot.score ?? saleSnapshot.SCORE ?? null,
       responsavel: saleSnapshot.responsavel,
       proximaAcao: saleSnapshot.proximaAcao,
       statusKanban: saleSnapshot.statusKanban,
@@ -230,6 +233,39 @@ async function notifyUnassignmentForSale({ numVenda, previousUsername }) {
   }
 }
 
+async function clearOverdueNotificationsForSale({ numVenda, username }) {
+  if (!Number.isSafeInteger(numVenda)) {
+    throw buildError('NUM_VENDA invalido.', 400);
+  }
+
+  const normalizedUsername = normalizeUsername(username);
+  if (!normalizedUsername) {
+    return [];
+  }
+
+  try {
+    const rows = await notificationsRepository.softDeleteOverdueNotificationsBySaleAndUsername({
+      numVenda,
+      username: normalizedUsername,
+    });
+
+    const updatedNotifications = rows.map(mapRowToDTO);
+
+    updatedNotifications.forEach((dto) => {
+      sseHub.emitUpdate(normalizedUsername, dto);
+    });
+
+    return updatedNotifications;
+  } catch (error) {
+    console.error('[notificationService] overdue cleanup failed', {
+      numVenda,
+      username,
+      error: error.message,
+    });
+    throw error;
+  }
+}
+
 async function getPaginated({ username, page = 1, pageSize = 20, lida }) {
   const result = await notificationsRepository.listPaginatedForCurrentResponsibility({
     username,
@@ -269,6 +305,7 @@ module.exports = {
   markAllAsRead,
   softDelete,
   notifyUnassignmentForSale,
+  clearOverdueNotificationsForSale,
   getPaginated,
   getSnapshotForUser,
 };

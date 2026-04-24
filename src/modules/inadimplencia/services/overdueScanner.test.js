@@ -25,6 +25,7 @@ describe('overdueScanner', () => {
           CPF_CNPJ: '12345678900',
           EMPREENDIMENTO: 'Emp A',
           VALOR_INADIMPLENTE: 1000,
+          SCORE: 76,
           RESPONSAVEL: 'joao',
           PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
           KANBAN_STATUS: 'todo',
@@ -41,6 +42,7 @@ describe('overdueScanner', () => {
         saleSnapshot: expect.objectContaining({
           numVenda: 12345,
           cliente: 'Client A',
+          score: 76,
         }),
       });
     });
@@ -75,6 +77,7 @@ describe('overdueScanner', () => {
           CPF_CNPJ: '12345678900',
           EMPREENDIMENTO: 'Emp A',
           VALOR_INADIMPLENTE: 1000,
+          SCORE: 76,
           RESPONSAVEL: 'joao',
           PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
           KANBAN_STATUS: 'todo',
@@ -105,6 +108,7 @@ describe('overdueScanner', () => {
           CPF_CNPJ: '12345678900',
           EMPREENDIMENTO: 'Emp A',
           VALOR_INADIMPLENTE: 1000,
+          SCORE: 76,
           RESPONSAVEL: null, // No responsavel
           PROXIMA_ACAO: new Date('2025-10-01T13:45:00.000Z'),
           KANBAN_STATUS: 'todo',

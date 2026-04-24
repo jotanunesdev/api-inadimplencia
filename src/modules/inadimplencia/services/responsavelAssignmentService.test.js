@@ -31,6 +31,7 @@ describe('responsavelAssignmentService', () => {
         CPF_CNPJ: '12345678900',
         EMPREENDIMENTO: 'Emp A',
         VALOR_INADIMPLENTE: 1000,
+        SCORE: 92,
         DT_ATRIBUICAO: new Date('2025-10-01T10:00:00.000Z'),
       };
       responsavelModel.upsert.mockResolvedValue(mockResponsavelAtualizado);
@@ -52,6 +53,7 @@ describe('responsavelAssignmentService', () => {
         saleSnapshot: expect.objectContaining({
           cliente: 'Client A',
           responsavel: 'maria',
+          score: 92,
         }),
       });
 
@@ -81,6 +83,7 @@ describe('responsavelAssignmentService', () => {
         CPF_CNPJ: '12345678900',
         EMPREENDIMENTO: 'Emp A',
         VALOR_INADIMPLENTE: 1000,
+        SCORE: 92,
         DT_ATRIBUICAO: new Date('2025-10-01T10:00:00.000Z'),
       };
       responsavelModel.upsert.mockResolvedValue(mockResponsavelAtualizado);
@@ -140,6 +143,7 @@ describe('responsavelAssignmentService', () => {
         CPF_CNPJ: '12345678900',
         EMPREENDIMENTO: 'Emp A',
         VALOR_INADIMPLENTE: 1000,
+        SCORE: 92,
         DT_ATRIBUICAO: new Date('2025-10-01T10:00:00.000Z'),
       };
       responsavelModel.upsert.mockResolvedValue(mockResponsavelAtualizado);
@@ -185,6 +189,7 @@ describe('responsavelAssignmentService', () => {
         CPF_CNPJ: '12345678900',
         EMPREENDIMENTO: 'Emp A',
         VALOR_INADIMPLENTE: 1000,
+        SCORE: 92,
         DT_ATRIBUICAO: new Date('2025-10-01T10:00:00.000Z'),
       };
       responsavelModel.upsert.mockResolvedValue(mockResponsavelAtualizado);
