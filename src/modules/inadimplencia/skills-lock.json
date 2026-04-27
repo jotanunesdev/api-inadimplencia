@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "sse-streaming": {
+      "source": "dadbodgeoff/drift",
+      "sourceType": "github",
+      "computedHash": "2057e209997befd536ba73e5958d9c2d46c512ee4c2ac57764bb633e4d2fd1f6"
+    }
+  }
+}

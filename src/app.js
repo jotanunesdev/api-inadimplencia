@@ -167,8 +167,16 @@ async function createApp() {
     res.status(500).json({ error: 'Erro interno do servidor.' });
   });
 
+  app.use((err, req, res, next) => {
+    console.error('=== ERRO 500 ===');
+    console.error('Rota:', req.method, req.path);
+    console.error('Stack:', err.stack);
+    res.status(500).json({ error: err.message });
+  });
   return app;
 }
+
+
 
 module.exports = {
   createApp,

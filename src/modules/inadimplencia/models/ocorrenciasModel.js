@@ -171,7 +171,7 @@ async function create(data) {
       .input('statusOcorrencia', sql.NVarChar(200), data.statusOcorrencia ?? null)
       .input('dtOcorrencia', sql.Date, data.dtOcorrencia)
       .input('horaOcorrencia', sql.VarChar, data.horaOcorrencia)
-      .input('proximaAcao', sql.DateTime, proximaAcao)
+      .input('proximaAcao', sql.VarChar, proximaAcao)
       .query(
         `INSERT INTO ${TABLE} (NUM_VENDA_FK, NOME_USUARIO_FK, PROTOCOLO, DESCRICAO, STATUS_OCORRENCIA, DT_OCORRENCIA, HORA_OCORRENCIA, PROXIMA_ACAO)
          OUTPUT inserted.*
@@ -200,7 +200,7 @@ async function update(id, data) {
       .input('statusOcorrencia', sql.NVarChar(200), data.statusOcorrencia ?? null)
       .input('dtOcorrencia', sql.Date, data.dtOcorrencia)
       .input('horaOcorrencia', sql.VarChar, data.horaOcorrencia)
-      .input('proximaAcao', sql.DateTime, proximaAcao)
+      .input('proximaAcao', sql.VarChar, proximaAcao)
       .query(
         `UPDATE ${TABLE}
          SET NUM_VENDA_FK = @numVendaFk,

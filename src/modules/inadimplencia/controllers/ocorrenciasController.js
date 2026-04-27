@@ -1,6 +1,12 @@
 const model = require('../models/ocorrenciasModel');
+const responsavelModel = require('../models/responsavelModel');
+const notificationService = require('../services/notificationService');
 
 const GUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
+
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
 
 function isGuid(value) {
   return typeof value === 'string' && GUID_REGEX.test(value);
@@ -28,6 +34,58 @@ function validateAndFormat(dateStr, timeStr) {
     date: cleanDate, 
     time: timeStr
   };
+}
+
+function normalizeDateOnly(value) {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  const text = String(value).trim();
+  if (!text) {
+    return null;
+  }
+
+  const datePart = text.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    return datePart;
+  }
+
+  const parsed = new Date(text.includes(' ') ? text.replace(' ', 'T') : text);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return `${parsed.getFullYear()}-${pad2(parsed.getMonth() + 1)}-${pad2(parsed.getDate())}`;
+}
+
+function isCurrentOrFutureDate(value) {
+  const dateOnly = normalizeDateOnly(value);
+  if (!dateOnly) {
+    return false;
+  }
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+  return dateOnly >= today;
+}
+
+async function clearOverdueNotificationsIfNeeded(numVendaFk, proximaAcao) {
+  if (!isCurrentOrFutureDate(proximaAcao)) {
+    return;
+  }
+
+  const responsavel = await responsavelModel.findByNumVenda(numVendaFk);
+  const username = responsavel?.NOME_USUARIO_FK ? String(responsavel.NOME_USUARIO_FK).trim() : '';
+
+  if (!username) {
+    return;
+  }
+
+  await notificationService.clearOverdueNotificationsForSale({
+    numVenda: numVendaFk,
+    username,
+  });
 }
 
 async function validateReferencedNumVenda(numVendaFk, res) {
@@ -65,6 +123,18 @@ function formatarResposta(data) {
       const minutos = String(h.getUTCMinutes()).padStart(2, '0');
       const segundos = String(h.getUTCSeconds()).padStart(2, '0');
       novoItem.HORA_OCORRENCIA = `${horas}:${minutos}:${segundos}`;
+    }
+
+    if(item.PROXIMA_ACAO instanceof Date) {
+      const d = item.PROXIMA_ACAO;
+      const ano = d.getUTCFullYear();
+      const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dia = String(d.getUTCDate()).padStart(2, '0');
+      const hora = String(d.getUTCHours()).padStart(2, '0');
+      const min = String(d.getUTCMinutes()).padStart(2, '0');
+      const seg = String(d.getUTCSeconds()).padStart(2, '0');
+
+      novoItem.PROXIMA_ACAO = `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
     }
 
     return novoItem;
@@ -204,6 +274,15 @@ async function create(req, res, next) {
       proximaAcao: typeof proximaAcao === 'string' ? proximaAcao.trim() : null,
     });
 
+    try {
+      await clearOverdueNotificationsIfNeeded(numVendaFk, proximaAcao);
+    } catch (error) {
+      console.error('[ocorrenciasController] failed to clear overdue notifications after create', {
+        numVendaFk,
+        error: error.message,
+      });
+    }
+
     res.status(201).json({ data: formatarResposta(data) });
   } catch (err) {
     next(err);
@@ -289,6 +368,15 @@ async function update(req, res, next) {
 
     if (!data) {
       return res.status(404).json({ error: 'Ocorrencia nao encontrada.' });
+    }
+
+    try {
+      await clearOverdueNotificationsIfNeeded(numVendaFk, proximaAcao);
+    } catch (error) {
+      console.error('[ocorrenciasController] failed to clear overdue notifications after update', {
+        numVendaFk,
+        error: error.message,
+      });
     }
 
     res.json({ data });

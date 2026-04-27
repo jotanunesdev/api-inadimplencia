@@ -1,4 +1,7 @@
 const model = require('../models/kanbanStatusModel');
+const atendimentosModel = require('../models/atendimentosModel');
+const ocorrenciasModel = require('../models/ocorrenciasModel');
+
 
 function parseNumVenda(value) {
   if (value === undefined || value === null) {
@@ -9,6 +12,29 @@ function parseNumVenda(value) {
     return null;
   }
   return num;
+}
+
+function formatarResposta(data) {
+  if (!data) return null;
+  
+  const formatarItem = (item) => {
+    const novoItem = { ...item };
+
+    if(item.PROXIMA_ACAO instanceof Date) {
+      const d = item.PROXIMA_ACAO;
+      const ano = d.getUTCFullYear();
+      const mes = String(d.getUTCMonth() + 1).padStart(2, '0');
+      const dia = String(d.getUTCDate()).padStart(2, '0');
+      const hora = String(d.getUTCHours()).padStart(2, '0');
+      const min = String(d.getUTCMinutes()).padStart(2, '0');
+      const seg = String(d.getUTCSeconds()).padStart(2, '0');
+
+      novoItem.PROXIMA_ACAO = `${ano}-${mes}-${dia} ${hora}:${min}:${seg}`;
+    }
+
+    return novoItem;
+  };
+  return Array.isArray(data) ? data.map(formatarItem) : formatarItem(data);
 }
 
 function normalizeStatus(value) {
@@ -50,23 +76,18 @@ function parseDate(value) {
 }
 
 function parseDateTime(value) {
-  if (!value) {
-    return null;
-  }
+  if (!value) return null;
   const text = String(value).trim();
-  if (!text) {
-    return null;
-  }
-  const normalized = text.includes('T') ? text : text.replace(' ', 'T');
+  if (!text) return null;
+  const normalized = text.includes(' ') ? text.replace(' ', 'T') : text;
   const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-  return parsed;
+  if (Number.isNaN(parsed.getTime())) return null;
+  return normalized.split('.')[0].replace('Z', '');
 }
 
 async function getAll(req, res, next) {
   try {
+    await expireAllTimedOut();
     const data = await model.findAll();
     res.json({ data });
   } catch (err) {
@@ -79,9 +100,10 @@ async function upsert(req, res, next) {
     const numVenda = parseNumVenda(
       req.body.numVenda ?? req.body.NUM_VENDA_FK ?? req.body.NUM_VENDA
     );
-    const proximaAcao = parseDateTime(
-      req.body.proximaAcao ?? req.body.PROXIMA_ACAO ?? req.body.dataProximaAcao
-    );
+    const rawProximaAcao = req.body.proximaAcao ?? req.body.PROXIMA_ACAO ?? req.body.dataProximaAcao;
+     const proximaAcao = typeof rawProximaAcao === 'string' 
+      ? rawProximaAcao.replace('T', ' ').replace('Z', '').split('.')[0]
+      : rawProximaAcao;
     const status = normalizeStatus(req.body.status ?? req.body.STATUS);
     const statusDate = parseDate(req.body.statusDate ?? req.body.STATUS_DATA ?? req.body.dataStatus);
     const nomeUsuario =
@@ -100,17 +122,78 @@ async function upsert(req, res, next) {
       return res.status(400).json({ error: 'STATUS_DATA e obrigatorio.' });
     }
 
-    const data = await model.upsert({
+    if (status === 'inProgress') {
+      await expireTimedOutByNumVenda(numVenda);
+
+      const active = await model.findActiveByNumVenda(numVenda);
+
+      if (active) {
+        const activeUser = String(active.NOME_USUARIO_FK ?? '').trim().toLowerCase();
+        const currentUser = String(nomeUsuario ?? '').trim().toLowerCase();
+
+        if (activeUser && currentUser && activeUser != currentUser){
+          return res.status(409).json({
+            error: `Atendimento ja está em andamento por ${active.NOME_USUARIO_FK}`
+          });
+        }
+
+        return res.status(200).json({ data: formatarResposta(active) });
+      }
+    }
+
+    const result = await model.upsert({
       numVenda,
-      proximaAcao,
+      proximaAcao: typeof proximaAcao === 'string' ? proximaAcao.trim() : null,
       status,
       statusDate,
       nomeUsuario: nomeUsuario ? String(nomeUsuario).trim() : null,
     });
 
-    res.status(200).json({ data });
+    if (status === 'done' || status === 'todo') {
+      const ativo = await atendimentosModel.findActiveByNumVenda(numVenda);
+
+      if (ativo?.PROTOCOLO) {
+        const protocoloLimpo = String(ativo.PROTOCOLO).trim();
+        const ocorrencias = await ocorrenciasModel.findByProtocolo(protocoloLimpo);
+
+        console.log(`Verificando Protocolo: [${protocoloLimpo}] | Ocorrências: ${ocorrencias?.length || 0}`);
+        if (!ocorrencias || ocorrencias.length === 0) {
+          console.log("Nenhuma ocorrência encontrada. Expirando protocolo...");
+          await atendimentosModel.updateStatusProtocolo(protocoloLimpo, false);
+        } else {
+          console.log("Atendimento validado com sucesso. Mantendo STATUS_PROTOCOLO = 1");
+        }
+      }
+    }
+
+    res.status(200).json({ data: formatarResposta(result) });
   } catch (err) {
+    console.error("Erro no Kanban Upsert:", err);
     next(err);
+  }
+}
+
+async function expireTimedOutByNumVenda(numVenda) {
+  const changed = await model.moveTimedOutToTodo(numVenda);
+  if (!changed) return false;
+
+  const ativo = await atendimentosModel.findActiveByNumVenda(numVenda);
+
+  if (ativo?.PROTOCOLO) {
+    const ocorrencias = await ocorrenciasModel.findByProtocolo(ativo.PROTOCOLO);
+    if (!ocorrencias || ocorrencias.length === 0) {
+      await atendimentosModel.updateStatusProtocolo(ativo.PROTOCOLO, false);
+    }
+  }
+
+  return true;
+}
+
+async function expireAllTimedOut() {
+  const rows = await model.findTimedOutInProgress();
+
+  for (const row of rows) {
+    await expireTimedOutByNumVenda(row.NUM_VENDA_FK)
   }
 }
 

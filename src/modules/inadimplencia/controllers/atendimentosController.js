@@ -2,6 +2,7 @@ const atendimentosModel = require('../models/atendimentosModel');
 const inadimplenciaModel = require('../models/inadimplenciaModel');
 const ocorrenciasModel = require('../models/ocorrenciasModel');
 const responsavelModel = require('../models/responsavelModel');
+const kanbanStatusModel = require('../models/kanbanStatusModel');
 
 function parseNumVenda(value) {
   if (value === undefined || value === null) {
@@ -16,17 +17,18 @@ function parseNumVenda(value) {
 
 async function create(req, res, next) {
   try {
+    
     const numVendaRaw = req.body.numVenda ?? req.body.NUM_VENDA ?? req.body.NUM_VENDA_FK;
     const numVenda = parseNumVenda(numVendaRaw);
     if (numVenda === null) {
       return res.status(400).json({ error: 'NUM_VENDA_FK e obrigatorio.' });
     }
-
+    
     const vendaRecords = await inadimplenciaModel.findByNumVenda(String(numVenda));
     if (!vendaRecords || vendaRecords.length === 0) {
       return res.status(404).json({ error: 'Venda nao encontrada.' });
     }
-
+    
     const vendaSnapshot = vendaRecords[0];
     const responsavel = await responsavelModel.findByNumVenda(numVenda);
     const vendaSnapshotWithResponsavel = {
@@ -36,10 +38,27 @@ async function create(req, res, next) {
       COR_HEX: responsavel?.COR_HEX ?? null,
       RESPONSAVEL_COR_HEX: responsavel?.COR_HEX ?? null,
     };
-    const atendimento = await atendimentosModel.createFromVenda(
-      numVenda,
-      vendaSnapshotWithResponsavel,
-    );
+
+    let atendimento;
+    try {
+      atendimento = await atendimentosModel.createFromVenda(numVenda, vendaSnapshotWithResponsavel);
+    } catch (err) {
+      if (err?.code === 'ATENDIMENTO_ATIVO') {
+        const activeKanban = await kanbanStatusModel.findActiveByNumVenda(numVenda);
+        const nomeResponsavel = activeKanban?.NOME_USUARIO_FK ??
+          err?.activeAttendance?.RESPONSAVEL ??
+          err?.activeAttendance?.NOME_USUARIO_FK ??
+          null;
+
+        return res.status(409).json({
+          error: nomeResponsavel
+            ? `Já existe atendimento em andamento por ${nomeResponsavel}.`
+            : 'Já existe atendimento em andamento para esta venda.'
+        });
+      }
+      throw err;
+    }
+    
     res.status(201).json({ data: atendimento });
   } catch (err) {
     next(err);
@@ -113,6 +132,25 @@ async function getByNomeCliente(req, res, next) {
     next(err);
   }
 }
+
+// async function createExpirationAtendimento(req, res, next) {
+//   try {
+//     const { protocolo } = req.params;
+//     const { nomeUsuario } = req.body;
+
+//     const atendimento = await atendimento.findByProtocolo;
+//     if (!atendimento) return res.status(404).json({ error: 'Protocolo não encontrado. '});
+
+//     const statusProtocolo = false;
+//     await atendimentosModel.updateStatusOcorrencia(protocolo, statusProtocolo)
+    
+//     res.json({ data });
+//   } catch (err) {
+//     next(err);
+//   }
+// }
+
+
 
 module.exports = {
   create,
