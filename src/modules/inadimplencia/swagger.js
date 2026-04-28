@@ -96,49 +96,28 @@ const responsavelRequestSchema = {
   },
 };
 
+
 const responsavelCreateRequestBody = {
   required: true,
   content: {
-    "application/json": {
+    'application/json': {
       schema: {
-        type: "object",
-        additionalProperties: true,
+        type: 'object',
+        required: ['numVenda', 'nomeUsuario', 'adminUserCode'],
         properties: {
-          NUM_VENDA_FK: { type: "integer", example: 20988 },
-          NOME_USUARIO_FK: { type: "string", example: "joao.silva" },
-          DESCRICAO: { type: "string" },
-          STATUS_OCORRENCIA: {
-            type: "string",
-            description:
-              "Script/status da ocorrencia. Os valores abaixo sao os sugeridos " +
-              "pelo frontend; o backend aceita qualquer string.",
-            enum: OCCURRENCE_STATUS_ENUM,
-            example: "Alteração de Data",
+          numVenda: {
+            type: 'integer',
+            description: 'Numero da venda que sera atribuida.',
+            example: 12345,
           },
-          DT_OCORRENCIA: {
-            type: "string",
-            format: "date",
-            example: "2026-04-22",
-          },
-          HORA_OCORRENCIA: { type: "string", example: "14:30:00" },
-          PROXIMA_ACAO: { type: "string", format: "date-time" },
-          PROTOCOLO: { type: "string" },
+          ...responsavelRequestSchema.properties,
         },
       },
-      required: ["numVenda", "nomeUsuario", "adminUserCode"],
-      properties: {
-        numVenda: {
-          type: "integer",
-          description: "Numero da venda que sera atribuida.",
-          example: 12345,
-        },
-        ...responsavelRequestSchema.properties,
+      example: {
+        numVenda: 12345,
+        nomeUsuario: 'joao.silva',
+        adminUserCode: 'wffluig',
       },
-    },
-    example: {
-      numVenda: 12345,
-      nomeUsuario: "joao.silva",
-      adminUserCode: "wffluig",
     },
   },
 };
