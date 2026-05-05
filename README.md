@@ -2,6 +2,13 @@
 
 Este repositorio agora possui um modulo `m365` em Node.js + Express + TypeScript para integrar com o Microsoft Graph e listar usuarios da organizacao Microsoft 365/Teams.
 
+## Modulos disponiveis
+
+- **M365** - integracao com Microsoft Graph para listar usuarios e fotos.
+- **GLPI** - API read-only para chamados, inventario e custos do GLPI.
+
+Para a documentacao operacional do GLPI, consulte `src/modules/glpi/README.md`.
+
 ## Requisitos
 
 - Node.js 18+

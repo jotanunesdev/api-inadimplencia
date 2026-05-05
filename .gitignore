@@ -2,3 +2,4 @@ node_modules/
 .env
 **/.env
 .env.example
+!src/modules/glpi/.env.example

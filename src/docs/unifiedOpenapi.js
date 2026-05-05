@@ -79,6 +79,24 @@ function buildInadimplenciaPaths(openapi) {
   return targetPaths;
 }
 
+function buildGlpiPaths(glpiOpenapi) {
+  const sourcePaths = glpiOpenapi?.paths ?? {};
+  const targetPaths = {};
+
+  Object.entries(sourcePaths).forEach(([pathName, definition]) => {
+    const finalPath =
+      pathName === '/health'
+        ? '/glpi/health'
+        : pathName.startsWith('/glpi')
+        ? pathName
+        : prefixedPath('/glpi', pathName);
+
+    targetPaths[finalPath] = clone(definition);
+  });
+
+  return targetPaths;
+}
+
 function normalizeTreinamentoPath(pathName) {
   if (pathName === '/api') {
     return '/';
@@ -511,6 +529,29 @@ function buildEntradaNotaFiscalOpenapi(entradaNotaFiscalOpenapi) {
   };
 }
 
+function buildGlpiOpenapi(glpiOpenapi) {
+  const prefixedPaths = buildGlpiPaths(glpiOpenapi);
+
+  return {
+    openapi: '3.0.3',
+    info: {
+      title: API_TITLE,
+      version: glpiOpenapi?.info?.version ?? '1.0.0',
+      description: 'Documentacao do modulo GLPI.',
+    },
+    servers: [{ url: '/glpi' }],
+    tags: uniqueTags([
+      ...(glpiOpenapi?.tags ?? []),
+      { name: 'Health', description: 'Health check do modulo GLPI' },
+      { name: 'Chamados', description: 'Endpoints de chamados do GLPI' },
+      { name: 'Inventario', description: 'Endpoints de inventario do GLPI' },
+      { name: 'Custos', description: 'Endpoints de custos do GLPI' },
+    ]),
+    paths: stripPrefixFromPaths(prefixedPaths, '/glpi'),
+    components: clone(glpiOpenapi?.components ?? {}),
+  };
+}
+
 function buildUnifiedOpenapi(
   inadimplenciaOpenapi,
   treinamentoOpenapi,
@@ -518,6 +559,7 @@ function buildUnifiedOpenapi(
   pm2Openapi,
   m365Openapi,
   estoqueOnlineOpenapi,
+  glpiOpenapi,
   authOpenapi,
   rmOpenapi,
   entradaNotaFiscalOpenapi
@@ -528,6 +570,7 @@ function buildUnifiedOpenapi(
   const pm2Paths = buildPm2Paths(pm2Openapi);
   const m365Paths = buildM365Paths(m365Openapi);
   const estoqueOnlinePaths = buildEstoqueOnlinePaths(estoqueOnlineOpenapi);
+  const glpiPaths = buildGlpiPaths(glpiOpenapi);
   const authPaths = buildAuthPaths(authOpenapi);
   const rmPaths = buildRmPaths(rmOpenapi);
   const entradaNotaFiscalPaths = buildEntradaNotaFiscalPaths(entradaNotaFiscalOpenapi);
@@ -540,6 +583,7 @@ function buildUnifiedOpenapi(
     { name: 'PM2', description: 'Endpoints do modulo de monitoramento PM2' },
     { name: 'M365', description: 'Endpoints do modulo Microsoft 365' },
     { name: 'EstoqueOnline', description: 'Endpoints do modulo de estoque online' },
+    { name: 'GLPI', description: 'Endpoints do modulo GLPI' },
     { name: 'Auth', description: 'Endpoints do modulo de autenticacao' },
     { name: 'RM', description: 'Endpoints do modulo de integracao RM' },
     { name: 'EntradaNotaFiscal', description: 'Endpoints do modulo Entrada de Nota Fiscal' },
@@ -551,7 +595,7 @@ function buildUnifiedOpenapi(
       title: API_TITLE,
       version: '1.0.0',
       description:
-        'API unica com os modulos Inadimplencia, Treinamento, Fluig, PM2 e M365.',
+        'API unica com os modulos Inadimplencia, Treinamento, Fluig, PM2, M365, Estoque Online, GLPI, Auth, RM e Entrada de Nota Fiscal.',
     },
     servers: [{ url: '/' }],
     tags: uniqueTags(tags),
@@ -573,10 +617,12 @@ function buildUnifiedOpenapi(
       ...pm2Paths,
       ...m365Paths,
       ...estoqueOnlinePaths,
+      ...glpiPaths,
       ...authPaths,
       ...rmPaths,
       ...entradaNotaFiscalPaths,
     },
+    components: clone(glpiOpenapi?.components ?? {}),
   };
 }
 
@@ -588,6 +634,7 @@ module.exports = {
   buildPm2Openapi,
   buildM365Openapi,
   buildEstoqueOnlineOpenapi,
+  buildGlpiOpenapi,
   buildAuthOpenapi,
   buildRmOpenapi,
   buildEntradaNotaFiscalOpenapi,

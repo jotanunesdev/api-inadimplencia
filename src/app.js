@@ -7,6 +7,7 @@ const { createFluigModule } = require('./modules/fluig');
 const { createPm2Module } = require('./modules/pm2');
 const { createM365Module } = require('./modules/m365');
 const { createEstoqueOnlineModule } = require('./modules/estoque-online');
+const { createGlpiModule } = require('./modules/glpi');
 const { createAuthModule } = require('./modules/auth');
 const { createRmModule } = require('./modules/rm');
 const { createEntradaNotaFiscalModule } = require('./modules/entrada-nota-fiscal');
@@ -18,6 +19,7 @@ const {
   buildPm2Openapi,
   buildM365Openapi,
   buildEstoqueOnlineOpenapi,
+  buildGlpiOpenapi,
   buildAuthOpenapi,
   buildRmOpenapi,
   buildEntradaNotaFiscalOpenapi,
@@ -38,7 +40,15 @@ function buildRootCorsEnv() {
   };
 }
 
-async function createApp() {
+async function resolveModule(factory, override) {
+  if (override !== undefined) {
+    return Promise.resolve(typeof override === 'function' ? override() : override);
+  }
+
+  return Promise.resolve(factory());
+}
+
+async function createApp(dependencies = {}) {
   const app = express();
   const rootCorsEnv = buildRootCorsEnv();
   const rootCorsOptions = createCorsOptionsDelegate(rootCorsEnv);
@@ -48,15 +58,28 @@ async function createApp() {
 
   app.use(express.json({ limit: '10mb' }));
 
-  const inadimplenciaModule = createInadimplenciaModule();
-  const treinamentoModule = await createTreinamentoModule();
-  const fluigModule = createFluigModule();
-  const pm2Module = createPm2Module();
-  const m365Module = await createM365Module();
-  const estoqueOnlineModule = await createEstoqueOnlineModule();
-  const authModule = await createAuthModule();
-  const rmModule = await createRmModule();
-  const entradaNotaFiscalModule = await createEntradaNotaFiscalModule();
+  const inadimplenciaModule = await resolveModule(
+    createInadimplenciaModule,
+    dependencies.inadimplenciaModule
+  );
+  const treinamentoModule = await resolveModule(
+    createTreinamentoModule,
+    dependencies.treinamentoModule
+  );
+  const fluigModule = await resolveModule(createFluigModule, dependencies.fluigModule);
+  const pm2Module = await resolveModule(createPm2Module, dependencies.pm2Module);
+  const m365Module = await resolveModule(createM365Module, dependencies.m365Module);
+  const estoqueOnlineModule = await resolveModule(
+    createEstoqueOnlineModule,
+    dependencies.estoqueOnlineModule
+  );
+  const glpiModule = await resolveModule(createGlpiModule, dependencies.glpiModule);
+  const authModule = await resolveModule(createAuthModule, dependencies.authModule);
+  const rmModule = await resolveModule(createRmModule, dependencies.rmModule);
+  const entradaNotaFiscalModule = await resolveModule(
+    createEntradaNotaFiscalModule,
+    dependencies.entradaNotaFiscalModule
+  );
 
   const unifiedOpenapi = buildUnifiedOpenapi(
     inadimplenciaModule.openapi,
@@ -65,6 +88,7 @@ async function createApp() {
     pm2Module.openapi,
     m365Module.openapi,
     estoqueOnlineModule.openapi,
+    glpiModule.openapi,
     authModule.openapi,
     rmModule.openapi,
     entradaNotaFiscalModule.openapi
@@ -75,6 +99,7 @@ async function createApp() {
   const pm2Openapi = buildPm2Openapi(pm2Module.openapi);
   const m365Openapi = buildM365Openapi(m365Module.openapi);
   const estoqueOnlineOpenapi = buildEstoqueOnlineOpenapi(estoqueOnlineModule.openapi);
+  const glpiOpenapi = buildGlpiOpenapi(glpiModule.openapi);
   const authOpenapi = buildAuthOpenapi(authModule.openapi);
   const rmOpenapi = buildRmOpenapi(rmModule.openapi);
   const entradaNotaFiscalOpenapi = buildEntradaNotaFiscalOpenapi(
@@ -91,6 +116,7 @@ async function createApp() {
   app.use('/pm2', pm2Module.router);
   app.use('/m365', m365Module.router);
   app.use('/estoque-online', estoqueOnlineModule.router);
+  app.use('/glpi', glpiModule.router);
   app.use('/auth', authModule.router);
   app.use('/rm', rmModule.router);
   app.use('/entrada-nota-fiscal', entradaNotaFiscalModule.router);
@@ -114,6 +140,7 @@ async function createApp() {
           { url: '/docs-json/pm2', name: '/pm2' },
           { url: '/docs-json/m365', name: '/m365' },
           { url: '/docs-json/estoque-online', name: '/estoque-online' },
+          { url: '/docs-json/glpi', name: '/glpi' },
           { url: '/docs-json/auth', name: '/auth' },
           { url: '/docs-json/rm', name: '/rm' },
           { url: '/docs-json/entrada-nota-fiscal', name: '/entrada-nota-fiscal' },
@@ -142,6 +169,9 @@ async function createApp() {
   });
   app.get('/docs-json/estoque-online', (_req, res) => {
     res.json(estoqueOnlineOpenapi);
+  });
+  app.get('/docs-json/glpi', (_req, res) => {
+    res.json(glpiOpenapi);
   });
   app.get('/docs-json/auth', (_req, res) => {
     res.json(authOpenapi);
