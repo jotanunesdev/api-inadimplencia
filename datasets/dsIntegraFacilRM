@@ -1,0 +1,1528 @@
+function createDataset (fields, constraints, sortFields) {
+	try {
+		var NOME_DATASERVER;
+		var OBJETO;
+		var PRIMARY_KEY
+		var CODSISTEMA;
+		var CAMPOS;
+		var COLIGADA;
+		var SENTENCA;
+		var APLICACAO;
+		var PARAMETER;
+		var FILTRO;
+		var TAMANHO_MINIMO;
+		var SQLLIMIT;
+		var XML;
+		var TAMANHO_PRIMARYKEY;
+		var ZOOM;
+		var PROCESS;
+		var REPORT;
+		var FILE;
+		var IDFV;
+		var OPC = 1; // 0: DELETE, 1: READVIEW, 2: READRECORD, 3:SAVERECORD, 4: SQL, 5: EXECUTEPROCESSWITHXMLPARAMS, 6: WSREPORT, 9: EXECUTE_FV
+		var OPC_DESCRICAO = "READVIEW";
+		var SAV;
+		var REC;
+		var VIE;
+		var SQL;
+		var EXP;
+		
+		var xmlResultados = "";
+		var novaConstraints = new Array();
+		var RMS = new Array();
+		var filters = {};
+	
+		for ( var x = 0; x < constraints.length; x++) {
+			if ( constraints[x].fieldName.toUpperCase() == "DATASERVER" || constraints[x].fieldName.toUpperCase() == "NOME_DATASERVER" ) {
+				NOME_DATASERVER = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "COLIGADA" ) {
+				COLIGADA = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "SENTENCA" ) {
+				SENTENCA = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "APLICACAO" ) {
+				APLICACAO = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "CODSISTEMA" ) {
+				CODSISTEMA = constraints[x].initialValue;	
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "PARAMETER" ) {
+				PARAMETER = constraints[x].initialValue;
+				PARAMETER = replaceAll(PARAMETER, "|", ";");
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "FILTRO" ) {
+				FILTRO = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "XML" ) {
+				XML = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "TAMANHO_PRIMARYKEY" ) {
+				TAMANHO_PRIMARYKEY = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "OBJETO" || constraints[x].fieldName.toUpperCase() == "TABELA" ) {
+				OBJETO = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "PRIMARY_KEY" ) {
+				PRIMARY_KEY = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "CAMPOS" ) {
+				CAMPOS = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "EXP" ) {
+				OPC = 5;
+				OPC_DESCRICAO = "EXECUTEPROCESSWITHXMLPARAMS";
+				EXP = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "SQL" ) {
+				OPC = 4;
+				OPC_DESCRICAO = "SQL";
+				SQL = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "SAV" ) {
+				OPC = 3;
+				OPC_DESCRICAO = "SAVERECORD";
+				SAV = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "REC" ) {
+				OPC = 2;
+				OPC_DESCRICAO = "READRECORD";
+				REC = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "VIE" ) {
+				OPC = 1;
+				OPC_DESCRICAO = "READVIEW";
+				VIE = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "OPC" ) {
+				OPC = parseInt(constraints[x].initialValue);
+				switch (OPC ) {
+					case 1:
+						OPC_DESCRICAO = "READVIEW";
+						break;
+						
+					case 2:
+						OPC_DESCRICAO = "READRECORD";
+						break;
+						
+					case 3:
+						OPC_DESCRICAO = "SAVERECORD";
+						break;
+						
+					case 4:
+						OPC_DESCRICAO = "SQL";
+						break;
+						
+					case 5:
+						OPC_DESCRICAO = "EXECUTEPROCESSWITHXMLPARAMS";
+						break;
+						
+					case 6:
+						OPC_DESCRICAO = "WSREPORT";
+						break;
+						
+					case 7:
+						OPC_DESCRICAO = "SQL_TOXML_TOJSON";
+						break;
+						
+					case 8:
+						OPC_DESCRICAO = "READVIEW_TOXML_TOJSON";
+						break;
+						
+					case 9:
+						OPC_DESCRICAO = "EXECUTE_FV";
+						break;
+				}
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "TAMANHO_MINIMO" ) {
+				TAMANHO_MINIMO = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "SQLLIMIT" ) {
+				SQLLIMIT = constraints[x].initialValue;
+				continue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "RMSCONTEXT" || constraints[x].fieldName.toUpperCase() == "RMSFILTER" ) {
+				RMS.push(constraints[x]);
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "ZOOM" ) {
+				ZOOM = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "PROCESS" ) {
+				PROCESS = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "REPORT" ) {
+				REPORT = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "FILE" ) {
+				FILE = constraints[x].initialValue;
+				
+			} else if ( constraints[x].fieldName.toUpperCase() == "IDFV" ) {
+				IDFV = constraints[x].initialValue;
+				
+			} else {
+				novaConstraints.push(constraints[x]);
+				log.info("######### [DSINTEGRAFACILRM] CONSTRAINTS: " + constraints[x].fieldName.toUpperCase() + " - " + constraints[x].initialValue);
+			}
+		}
+		
+		zoomConstraints = new Array();
+		if ( ZOOM && fields && fields.length > 0 && OPC != 4 ) {
+			for (var x = 0; x < novaConstraints.length; x++) {
+				for (var y = 0;y < fields.length;y++) {
+					if (novaConstraints[x].fieldName.toUpperCase() != fields[y]) {
+						zoomConstraints.push(DatasetFactory.createConstraint(fields[y], novaConstraints[x].initialValue, novaConstraints[x].finalValue, ConstraintType.SHOULD));
+					}
+				}
+			}
+			
+		} else if ( ZOOM && OPC == 4 && PARAMETER ) {
+			for (var x = 0; x < novaConstraints.length; x++) {
+				PARAMETER = PARAMETER.replace('@', novaConstraints[x].initialValue);
+			}
+			novaConstraints = new Array();
+		}
+		
+		for ( var x = 0; x < RMS.length; x++) {
+			novaConstraints.push(RMS[x]);
+		}
+		
+		for (var x = 0; x < zoomConstraints.length; x++) {
+			novaConstraints.push(zoomConstraints[x]);
+		}
+		
+		log.info("######### [DSINTEGRAFACILRM] ESCOHIDA A OPERAÇÃO: " + OPC + " ( " + OPC_DESCRICAO + " )");
+		
+		/**
+		 * CONDIÇÕES CRIADAS PARA MANTER COMPATIBILIDADE COM O DATASET UTILIZADO EM OUTROS PROCESSOS, CASO NÃO SEJA ENVIADA A CONSTRAINT COM A LISTA DE CAMPOS É UTILIZADA A LISTA DOS CAMPOS RECEBIDAS EM FIELDS.
+		 */
+		
+		if ( !CAMPOS && !fields ) {
+			log.info("######### [DSINTEGRAFACILRM] POR FAVOR UTILIZE A CONSTRAINT DE CAMPOS OU PARAMETRO FIELDS PARA PASSAR OS CAMPOS A SEREM RETORNADOS.");
+			
+		} else if (!CAMPOS && fields) {
+			if (fields.length > 1) {
+				CAMPOS = fields.join('&');
+				
+			} else {
+				CAMPOS = fields[0];
+			}
+			
+		} else if ( CAMPOS && fields ) {
+			log.info("######### [DSINTEGRAFACILRM] EVITE UTILZIAR A CONSTRAINT DE CAMPOS E O PARAMETRO FIELDS PARA PASSAR OS CAMPOS A SEREM RETORNADOS, QUANDO PASSADO OS DOIS APENAS A CONSTRAINT SERÁ UTILZADA.");
+		}
+		
+		/**
+		 * MANTENDO FUNÇÃO DE BUSCAR DO DATASET DSINTEGRADOR OS USUÁRIOS E SENHAS DE INTEGRAÇÃO
+		 */
+		
+		var integration = getPasswordUserIntegration();
+		var usuario = integration.USUARIO;
+		var senha = integration.SENHA;
+		
+		if ( OPC == 4 ) {
+			if ( !PARAMETER ) {
+				PARAMETER = "";
+			}
+			
+			for (i = 0; i < novaConstraints.length; i++) {
+				if (PARAMETER == "") {
+					PARAMETER += constraints[i].fieldName + "=" + constraints[i].initialValue;
+					
+				} else {
+					PARAMETER += ";" + constraints[i].fieldName + "=" + constraints[i].initialValue;
+				}
+			}
+			
+		} else {
+			filters = parseConstraints(novaConstraints, true, OBJETO);
+		}
+		
+		/**
+		 * CONDIÇÕES CRIADAS PARA MANTER COMPATIBILIDADE COM O DATASET UTILIZADO EM OUTROS PROCESSOS, CRIA O CONTEXT E O FILTER, MESMO QUANDO NÃO ENVIADAS AS CONSTRAINT RMSCONTEXT E RMSFILTER.
+		 */
+		
+		if ( filters.context == "" && COLIGADA ) {
+			/*filters.context = "CODCOLIGADA=" + COLIGADA + ";CODUSUARIO=" + usuario;*/
+			filters.context = "CODCOLIGADA=1" + ";CODUSUARIO=" + usuario;
+		}
+		
+		log.info("######### [DSINTEGRAFACILRM] CONTEXTO GERADO PARA CONSULTA: " + filters.context);
+		if ( FILTRO ) {
+			if (filters.filter == "") {
+				filters.filter = "(" + replaceAll(FILTRO, '"', "'") + ")";
+				
+			} else {
+				filters.filter = "(" + filters.filter + ") AND (" + replaceAll(FILTRO, '"', "'") + ")";
+			}
+		}
+		
+		log.info("######### [DSINTEGRAFACILRM] FILTRO GERADO PARA CONSULTA: " + filters.filter);
+		switch (OPC) {
+			case 0:
+				if ( !NOME_DATASERVER || !PRIMARY_KEY ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER OU PRIMARY_KEY) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE DELEÇÃO DE REGISTRO");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("PRIMARY_KEY");
+				dataset.addColumn("CONTEXT");
+				var result = dcDeleteRecordByKey(NOME_DATASERVER, filters.context, usuario, senha, PRIMARY_KEY);
+				log.info("######### [DSINTEGRAFACILRM] OPC 0 - RESULTADO: " + result);
+				
+				if ( result.toString().toUpperCase().indexOf('EXCLUSÃO DE REGISTRO(S) REALIZADO COM SUCESSO') != -1 ) {
+					var linha = new Array();
+					linha.push(result.toString());
+					linha.push(NOME_DATASERVER);
+					linha.push(PRIMARY_KEY);
+					linha.push(filters.context);
+					dataset.addRow(linha);
+					
+					return dataset;
+				} 
+				
+				throw result.toString()
+				
+			case 1:
+				if (!NOME_DATASERVER || !OBJETO || !CAMPOS) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER, OBJETO OU CAMPO) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE LEITURA");
+				var xmlResultados = dcReadView(NOME_DATASERVER, filters.context, usuario, senha, filters.filter);
+				var dataset = DatasetBuilder.newDataset();
+				if (!xmlResultados[OBJETO][0]) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				
+				var colunas = [];
+				if (CAMPOS.indexOf(",") > -1) {
+					colunas = CAMPOS.split(",");
+				} else if (CAMPOS.indexOf(";") > -1) {
+					colunas = CAMPOS.split(";");
+				} else if (CAMPOS.indexOf("&") > -1) {
+					colunas = CAMPOS.split("&");
+				} else {
+					colunas.push(CAMPOS);
+				}
+				
+				for (var i = 0; i < colunas.length; i++) {
+					dataset.addColumn(colunas[i]);
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] PREPARANDO COLUNAS PADRAO: NOME_DATASERVER, OBJETO, CAMPOS, RMSFILTER, RMSCONTEXT, XML");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("OBJETO");
+				dataset.addColumn("CAMPOS");
+				dataset.addColumn("RMSFILTER");
+				dataset.addColumn("RMSCONTEXT");
+				log.info("######### [DSINTEGRAFACILRM] ADICIONANDO LINHAS: ");
+				log.info("######### SQLLIMIT " + SQLLIMIT);
+				
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					var linha = new Array();
+					for (var j = 0;j < colunas.length;j++) {
+						linha.push(xmlResultados[OBJETO][i][colunas[j]].toString());
+					}
+					linha.push(NOME_DATASERVER);
+					linha.push(OBJETO);
+					linha.push(CAMPOS);
+					linha.push(filters.filter);
+					linha.push(filters.context);
+					dataset.addRow(linha);
+					if (SQLLIMIT && i >= SQLLIMIT) {
+						break;
+					}
+				}
+				log.info("######### [DSINTEGRAFACILRM] DATASET CRIADO COM SUCESSO");
+				
+				return dataset;
+				
+			case 2:
+				if ( !NOME_DATASERVER || !CAMPOS || !PRIMARY_KEY ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER, PRIMARY_KEY OU CAMPO) FALTANDO.";
+				}
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE LEITURA");
+				var xmlResultados = dcReadRecord(NOME_DATASERVER, filters.context, usuario, senha, PRIMARY_KEY);
+				var dataset = DatasetBuilder.newDataset();
+				
+				var colunas = [];
+				if (CAMPOS.indexOf(",") > -1) {
+					colunas = CAMPOS.split(",");
+				} else if (CAMPOS.indexOf(";") > -1) {
+					colunas = CAMPOS.split(";");
+				} else if (CAMPOS.indexOf("&") > -1) {
+					colunas = CAMPOS.split("&");
+				} else {
+					colunas.push(CAMPOS);
+				}
+				
+				var objXML = {};
+				for ( var i = 0; i < colunas.length; i++) {
+					if ( colunas[i].indexOf(".") > -1 ) {
+						var indice = colunas[i].indexOf(".");
+						var tabela = colunas[i].substring(0, indice);
+						var attr = colunas[i].substring(indice + 1);
+						if ( objXML[tabela] ) {
+							objXML[tabela].push(attr);
+							
+						} else {
+							objXML[tabela] = new Array();
+							objXML[tabela].push(attr);
+						}
+						
+					} else {
+						throw "POR FAVOR REVEJA AS OS CAMPOS PASSADOS NÃO FOI IDENTIFICADO O ELEMENTO DO ATIRIBUTO.";
+					}
+				}
+				
+				for ( var tabela in objXML) {
+					var qtd = xmlResultados[tabela].length(); //log.info("######### [DSINTEGRAFACILRM] QTD DE REGISTROS ENCONTRADO NA TABELA " + tabela + ": " + qtd);
+					for ( var h = 0;h < qtd;h++) {
+						for ( var i = 0; i < objXML[tabela].length; i++) {
+							if ( qtd > 1 ) { //		log.info("######### [DSINTEGRAFACILRM] ADICIONANDO COLUNA: " + objXML[tabela][i] + "_" + (h + 1));
+								dataset.addColumn(objXML[tabela][i] + "_" + (h + 1));
+								
+							} else {
+								dataset.addColumn(objXML[tabela][i]); //		log.info("######### [DSINTEGRAFACILRM] ADICIONANDO COLUNA: " + objXML[tabela][i]);
+							}
+						}
+					}
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] PREPARANDO COLUNAS PADRAO: NOME_DATASERVER, OBJETO, CAMPOS, RMSFILTER, RMSCONTEXT, XML");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("CAMPOS");
+				dataset.addColumn("PRIMARY_KEY");
+				dataset.addColumn("RMSCONTEXT");
+				dataset.addColumn("XML");
+				log.info("######### [DSINTEGRAFACILRM] ADICIONANDO LINHAS: ");
+				var linha = new Array();
+				var flag = false;
+				for ( var tabela in objXML) {
+					var qtd = xmlResultados[tabela].length();
+					for (var h = 0;h < qtd;h++) {
+						for (var i = 0; i < objXML[tabela].length; i++) {
+							linha.push(xmlResultados[tabela][h][objXML[tabela][i]].toString());
+							flag = true;
+						}
+					}
+				}
+				
+				if ( !flag ) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				
+				linha.push(NOME_DATASERVER);
+				linha.push(CAMPOS);
+				linha.push(PRIMARY_KEY);
+				linha.push(filters.context);
+				linha.push(XML);
+				dataset.addRow(linha);
+				log.info("######### [DSINTEGRAFACILRM] DATASET CRIADO COM SUCESSO");
+				
+				return dataset;
+				
+			case 3:
+				if ( !NOME_DATASERVER || !XML || !TAMANHO_PRIMARYKEY ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER, XML OU TAMANHO_PRIMARYKEY) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE GRAVACAO");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("TAMANHO_PRIMARYKEY");
+				dataset.addColumn("RMSCONTEXT");
+				dataset.addColumn("XML");
+				var result = dcSaveRecord(NOME_DATASERVER, filters.context, usuario, senha, XML);
+				log.info("######### [DSINTEGRAFACILRM] OPC 3 - RESULTADO: " + result);
+				
+				if ( checkIsPK(result, TAMANHO_PRIMARYKEY) ) {
+					var linha = new Array();
+					linha.push(result.toString());
+					linha.push(NOME_DATASERVER);
+					linha.push(TAMANHO_PRIMARYKEY);
+					linha.push(filters.context);
+					linha.push(XML);
+					dataset.addRow(linha);
+					
+					return dataset;
+					
+				} else {
+					throw "NÃO FOI POSSIVEL VALIDAR CHAVE, REGISTRO PODE NÃO TER SIDO SALVO.";
+				}
+				
+			case 4:
+				if ( !SENTENCA || !COLIGADA || !APLICACAO || !OBJETO || !CAMPOS ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (SENTENCA, COLIGADA,  APLICACAO, OBJETO E CAMPOS) FALTANDO.";
+				}
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE CONSULTA SQL");
+				OBJETO = "Resultado";
+				log.info("######### usuario= " + usuario);
+				log.info("######### senha= " + senha);
+				log.info("######### SENTENCA= " + SENTENCA); 
+				log.info("######### COLIGADA= " + COLIGADA); 
+				log.info("######### APLICACAO= " + APLICACAO); 
+				log.info("######### PARAMETER= " + PARAMETER); 
+				
+				var xmlResultados = dcExecuteSQL(usuario, senha, SENTENCA, COLIGADA, APLICACAO, PARAMETER);
+				var dataset = DatasetBuilder.newDataset();
+				
+				if (!xmlResultados[OBJETO][0]) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				
+				var colunas = [];
+				if (CAMPOS.indexOf(",") > -1) {
+					colunas = CAMPOS.split(",");
+				} else if (CAMPOS.indexOf(";") > -1) {
+					colunas = CAMPOS.split(";");
+				} else if (CAMPOS.indexOf("&") > -1) {
+					colunas = CAMPOS.split("&");
+				} else {
+					colunas.push(CAMPOS);
+				}
+				
+				for (var i = 0; i < colunas.length; i++) {
+					dataset.addColumn(colunas[i]);
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] PREPARANDO COLUNAS PADRAO: OBJETO, CAMPOS, SENTENCA, COLIGADA, APLICACAO, PARAMETER");
+				dataset.addColumn("OBJETO");
+				dataset.addColumn("CAMPOS");
+				dataset.addColumn("SENTENCA");
+				dataset.addColumn("COLIGADA");
+				dataset.addColumn("APLICACAO");
+				dataset.addColumn("PARAMETER");
+				log.info("######### [DSINTEGRAFACILRM] ADICIONANDO LINHAS: ");
+				log.info("######### SQLLIMIT " + SQLLIMIT);
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					var linha = new Array();
+					for (var j = 0;j < colunas.length;j++) {
+						linha.push(xmlResultados[OBJETO][i][colunas[j]].toString());
+					}
+					linha.push(OBJETO);
+					linha.push(CAMPOS);
+					linha.push(SENTENCA);
+					linha.push(COLIGADA);
+					linha.push(APLICACAO);
+					linha.push(PARAMETER);
+					dataset.addRow(linha);
+					if (SQLLIMIT && i >= SQLLIMIT) {
+						break;
+					}
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] DATASET CRIADO COM SUCESSO");
+				
+				return dataset;
+				
+			case 5:
+				if (!PROCESS || !PARAMETER) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (PROCESS OU PARAMETER) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE FORMULA VISUAL");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("PROCESS");
+				dataset.addColumn("PARAMETER");
+				
+				if (XML == 'N') {
+					log.info("######### [DSINTEGRAFACILRM] EXECUTANDO SEM XMLPARAMS");
+					var result = dcExecuteProcessWithParams(usuario, senha, PROCESS, PARAMETER);
+				} else {
+					log.info("######### [DSINTEGRAFACILRM] EXECUTANDO COM XMLPARAMS");
+					var result = dcExecuteProcessWithXmlParams(usuario, senha, PROCESS, PARAMETER);
+				}
+				
+				if (result != "1") {
+					throw "ERRO AO EXERCUTAR FORMULA VISUAL, VERIFIQUE O LOG: " + result;
+				}
+				log.info("######### [DSINTEGRAFACILRM] OPC 5 - RESULTADO: " + result);
+				
+				var linha = new Array();
+				linha.push(result);
+				linha.push(PROCESS);
+				linha.push(PARAMETER);
+				dataset.addRow(linha);
+				
+				return dataset;
+				
+			case 6:
+				/*
+				 * Alterado por: Alexandre Silva Alterado em: 26/07/2019 Alteração: foi removida a consistencia de filtro e parametro, pois os relatórios podem ter um ou outro ou ter ambos ou apenas não ter nenhum.
+				 */
+				if (!REPORT || !COLIGADA || !FILE) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (REPORT, FILE, COLIGADA) FALTANDO.";
+				}
+				
+				if (PARAMETER == undefined) {
+					PARAMETER = "";
+				}
+				
+				if (FILTRO == undefined) {
+					FILTRO = "";
+				}
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE GERAÇÃO DE RELATÓRIO");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("REPORT");
+				dataset.addColumn("FILE");
+				dataset.addColumn("FILTRO");
+				dataset.addColumn("COLIGADA");
+				var result = dcExecuteRPT(usuario, senha, COLIGADA, REPORT, FILE, FILTRO, PARAMETER);
+				log.info("######### [DSINTEGRAFACILRM] OPC 6 - RESULTADO: " + result);
+				
+				var linha = new Array();
+				linha.push("data:application/pdf;base64, " + result);
+				linha.push(REPORT);
+				linha.push(FILE);
+				linha.push(FILTRO);
+				linha.push(COLIGADA);
+				dataset.addRow(linha);
+				
+				return dataset;
+				
+			case 7:
+				if (!SENTENCA || !COLIGADA || !APLICACAO || !OBJETO || !CAMPOS) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (SENTENCA, COLIGADA,  APLICACAO, OBJETO E CAMPOS) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE CONSULTA SQL");
+				OBJETO = "Resultado";
+				log.info('usuario ' + usuario + ' senha ' + senha + ' SENTENCA ' + SENTENCA + ' COLIGADA ' + COLIGADA + ' APLICACAO ' + APLICACAO + ' PARAMETER ' + PARAMETER);
+				var xmlResultados = dcExecuteSQL(usuario, senha, SENTENCA, COLIGADA, APLICACAO, PARAMETER);
+				var dataset = DatasetBuilder.newDataset();
+				
+				if (!xmlResultados[OBJETO][0]) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				var colunas = [];
+				
+				if (CAMPOS.indexOf(",") > -1) {
+					colunas = CAMPOS.split(",");
+				} else if (CAMPOS.indexOf(";") > -1) {
+					colunas = CAMPOS.split(";");
+				} else if (CAMPOS.indexOf("&") > -1) {
+					colunas = CAMPOS.split("&");
+				} else {
+					colunas.push(CAMPOS);
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] PREPARANDO COLUNAS PADRAO: OBJETO, CAMPOS, SENTENCA, COLIGADA, APLICACAO, PARAMETER");
+				dataset.addColumn("OBJETO");
+				dataset.addColumn("CAMPOS");
+				dataset.addColumn('XML_RESULT');
+				dataset.addColumn('JSON_RESULT');
+				dataset.addColumn("SENTENCA");
+				dataset.addColumn("COLIGADA");
+				dataset.addColumn("APLICACAO");
+				dataset.addColumn("PARAMETER");
+				log.info("######### [DSINTEGRAFACILRM] ADICIONANDO LINHAS: ");
+				var XML_RESULT = '<XML_RESULT>';
+				
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					XML_RESULT += '<ROW>';
+					for (var j = 0;j < colunas.length;j++) {
+						XML_RESULT += '<' + colunas[j] + '>' + xmlResultados[OBJETO][i][colunas[j]].toString() + '</' + colunas[j] + '>';
+					}
+					XML_RESULT += '</ROW>';
+				}
+				
+				XML_RESULT += '</XML_RESULT>';
+				var JSON_RESULT = '{ "JSON_RESULT" : [';
+				
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					JSON_RESULT += "{";
+					for (var j = 0;j < colunas.length;j++) {
+						JSON_RESULT += '"' + colunas[j] + '" : "' + escapeJSON(xmlResultados[OBJETO][i][colunas[j]].toString()) + '", ';
+					}
+					JSON_RESULT = JSON_RESULT.substring(0, JSON_RESULT.length - 2);
+					JSON_RESULT += "}, ";
+				}
+				
+				JSON_RESULT = JSON_RESULT.substring(0, JSON_RESULT.length - 2);
+				JSON_RESULT += "] }";
+				
+				var linha = new Array();
+				
+				linha.push(OBJETO);
+				linha.push(CAMPOS);
+				linha.push(XML_RESULT);
+				linha.push(JSON_RESULT);
+				linha.push(SENTENCA);
+				linha.push(COLIGADA);
+				linha.push(APLICACAO);
+				linha.push(PARAMETER);
+				
+				dataset.addRow(linha);
+				
+				log.info("######### [DSINTEGRAFACILRM] DATASET CRIADO COM SUCESSO");
+				return dataset;
+				
+			case 8:
+				if (!NOME_DATASERVER || !OBJETO || !CAMPOS) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER, OBJETO OU CAMPO) FALTANDO.";
+				}
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE LEITURA");
+				var xmlResultados = dcReadView(NOME_DATASERVER, filters.context, usuario, senha, filters.filter);
+				var dataset = DatasetBuilder.newDataset();
+				
+				if (!xmlResultados[OBJETO][0]) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				
+				var colunas = [];
+				if (CAMPOS.indexOf(",") > -1) {
+					colunas = CAMPOS.split(",");
+				} else if (CAMPOS.indexOf(";") > -1) {
+					colunas = CAMPOS.split(";");
+				} else if (CAMPOS.indexOf("&") > -1) {
+					colunas = CAMPOS.split("&");
+				} else {
+					colunas.push(CAMPOS);
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] PREPARANDO COLUNAS PADRAO: NOME_DATASERVER, OBJETO, CAMPOS, RMSFILTER, RMSCONTEXT, XML");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("OBJETO");
+				dataset.addColumn("CAMPOS");
+				dataset.addColumn('XML_RESULT');
+				dataset.addColumn('JSON_RESULT');
+				dataset.addColumn("RMSFILTER");
+				dataset.addColumn("RMSCONTEXT");
+				log.info("######### [DSINTEGRAFACILRM] ADICIONANDO LINHAS: ");
+				log.info("######### SQLLIMIT " + SQLLIMIT);
+				
+				var XML_RESULT = '<XML_RESULT>';
+				
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					XML_RESULT += '<ROW>';
+					for (var j = 0;j < colunas.length;j++) {
+						XML_RESULT += '<' + colunas[j] + '>' + xmlResultados[OBJETO][i][colunas[j]].toString() + '</' + colunas[j] + '>';
+					}
+					XML_RESULT += '</ROW>';
+					
+					if (SQLLIMIT && i >= SQLLIMIT) {
+						break;
+					}
+				}
+				
+				XML_RESULT += '</XML_RESULT>';
+				var JSON_RESULT = '{ "JSON_RESULT" : [';
+				
+				for (var i = 0; i < xmlResultados[OBJETO].length(); i++) {
+					JSON_RESULT += "{";
+					for (var j = 0;j < colunas.length;j++) {
+						JSON_RESULT += '"' + colunas[j] + '" : "' + escapeJSON(xmlResultados[OBJETO][i][colunas[j]].toString()) + '", ';
+					}
+					JSON_RESULT = JSON_RESULT.substring(0, JSON_RESULT.length - 2);
+					JSON_RESULT += "}, ";
+					
+					if (SQLLIMIT && i >= SQLLIMIT) {
+						break;
+					}
+				}
+				
+				JSON_RESULT = JSON_RESULT.substring(0, JSON_RESULT.length - 2);
+				JSON_RESULT += "] }";
+				
+				var linha = new Array();
+				
+				linha.push(NOME_DATASERVER);
+				linha.push(OBJETO);
+				linha.push(CAMPOS);
+				linha.push(XML_RESULT);
+				linha.push(JSON_RESULT);
+				linha.push(filters.filter);
+				linha.push(filters.context);
+				
+				dataset.addRow(linha);
+				
+				log.info("######### [DSINTEGRAFACILRM] DATASET CRIADO COM SUCESSO");
+				return dataset;
+				
+			case 9:
+				if ( !COLIGADA || !IDFV || !PARAMETER ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA COLIGADA E IDFV E PARAMETER FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE FORMULA VISUAL");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("COLIGADA");
+				dataset.addColumn("IDFV");
+				dataset.addColumn("PARAMETER");
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO");
+				var result = dcExecuteFV(usuario, senha, COLIGADA, APLICACAO, IDFV, PARAMETER);
+				
+				if ( result.getErrorMessage().getValue() != null ) {
+					throw "ERRO AO EXECUTAR FORMULA VISUAL, VERIFIQUE O LOG: " + result.getErrorMessage().getValue();
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] OPC 9 - RESULTADO: ");
+				
+				var linha = new Array();
+				linha.push('OK');
+				linha.push(COLIGADA);
+				linha.push(IDFV);
+				linha.push(PARAMETER);
+				
+				dataset.addRow(linha);
+				
+				return dataset;
+				
+			case 10:
+				if ( !NOME_DATASERVER || !XML ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (NOME_DATASERVER OU XML) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE DELEÇÃO DE REGISTRO");
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn("RETORNO");
+				dataset.addColumn("DATASERVER");
+				dataset.addColumn("XML");
+				dataset.addColumn("CONTEXT");
+				
+				var result = dcDeleteRecord(NOME_DATASERVER, filters.context, usuario, senha, XML);
+				
+				log.info("######### [DSINTEGRAFACILRM] OPC 0 - RESULTADO: " + result);
+				
+				if ( result.toString().toUpperCase().indexOf('EXCLUSÃO DE REGISTRO(S) REALIZADO COM SUCESSO') != -1 ) {
+					var linha = new Array();
+					linha.push(result.toString());
+					linha.push(NOME_DATASERVER);
+					linha.push(XML);
+					linha.push(filters.context);
+					
+					dataset.addRow(linha);
+					
+					return dataset;
+				}
+				
+			case 11: 
+			    if ( !SENTENCA || !COLIGADA || !APLICACAO || !OBJETO  ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (SENTENCA, COLIGADA,  APLICACAO, OBJETO ) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE CONSULTA SQL");
+				OBJETO = "Resultado";
+				
+				log.info("######### usuario= " + usuario);
+				log.info("######### senha= " + senha);
+				log.info("######### SENTENCA= " + SENTENCA); 
+				log.info("######### COLIGADA= " + COLIGADA); 
+				log.info("######### APLICACAO= " + APLICACAO); 
+				log.info("######### PARAMETER= " + PARAMETER); 
+				
+				var xmlResultados = dcExecuteSQL(usuario, senha, SENTENCA, COLIGADA, APLICACAO, PARAMETER);
+				log.dir('teste xml resultado')
+				log.dir(xmlResultados)
+				if ( !xmlResultados[OBJETO][0] ) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				var dataset = DatasetBuilder.newDataset();
+				log.dir('teste 2')
+			    log.dir(xmlResultados[OBJETO])
+				var elementoXml = xmlResultados[OBJETO].toString()
+				
+				log.dir(elementoXml)
+				
+				var json = org.json.XML.toJSONObject(elementoXml.toString());
+                var jsonObject = JSON.parse(json);
+                log.dir(json);
+				var objResultado = jsonObject.Resultado;
+				
+				if(!Array.isArray(objResultado)){
+				    objResultado = [objResultado]
+				}
+				
+				var colunas = Object.keys(objResultado[0])    
+				
+				var objCol = {}
+				
+				for(var x in colunas){
+				    objCol[colunas[x]] = '';
+				}
+				
+				for (var c = 0; c < colunas.length; c++) {
+				    dataset.addColumn(colunas[c])
+				}
+				
+				for (var c = 0; c < objResultado.length; c++) {
+				    
+				    var auxCol = Object.keys(objResultado[c]);
+				    
+				    if(colunas.length != auxCol){
+				        for(var y in auxCol){
+				            if(objCol[auxCol[y]] == undefined){
+				                colunas.push(auxCol[y])
+				                objCol[auxCol[y]]
+				            }
+				        }
+				    }
+				    
+				    var row = getArrayOfRow(objResultado[c], colunas);
+				    
+				  
+				    if ( row && row.length == colunas.length ) {
+				        dataset.addRow(getArrayOfRow(objResultado[c], colunas))  
+				    }
+				}
+				
+				return dataset  
+				
+			case 12: 
+			    if ( !SENTENCA || !COLIGADA || !APLICACAO || !OBJETO  ) {
+					throw "POR FAVOR REVEJA AS CONSTRAINTS, CONSTRAINT OBRIGATORIA (SENTENCA, COLIGADA,  APLICACAO, OBJETO ) FALTANDO.";
+				}
+				
+				log.info("######### [DSINTEGRAFACILRM] EXECUTANDO PROCESSO DE CONSULTA SQL");
+				OBJETO = "Resultado";
+				
+				log.info("######### usuario= " + usuario);
+				log.info("######### senha= " + senha);
+				log.info("######### SENTENCA= " + SENTENCA); 
+				log.info("######### COLIGADA= " + COLIGADA); 
+				log.info("######### APLICACAO= " + APLICACAO); 
+				log.info("######### PARAMETER= " + PARAMETER); 
+				
+				var xmlResultados = dcExecuteSQL(usuario, senha, SENTENCA, COLIGADA, APLICACAO, PARAMETER);
+				
+				if ( !xmlResultados[OBJETO][0] ) {
+					throw "NÃO FORAM ENCONTRADO OS DADOS NA CONSULTA.";
+				}
+				
+				var elementoXml = xmlResultados[OBJETO].toString()
+				
+				var json = org.json.XML.toJSONObject(elementoXml.toString());
+                var jsonObject = JSON.parse(json);
+            
+				var objResultado = jsonObject.Resultado;
+				
+				var sRet = JSON.stringify(jsonObject.Resultado);
+				
+				var dataset = DatasetBuilder.newDataset();
+				dataset.addColumn('MESSAGE')
+				dataset.addRow([sRet]);
+				
+				return dataset;
+		}
+		
+	} catch (e) {
+		if ( e == null || e == undefined ) {
+			e = "Erro desconhecido!";
+		}
+		
+		var mensagemErro = "Ocorreu um erro ao executar Dataset: " + e;
+		
+		var dataset = DatasetBuilder.newDataset();
+		log.info("######### [DSINTEGRAFACILRM] ENCONTRADO ERRO NA CRIACAO DO DATASET " + e);
+		log.info("ERRO => " + mensagemErro);
+		log.info("OPC => " + OPC);
+		log.info("SENTENCA => " + SENTENCA);
+		log.info("APLICACAO => " + APLICACAO);
+		log.info("COLIGADA => " + COLIGADA);
+		log.info("PARAMETER => " + PARAMETER);
+		log.info("REPORT => " + REPORT);
+		log.info("FILE => " + FILE);
+		log.info("DATASERVER => " + NOME_DATASERVER);
+		log.info("OBJETO => " + OBJETO);
+		log.info("PRIMARY_KEY => " + PRIMARY_KEY);
+		log.info("CAMPOS => " + CAMPOS);
+		log.info("RMSFILTER => " + filters.filter);
+		log.info("RMSCONTEXT => " + filters.context);
+		log.info("XML => " + XML);
+		
+		dataset.addColumn("ERRO");
+		dataset.addColumn("OPC");
+		dataset.addColumn("SENTENCA");
+		dataset.addColumn("COLIGADA");
+		dataset.addColumn("APLICACAO");
+		dataset.addColumn("PARAMETER");
+		dataset.addColumn("PROCESS");
+		dataset.addColumn("REPORT");
+		dataset.addColumn("FILE");
+		dataset.addColumn("DATASERVER");
+		dataset.addColumn("OBJETO");
+		dataset.addColumn("PRIMARY_KEY");
+		dataset.addColumn("CAMPOS");
+		dataset.addColumn("RMSFILTER");
+		dataset.addColumn("RMSCONTEXT");
+		dataset.addColumn("XML");
+		
+		dataset.addRow(new Array(mensagemErro, OPC, SENTENCA, COLIGADA, APLICACAO, PARAMETER, PROCESS, REPORT, FILE, NOME_DATASERVER, OBJETO, PRIMARY_KEY, CAMPOS, filters.filter, filters.context, XML));
+		
+		return dataset;
+	}
+}
+
+/**
+ * ABAIXO FUNÇÕES DE APOIO, PARA INTEGRAÇÃO COM WEBSERVICE DO RM OU TRATAMENTO DOS DADOS
+ */
+/**
+ * A API de autenticação da TOTVS baseia no "Basic access authentication" do HTTP. Código Java para autenticação Programa responsável por integrar com os Webservices do RM Exemplo dev valores para os parâmetros
+ * 
+ * @param string usuario = "mestre";
+ * @param string senha = "totvs";
+ */
+
+function getArrayOfRow (element, colunas) {
+    var arrayRetorno = new Array()
+    
+    for(var y = 0; y < colunas.length;y++ ){
+        var auxitem = element[colunas[y]]
+        if ( auxitem == undefined ) {
+            arrayRetorno.push('-')  
+            
+        } else {
+            arrayRetorno.push((element[colunas[y]]).toString())    
+        }
+    }
+    
+    return arrayRetorno;
+}
+
+function getWebService (usuario, senha) {
+	var nome_servico = "WSDATASERVER";
+	var caminho_servico = "com.totvs.WsDataServer";
+	var dataServerService = ServiceManager.getServiceInstance(nome_servico);
+	var properties = {};
+	properties["basic.authorization"] = "true";
+	properties["basic.authorization.username"] = usuario;
+	properties["basic.authorization.password"] = senha;
+	properties["disable.chunking"] = "true";
+	properties["log.soap.messages"] = "true";
+	// A propriedade receive.timeout está disponível a partir da versão 1.4.10
+	properties["receive.timeout"] = "1800000";
+	if (dataServerService == null) {
+		throw "Servico nao encontrado: " + nome_servico;
+	}
+	var serviceLocator = dataServerService.instantiate(caminho_servico);
+	if (serviceLocator == null) {
+		throw "Instancia do servico nao encontrada: " + nome_servico + " - " + caminho_servico;
+	}
+	var service = serviceLocator.getRMIwsDataServer();
+	if (service == null) {
+		throw "Instancia do dataserver do invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	var serviceHelper = dataServerService.getBean();
+	if (serviceHelper == null) {
+		throw "Instancia do service helper invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	// var authService = serviceHelper.getBasicAuthenticatedClient(service,"com.totvs.IwsDataServer",usuario,senha);
+	var authService = serviceHelper.getCustomClient(service, "com.totvs.IwsDataServer", properties);
+	if (serviceHelper == null) {
+		throw "Instancia do auth service invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	
+	return authService;
+};
+
+function dcDeleteRecordByKey (dataservername, context, usuario, senha, primaryKey) {
+	var authService = getWebService(usuario, senha);
+	var mensagem = new String(authService.deleteRecordByKey(dataservername, primaryKey, context));
+	
+	return mensagem;
+};
+
+function dcDeleteRecord (dataservername, context, usuario, senha, xml) {
+	var authService = getWebService(usuario, senha);
+	var mensagem = new String(authService.deleteRecord(dataservername, xml, context));
+	
+	return mensagem;
+};
+
+function dcReadView (dataservername, context, usuario, senha, filtro) {
+	var authService = getWebService(usuario, senha);
+	var resultAuthService = authService.readView(dataservername, filtro, context)
+	var stringResult = new String(resultAuthService)
+	var viewData = new XML(stringResult.replace(/&#x[0-f]{1,2};/gi, ""));
+	
+	return viewData;
+};
+
+function dcReadRecord (dataservername, context, usuario, senha, primaryKey) {
+	var authService = getWebService(usuario, senha);
+	try {
+		var recordData = new XML(authService.readRecord(dataservername, primaryKey, context));
+	} catch(e) {
+		var recordData = new String(authService.getSchema(dataservername, context));
+	}
+	
+	return recordData;
+};
+
+function dcSaveRecord (dataservername, context, usuario, senha, xml) {
+	var authService = getWebService(usuario, senha);
+	var pk = new String(authService.saveRecord(dataservername, xml, context));
+	
+	return pk;
+};
+
+/**
+ * A API de autenticação da TOTVS baseia no "Basic access authentication" do HTTP. Código Java para autenticação Programa responsável por integrar com os Webservices do RM Exemplo dev valores para os parâmetros
+ * 
+ * @param string usuario = "mestre";
+ * @param string senha = "totvs";
+ */
+
+function getWebServiceSQL (usuario, senha) {
+	var nome_servico = "wsRMConsultaSQL";
+	var caminho_servico = "com.totvs.WsConsultaSQL";
+	var dataServerService = ServiceManager.getServiceInstance(nome_servico);
+	var properties = {};
+	properties["basic.authorization"] = "true";
+	properties["basic.authorization.username"] = usuario;
+	properties["basic.authorization.password"] = senha;
+	properties["disable.chunking"] = "true";
+	properties["log.soap.messages"] = "true";
+	// A propriedade receive.timeout está disponível a partir da versão 1.4.10
+	properties["receive.timeout"] = "420000";
+	if (dataServerService == null) {
+		throw "Servico nao encontrado: " + nome_servico;
+	}
+	var serviceLocator = dataServerService.instantiate(caminho_servico);
+	if (serviceLocator == null) {
+		throw "Instancia do servico nao encontrada: " + nome_servico + " - " + caminho_servico;
+	}
+	var service = serviceLocator.getRMIwsConsultaSQL();
+	if (service == null) {
+		throw "Instancia do dataserver do invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	var serviceHelper = dataServerService.getBean();
+	if (serviceHelper == null) {
+		throw "Instancia do service helper invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	// var authService = serviceHelper.getBasicAuthenticatedClient(service, "com.totvs.IwsConsultaSQL", usuario, senha);
+	var authService = serviceHelper.getCustomClient(service, "com.totvs.IwsConsultaSQL", properties);
+	if (serviceHelper == null) {
+		throw "Instancia do auth service invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	
+	return authService;
+};
+
+function getWebServiceProcess (usuario, senha) {
+	var nome_servico = "wsProcess";
+	var caminho_servico = "com.totvs.WsProcess";
+	var dataServerService = ServiceManager.getServiceInstance(nome_servico);
+	var properties = {};
+	properties["basic.authorization"] = "true";
+	properties["basic.authorization.username"] = usuario;
+	properties["basic.authorization.password"] = senha;
+	properties["disable.chunking"] = "true";
+	properties["log.soap.messages"] = "true";
+	// A propriedade receive.timeout está disponível a partir da versão 1.4.10
+	properties["receive.timeout"] = "1800000";
+	if (dataServerService == null) {
+		throw "Servico nao encontrado: " + nome_servico;
+	}
+	var serviceLocator = dataServerService.instantiate(caminho_servico);
+	if (serviceLocator == null) {
+		throw "Instancia do servico nao encontrada: " + nome_servico + " - " + caminho_servico;
+	}
+	var service = serviceLocator.getRMIwsProcess();
+	if (service == null) {
+		throw "Instancia do dataserver do invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	var serviceHelper = dataServerService.getBean();
+	if (serviceHelper == null) {
+		throw "Instancia do service helper invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	// var authService = serviceHelper.getBasicAuthenticatedClient(service, "com.totvs.IwsProcess", usuario, senha);
+	var authService = serviceHelper.getCustomClient(service, "com.totvs.IwsProcess", properties);
+	if (serviceHelper == null) {
+		throw "Instancia do auth service invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	
+	return authService;
+};
+
+function getWebServiceRPT (usuario, senha) {
+	var nome_servico = "wsReport";
+	var caminho_servico = "com.totvs.WsReport";
+	var dataServerService = ServiceManager.getServiceInstance(nome_servico);
+	var properties = {};
+	properties["basic.authorization"] = "true";
+	properties["basic.authorization.username"] = usuario;
+	properties["basic.authorization.password"] = senha;
+	properties["disable.chunking"] = "true";
+	properties["log.soap.messages"] = "true";
+	// A propriedade receive.timeout está disponível a partir da versão 1.4.10
+	properties["receive.timeout"] = "420000";
+	log.info("wsProjetos-> dataServerService: " + dataServerService);
+	if (dataServerService == null) {
+		throw "Servico nao encontrado: " + nome_servico;
+	}
+	var serviceLocator = dataServerService.instantiate(caminho_servico);
+	log.info("wsProjetos-> serviceLocator: " + serviceLocator);
+	if (serviceLocator == null) {
+		throw "Instancia do servico nao encontrada: " + nome_servico + " - " + caminho_servico;
+	}
+	var service = serviceLocator.getRMIwsReport();
+	log.info("wsProjetos-> service: " + service);
+	if (service == null) {
+		throw "Instancia do dataserver do invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	var serviceHelper = dataServerService.getBean();
+	log.info("wsProjetos-> serviceHelper: " + serviceHelper);
+	if (serviceHelper == null) {
+		throw "Instancia do service helper invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	// var authService = serviceHelper.getBasicAuthenticatedClient(service, "com.totvs.IwsReport", usuario, senha);
+	var authService = serviceHelper.getCustomClient(service, "com.totvs.IwsReport", properties);
+	log.info("wsProjetos-> authService: " + authService);
+	if (authService == null) {
+		throw "Instancia do auth service invalida: " + nome_servico + " - " + caminho_servico;
+	}
+	
+	return authService;
+};
+
+/*
+ * Alterado por: Alexandre Silva Alterado em: 26/07/2019 Alteração: Foi removida a variavel parameter que estava sendo utilizada como fixo, e também adicionada a mesma como field da função.
+ */
+
+function dcExecuteRPT (usuario, senha, coligada, report, file, filter, parameter) {
+	// var parameter = '<ArrayOfRptParameterReportPar xmlns:i="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://www.totvs.com.br/RM/"></ArrayOfRptParameterReportPar>'
+	var authService = getWebServiceRPT(usuario, senha);
+	var guid = authService.generateReport(parseInt(coligada), parseInt(report), filter, parameter, file, 'CODCOLIGADA=1');
+	var size = authService.getGeneratedReportSize(guid);
+	var offset = 0;
+	var rptstr = "";
+	var pack = 65000;
+	// monta o arquivo com o relatório gerado
+	log.info("dcExecuteRPT-> montando relatório: " + guid);
+	log.info("dcExecuteRPT-> com size total: " + size);
+	/*while(offset < size) {
+		var temp = pack;
+		if ((offset + temp) > size)
+			temp = size - offset;
+		//log.info("dcExecuteRPT-> obtendo arquivo: " + offset + " - " + temp + " no total de " + size);
+		rptstr += authService.getFileChunk(guid, offset, temp);
+		offset = offset + pack;
+	}*/
+	//var result = rptstr;
+	
+	var result = authService.getFileChunk(guid, offset, parseInt(size));
+	
+	
+	// O TBC retorna os valores da chave caso o registro tenha sido salvo,
+	// caso contrário, a exceção ocorrida é enviada pelo mesmo retorno, porém
+	// formatada entre linhas '==='
+	if ((result != null) && (result.indexOf("===") != -1)) {
+		log.info("Erro no serviço.");
+		var msgErro = result.substring(0, result.indexOf("==="));
+		log.info(msgErro);
+		throw msgErro;
+	}
+	log.info("dcExecuteRPT-> result: " + rptstr);
+	
+	return result;
+};
+
+function dcExecuteSQL (usuario, senha, sentenca, coligada, aplicacao, parameter) {
+	log.info("#### entrou dcexecutesql.");
+	var authService = getWebServiceSQL(usuario, senha);
+	log.info("#### entrou authService.");
+	var result = new XML(new String(authService.realizarConsultaSQL(sentenca, parseInt(coligada), aplicacao, parameter)).replace(/&#x[0-f]{1,2};/gi, ""));
+	log.info("#### Atribuiu resultado");
+	
+	return result;
+};
+
+function dcExecuteProcessWithXmlParams (usuario, senha, processo, parameter) {
+	var authService = getWebServiceProcess(usuario, senha);
+	var result = authService.executeWithXmlParams(processo, parameter);
+	
+	return result;
+};
+
+function dcExecuteProcessWithParams (usuario, senha, processo, parameter) {
+	var authService = getWebServiceProcess(usuario, senha);
+	var result = authService.executeWithParams(processo, parameter);
+	
+	return result;
+};
+
+function dcExecuteFV (usuario, senha, codColigada, aplicacao, idFV, xmlParameter) {
+    var servico = ServiceManager.getServiceInstance("wsFormulaVisual");
+    var serviceHelper = servico.getBean();
+    var instancia = servico.instantiate("com.totvs.WsFormulaVisual");
+    var ws = instancia.getRMIwsFormulaVisual();
+    var authService = serviceHelper.getBasicAuthenticatedClient(ws, "com.totvs.IwsFormulaVisual", usuario, senha);
+    
+    // var contexto = 'CODCOLIGADA=1;CODFILIAL=1;CODUSUARIO=Usuario;CODSISTEMA=F';
+    
+    // var xml = '<Parameters><Parametros><IDFLUIG></IDFLUIG></Parametros></Parameters>';
+    
+    var CONTEXT = "CODCOLIGADA=" + codColigada + ";CODUSUARIO=" + usuario + ";CODSISTEMA=" + aplicacao;
+    
+    var result = authService.execute(codColigada, idFV, CONTEXT, '', xmlParameter, '');
+    
+    return result;
+};
+
+function parseConstraints (constraints, filterRequired, table) {
+	if ( !filterRequired ) {
+		filterRequired = true;
+	}
+	
+	var result = {};
+	result.context = "";
+	var filter = "";
+	
+	for ( var i = 0; i < constraints.length; i++) {
+		var con = constraints[i];
+		var fieldName = con.getFieldName().toUpperCase();
+		if (fieldName == "RMSCONTEXT") {
+			result.context = con.getInitialValue();
+			continue;
+		}
+		
+		if (filter == "") {
+			filter += "(";
+			
+		} else {
+			switch(con.getConstraintType()) {
+				case ConstraintType.MUST:
+					filter += " AND (";
+					break;
+					
+				case ConstraintType.MUST_NOT:
+					filter += " AND !(";
+					break;
+					
+				case ConstraintType.SHOULD:
+					filter += " OR (";
+					isLike = true;
+					break;
+					
+				case ConstraintType.SHOULD_NOT:
+					filter += " OR (";
+					isLike = true;
+					break;
+			}
+		}
+		
+		if (fieldName == "RMSFILTER") {
+			filter += con.getInitialValue();
+			
+		} else {
+			if (con.getInitialValue() == con.getFinalValue() || isEmpty(con.getFinalValue())) {
+				var isLike = (con.isLikeSearch() || con.getInitialValue().indexOf('%') != -1);
+				if (table) {
+					filter += table + ".";
+				}
+				
+				filter += con.getFieldName();
+				if (isLike) {
+					filter += " LIKE ";
+					
+				} else {
+					filter += " = ";
+				}
+				
+				filter += getFormattedValue(con.getInitialValue(), isLike);
+				
+			} else {
+				if (table) {
+					filter += table + ".";
+				}
+				filter += con.getFieldName();
+				filter += " BETWEEN ";
+				filter += getFormattedValue(con.getInitialValue(), false);
+				filter += " AND ";
+				filter += getFormattedValue(con.getFinalValue(), false);
+			}
+		}
+		filter += ")";
+	}
+	
+	if (filter.length == 0) {
+		if (filterRequired) {
+			filter = "1=1";
+		}
+	}
+	result.filter = filter;
+	
+	return result;
+};
+
+function isEmpty (str) {
+	return(!str || 0 === str.length);
+};
+
+function getFormattedValue (value, isLike) {
+	if (isLike) {
+		if (value.indexOf('%') != -1) {
+			return "'" + value + "'";
+			
+		} else {
+			return "'%" + value + "%'";
+		}
+		
+	} else {
+		return "'" + value + "'";
+	}
+};
+
+function replaceAll (str, de, para) {
+	var pos = str.indexOf(de);
+	while (pos > -1) {
+		str = str.replace(de, para);
+		pos = str.indexOf(de);
+	}
+	
+	return(str);
+};
+
+function escapeJSON (str) {
+	var strReturn = str.replace(/[\\]/g, '\\\\')
+		.replace(/[\"]/g, '\\"')
+	    .replace(/[\/]/g, '\\/')
+	    .replace(/[\b]/g, '\\b')
+	    .replace(/[\f]/g, '\\f')
+	    .replace(/[\n]/g, '\\n')
+	    .replace(/[\r]/g, '\\r')
+	    .replace(/[\t]/g, '\\t');
+	
+    return(strReturn);
+};
+
+function getXMLFromString (xmlString) {
+	var factory = javax.xml.parsers.DocumentBuilderFactory.newInstance();
+	var parser = factory.newDocumentBuilder();
+	var is = new org.xml.sax.InputSource();
+	is.setCharacterStream(new java.io.StringReader(xmlString));
+	
+	return parser.parse(is);
+}
+
+function abrirPesquisa (DATASET_ID, dataFields, resultFields, type, title) {
+	window.open("/webdesk/zoom.jsp" + "?datasetId=" + DATASET_ID + "&dataFields=" + dataFields + "&resultFields=" + resultFields + "&type=" + type + "&title=" + title, "zoom", "status,scroolbars=no,width=600,height=350,top=0,left=0");
+}
+
+function checkIsPK (result, qtd) {
+	log.info("######### [DSINTEGRAFACILRM] VERIFICANDO PK RETORNANDA: " + result + " - " + qtd);
+	var lines = result.split("\r");
+	if (lines.length == 1) {
+		var pk = result.split(";");
+		if (pk.length == qtd)
+			return true;
+	}
+	
+	throw result;
+}
+
+function ChekExist (result) {
+	var lines = result.split("\r");
+	if (lines.length > 1)
+		return true
+	else
+		return false;
+}
+
+function replaceValue (text, columnName, newValue) {
+	if ((newValue != null) && (newValue.trim() != "")) {
+		var regex = new RegExp("<" + columnName + ">(.*?)<\\/" + columnName + ">", "g");
+		var replaceText = "<" + columnName + ">" + newValue + "</" + columnName + ">";
+		
+		return text.replace(regex, replaceText);
+		
+	} else {
+		return text;
+	}
+}
+
+function isEmpty (str) {
+	return(!str || 0 === str.length);
+}
+
+/**
+ * @description Função para converter XML em JSON, realizada alteração para levar em consideração ou não os atributos e inputar no objeto também os valores dos nós
+ * @author David Walsh
+ * @source https://davidwalsh.name/convert-xml-json
+ */
+
+function parseToJSON (xml, attr) {
+	var json = {};
+	if (xml.nodeType == 1) {
+		if (xml.attributes.length > 0 && attr) {
+			for (var j = 0;j < xml.attributes.length;j++) {
+				var attribute = xml.attributes.item(j);
+				json[attribute.nodeName] = attribute.nodeValue;
+			}
+		}
+		
+	} else if (xml.nodeType == 3) {
+		json = xml.nodeValue;
+	}
+	
+	if (xml.childNodes.length > 0) {
+		for (var i = 0; i < xml.childNodes.length; i++) {
+			var item = xml.childNodes.item(i);
+			var nodeName = item.nodeName;
+			if (typeof (json[nodeName]) == "undefined") {
+				if (item.firstChild == null || (item.firstChild && item.firstChild.nodeType == 3)) {
+					if (item.firstChild) {
+						json[nodeName] = item.firstChild.nodeValue;
+					} else {
+						json[nodeName] = '';
+					}
+					
+				} else {
+					json[nodeName] = this.parseToJSON(item);
+				}
+				
+			} else {
+				if (typeof (json[nodeName].push) == "undefined") {
+					var old = json[nodeName];
+					json[nodeName] = [];
+					json[nodeName].push(old);
+				}
+				json[nodeName].push(this.parseToJSON(item));
+			}
+		}
+	}
+	
+	return json;
+}
+
+function getPasswordUserIntegration () {
+	try {
+		var sistema = "RM";
+		var usuario = "wffluig";
+		var cs = new Array();
+		cs.push(DatasetFactory.createConstraint("metadata#active", true, true, ConstraintType.MUST));
+		cs.push(DatasetFactory.createConstraint("SISTEMA", sistema, sistema, ConstraintType.MUST));
+		cs.push(DatasetFactory.createConstraint("USUARIO", usuario, usuario, ConstraintType.MUST));
+		var ds = DatasetFactory.getDataset("ds_form_cadastro_de_usuarios_integracao", null, cs, null);
+		
+		if (ds.rowsCount > 0) {
+			var values = {
+				USUARIO:ds.getValue(0, 'USUARIO'), 
+				SENHA:ds.getValue(0, 'SENHA')
+			}
+			
+			return values;
+			
+		} else {
+			throw "Não foi encontrado nenhum registro no formulário de 'Cadastro de Usuários Integração' para o sistema " + sistema + " e usuário " + usuario;
+		}
+		
+	} catch(e) {
+		log.error("|| Erro na função getPasswordUserIntegration do dsIntegraFacilRM: " +e);
+		var dataset = DatasetBuilder.newDataset();
+		dataset.addColumn("ERRO");
+		dataset.addRow(new Array(e));
+		return dataset;
+	}
+}

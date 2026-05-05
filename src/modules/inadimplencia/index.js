@@ -11,9 +11,11 @@ const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const fiadoresRoutes = require('./routes/fiadoresRoutes');
 const errorHandler = require('./middlewares/errorHandler');
+const notificationsRoutes = require('./routes/notificationsRoutes');
 const openapi = require('./swagger');
 const { env } = require('./config/env');
 const { createCorsOptionsDelegate, isRequestAllowed } = require('../../shared/swaggerAccess');
+const overdueScanner = require('./services/overdueScanner');
 
 function createInadimplenciaModule() {
   const router = Router();
@@ -45,12 +47,16 @@ function createInadimplenciaModule() {
   router.use('/atendimentos', atendimentosRoutes);
   router.use('/relatorios', relatoriosRoutes);
   router.use('/fiadores', fiadoresRoutes);
+  router.use('/notifications', notificationsRoutes);
 
   router.use((_, res) => {
     res.status(404).json({ error: 'Endpoint nao encontrado' });
   });
 
   router.use(errorHandler);
+
+  // Start the overdue scanner for VENDA_ATRASADA notifications
+  overdueScanner.start();
 
   return {
     router,
