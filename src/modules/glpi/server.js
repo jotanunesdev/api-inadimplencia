@@ -34,7 +34,7 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Erro interno do servidor.' });
 });
 
-const port = Number(process.env.PORT || 4010);
+const port = Number(process.env.GLPI_PORT || 4010);
 
 if (!env.isConfigured) {
   console.warn('Modulo GLPI standalone iniciado sem configuracao completa.');
