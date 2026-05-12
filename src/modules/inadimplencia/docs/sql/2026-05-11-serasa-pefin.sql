@@ -78,7 +78,11 @@ BEGIN
             'ENVIADO_SERASA',
             'AGUARDANDO_RETORNO',
             'NEGATIVADO_SUCESSO',
-            'NEGATIVADO_ERRO'
+            'NEGATIVADO_ERRO',
+            'BAIXA_ENVIADA',
+            'BAIXA_AGUARDANDO_RETORNO',
+            'BAIXADO_SUCESSO',
+            'BAIXADO_ERRO'
         ));
 END
 GO

@@ -944,6 +944,59 @@ const swaggerSpec = {
         responses: serasaPefinResponses,
       },
     },
+    "/serasa-pefin/webhooks/baixa/sucesso": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para sucesso de baixa/exclusao de divida",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitacao de baixa",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/webhooks/baixa/erro": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para erro de baixa/exclusao de divida",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitacao de baixa",
+                  },
+                  error: {
+                    type: "object",
+                    properties: {
+                      message: { type: "string" },
+                      statusCode: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
     "/serasa-pefin/testes/auth": {
       get: {
         tags: ["SerasaPefinTest"],

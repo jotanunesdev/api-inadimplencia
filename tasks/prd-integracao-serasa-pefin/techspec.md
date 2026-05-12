@@ -77,6 +77,8 @@ Validacoes bloqueantes:
 - `POST /inadimplencia/serasa-pefin/webhooks/inclusao/erro`: webhook Serasa para divida principal com erro.
 - `POST /inadimplencia/serasa-pefin/webhooks/avalista/sucesso`: webhook Serasa para garantidor com sucesso.
 - `POST /inadimplencia/serasa-pefin/webhooks/avalista/erro`: webhook Serasa para garantidor com erro.
+- `POST /inadimplencia/serasa-pefin/webhooks/baixa/sucesso`: webhook Serasa para baixa/exclusao com sucesso.
+- `POST /inadimplencia/serasa-pefin/webhooks/baixa/erro`: webhook Serasa para baixa/exclusao com erro.
 
 Os webhooks nao terao autenticacao na aplicacao. Requests server-to-server sem `Origin` ja passam pelo `originGuard`; a protecao fica na rede/infra controlada.
 

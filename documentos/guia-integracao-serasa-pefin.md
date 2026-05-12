@@ -99,6 +99,8 @@ POST /inadimplencia/serasa-pefin/webhooks/inclusao/sucesso
 POST /inadimplencia/serasa-pefin/webhooks/inclusao/erro
 POST /inadimplencia/serasa-pefin/webhooks/avalista/sucesso
 POST /inadimplencia/serasa-pefin/webhooks/avalista/erro
+POST /inadimplencia/serasa-pefin/webhooks/baixa/sucesso
+POST /inadimplencia/serasa-pefin/webhooks/baixa/erro
 ```
 
 ### Responsabilidades
@@ -225,6 +227,10 @@ INAD_SERASA_HTTP_TIMEOUT_MS=10000
 - **AGUARDANDO_RETORNO**: transactionId recebido, aguardando webhook
 - **NEGATIVADO_SUCESSO**: Webhook sucesso
 - **NEGATIVADO_ERRO**: Webhook erro ou erro envio
+- **BAIXA_ENVIADA**: Solicitacao de baixa enviada
+- **BAIXA_AGUARDANDO_RETORNO**: Aguardando webhook de baixa
+- **BAIXADO_SUCESSO**: Baixa processada com sucesso
+- **BAIXADO_ERRO**: Baixa processada com erro
 
 ---
 

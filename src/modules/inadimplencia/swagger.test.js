@@ -15,6 +15,8 @@ describe('inadimplencia swagger', () => {
       '/serasa-pefin/webhooks/inclusao/erro',
       '/serasa-pefin/webhooks/avalista/sucesso',
       '/serasa-pefin/webhooks/avalista/erro',
+      '/serasa-pefin/webhooks/baixa/sucesso',
+      '/serasa-pefin/webhooks/baixa/erro',
     ];
 
     for (const path of serasaPaths) {

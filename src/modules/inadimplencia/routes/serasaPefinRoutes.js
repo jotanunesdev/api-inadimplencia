@@ -26,4 +26,8 @@ router.post('/webhooks/inclusao/erro', controller.handleWebhookInclusaoErro);
 router.post('/webhooks/avalista/sucesso', controller.handleWebhookAvalistaSucesso);
 router.post('/webhooks/avalista/erro', controller.handleWebhookAvalistaErro);
 
+// Webhooks de baixa/exclusao
+router.post('/webhooks/baixa/sucesso', controller.handleWebhookBaixaSucesso);
+router.post('/webhooks/baixa/erro', controller.handleWebhookBaixaErro);
+
 module.exports = router;

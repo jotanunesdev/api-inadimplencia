@@ -555,4 +555,52 @@ describe('serasaPefinController', () => {
       expect(res.json).toHaveBeenCalledWith({ data: mockResult });
     });
   });
+
+  describe('handleWebhookBaixaSucesso', () => {
+    it('should handle baixa success webhook', async () => {
+      const mockResult = { processed: true };
+      service.handleWebhook.mockResolvedValue(mockResult);
+
+      const req = {
+        body: { uuid: 'transaction-baixa-123', status: 'success' },
+      };
+      const res = {
+        json: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+      };
+      const next = jest.fn();
+
+      await controller.handleWebhookBaixaSucesso(req, res, next);
+
+      expect(service.handleWebhook).toHaveBeenCalledWith({
+        eventType: 'baixa/sucesso',
+        payload: { uuid: 'transaction-baixa-123', status: 'success' },
+      });
+      expect(res.json).toHaveBeenCalledWith({ data: mockResult });
+    });
+  });
+
+  describe('handleWebhookBaixaErro', () => {
+    it('should handle baixa error webhook', async () => {
+      const mockResult = { processed: true };
+      service.handleWebhook.mockResolvedValue(mockResult);
+
+      const req = {
+        body: { uuid: 'transaction-baixa-456', error: { message: 'Baixa nao encontrada' } },
+      };
+      const res = {
+        json: jest.fn(),
+        status: jest.fn().mockReturnThis(),
+      };
+      const next = jest.fn();
+
+      await controller.handleWebhookBaixaErro(req, res, next);
+
+      expect(service.handleWebhook).toHaveBeenCalledWith({
+        eventType: 'baixa/erro',
+        payload: { uuid: 'transaction-baixa-456', error: { message: 'Baixa nao encontrada' } },
+      });
+      expect(res.json).toHaveBeenCalledWith({ data: mockResult });
+    });
+  });
 });

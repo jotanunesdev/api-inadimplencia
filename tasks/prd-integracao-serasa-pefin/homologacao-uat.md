@@ -46,6 +46,12 @@ https://<dominio-uat>/inadimplencia/serasa-pefin/webhooks/avalista/sucesso
 
 # Webhook de erro de avalista/fiador
 https://<dominio-uat>/inadimplencia/serasa-pefin/webhooks/avalista/erro
+
+# Webhook de sucesso de baixa/exclusao
+https://<dominio-uat>/inadimplencia/serasa-pefin/webhooks/baixa/sucesso
+
+# Webhook de erro de baixa/exclusao
+https://<dominio-uat>/inadimplencia/serasa-pefin/webhooks/baixa/erro
 ```
 
 **Nota**: Substitua `<dominio-uat>` pelo domínio público do ambiente de UAT.

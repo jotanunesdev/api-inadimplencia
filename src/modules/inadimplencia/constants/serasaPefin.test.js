@@ -17,6 +17,10 @@ describe('serasaPefin constants', () => {
       AGUARDANDO_RETORNO: 'AGUARDANDO_RETORNO',
       NEGATIVADO_SUCESSO: 'NEGATIVADO_SUCESSO',
       NEGATIVADO_ERRO: 'NEGATIVADO_ERRO',
+      BAIXA_ENVIADA: 'BAIXA_ENVIADA',
+      BAIXA_AGUARDANDO_RETORNO: 'BAIXA_AGUARDANDO_RETORNO',
+      BAIXADO_SUCESSO: 'BAIXADO_SUCESSO',
+      BAIXADO_ERRO: 'BAIXADO_ERRO',
     });
     expect(SERASA_PEFIN_STATUS_VALUES).toEqual([
       'PENDENTE_ENVIO',
@@ -24,6 +28,10 @@ describe('serasaPefin constants', () => {
       'AGUARDANDO_RETORNO',
       'NEGATIVADO_SUCESSO',
       'NEGATIVADO_ERRO',
+      'BAIXA_ENVIADA',
+      'BAIXA_AGUARDANDO_RETORNO',
+      'BAIXADO_SUCESSO',
+      'BAIXADO_ERRO',
     ]);
     expect(Object.isFrozen(SERASA_PEFIN_STATUS)).toBe(true);
     expect(Object.isFrozen(SERASA_PEFIN_STATUS_VALUES)).toBe(true);

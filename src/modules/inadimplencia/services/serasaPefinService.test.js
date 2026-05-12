@@ -911,6 +911,81 @@ describe('serasaPefinService - Helper Functions', () => {
       });
     });
 
+    it('deve processar webhook de baixa com sucesso e mapear status de baixa', async () => {
+      const eventType = 'baixa/sucesso';
+      const payload = {
+        uuid: 'transaction-baixa-123',
+        contract: '12345',
+        error: null,
+      };
+
+      mockRecordWebhookAndUpdateSolicitation.recordWebhookAndUpdateSolicitation.mockResolvedValue({
+        matched: true,
+        solicitation: {
+          ID: 'solicitation-uuid',
+          STATUS: 'BAIXADO_SUCESSO',
+        },
+        webhook: {
+          ID: 'webhook-uuid',
+          PROCESSADO: true,
+        },
+      });
+
+      await service.handleWebhook(
+        { eventType, payload },
+        { model: mockRecordWebhookAndUpdateSolicitation }
+      );
+
+      expect(mockRecordWebhookAndUpdateSolicitation.recordWebhookAndUpdateSolicitation).toHaveBeenCalledWith({
+        eventType: 'baixa/sucesso',
+        transactionId: 'transaction-baixa-123',
+        status: 'BAIXADO_SUCESSO',
+        payload,
+        errorMessage: null,
+        errorStatusCode: null,
+      });
+    });
+
+    it('deve processar webhook de baixa com erro e mapear status de baixa', async () => {
+      const eventType = 'baixa/erro';
+      const payload = {
+        uuid: 'transaction-baixa-456',
+        contract: '12345',
+        error: {
+          message: 'Baixa nao encontrada',
+          statusCode: 404,
+        },
+      };
+
+      mockRecordWebhookAndUpdateSolicitation.recordWebhookAndUpdateSolicitation.mockResolvedValue({
+        matched: true,
+        solicitation: {
+          ID: 'solicitation-uuid',
+          STATUS: 'BAIXADO_ERRO',
+          ERROR_MESSAGE: 'Baixa nao encontrada',
+          ERROR_STATUS_CODE: 404,
+        },
+        webhook: {
+          ID: 'webhook-uuid',
+          PROCESSADO: true,
+        },
+      });
+
+      await service.handleWebhook(
+        { eventType, payload },
+        { model: mockRecordWebhookAndUpdateSolicitation }
+      );
+
+      expect(mockRecordWebhookAndUpdateSolicitation.recordWebhookAndUpdateSolicitation).toHaveBeenCalledWith({
+        eventType: 'baixa/erro',
+        transactionId: 'transaction-baixa-456',
+        status: 'BAIXADO_ERRO',
+        payload,
+        errorMessage: 'Baixa nao encontrada',
+        errorStatusCode: 404,
+      });
+    });
+
     it('deve processar webhook sem match e registrar para investigação', async () => {
       const eventType = 'inclusao_sucesso';
       const payload = {

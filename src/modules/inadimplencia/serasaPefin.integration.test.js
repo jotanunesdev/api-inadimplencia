@@ -564,6 +564,75 @@ describe('Serasa PEFIN Integration Tests', () => {
       expect(response.body.data.solicitation.ERROR_MESSAGE).toBe('Garantidor não encontrado');
     });
 
+    it('should process baixa success webhook', async () => {
+      const mockResult = {
+        matched: true,
+        solicitation: {
+          ID: 'solicitation-uuid',
+          STATUS: 'BAIXADO_SUCESSO',
+        },
+        webhook: {
+          ID: 'webhook-uuid',
+          PROCESSADO: true,
+        },
+      };
+
+      service.handleWebhook.mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .post('/inadimplencia/serasa-pefin/webhooks/baixa/sucesso')
+        .send({
+          uuid: 'transaction-baixa-123',
+          error: null,
+        })
+        .expect(200);
+
+      expect(response.body.data.solicitation.STATUS).toBe('BAIXADO_SUCESSO');
+      expect(service.handleWebhook).toHaveBeenCalledWith({
+        eventType: 'baixa/sucesso',
+        payload: expect.objectContaining({
+          uuid: 'transaction-baixa-123',
+        }),
+      });
+    });
+
+    it('should process baixa error webhook', async () => {
+      const mockResult = {
+        matched: true,
+        solicitation: {
+          ID: 'solicitation-uuid',
+          STATUS: 'BAIXADO_ERRO',
+          ERROR_MESSAGE: 'Baixa nao encontrada',
+          ERROR_STATUS_CODE: 404,
+        },
+        webhook: {
+          ID: 'webhook-uuid',
+          PROCESSADO: true,
+        },
+      };
+
+      service.handleWebhook.mockResolvedValue(mockResult);
+
+      const response = await request(app)
+        .post('/inadimplencia/serasa-pefin/webhooks/baixa/erro')
+        .send({
+          uuid: 'transaction-baixa-456',
+          error: {
+            message: 'Baixa nao encontrada',
+            statusCode: 404,
+          },
+        })
+        .expect(200);
+
+      expect(response.body.data.solicitation.ERROR_MESSAGE).toBe('Baixa nao encontrada');
+      expect(service.handleWebhook).toHaveBeenCalledWith({
+        eventType: 'baixa/erro',
+        payload: expect.objectContaining({
+          uuid: 'transaction-baixa-456',
+        }),
+      });
+    });
+
     it('should return 200 and log investigation when webhook has no matching solicitation', async () => {
       const mockResult = {
         matched: false,

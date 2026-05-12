@@ -41,6 +41,8 @@ const defaultModel = {
 const FINAL_STATUSES = new Set([
   SERASA_PEFIN_STATUS.NEGATIVADO_SUCESSO,
   SERASA_PEFIN_STATUS.NEGATIVADO_ERRO,
+  SERASA_PEFIN_STATUS.BAIXADO_SUCESSO,
+  SERASA_PEFIN_STATUS.BAIXADO_ERRO,
 ]);
 
 const defaultPayloadBuilder = {
@@ -756,6 +758,16 @@ function mapEventTypeToStatus(eventType) {
   }
 
   const eventTypeLower = String(eventType).toLowerCase();
+  const isBaixaEvent =
+    eventTypeLower.includes('baixa') || eventTypeLower.includes('exclus');
+
+  if (isBaixaEvent && eventTypeLower.includes('sucesso')) {
+    return SERASA_PEFIN_STATUS.BAIXADO_SUCESSO;
+  }
+
+  if (isBaixaEvent && eventTypeLower.includes('erro')) {
+    return SERASA_PEFIN_STATUS.BAIXADO_ERRO;
+  }
 
   // Success events
   if (eventTypeLower.includes('sucesso')) {

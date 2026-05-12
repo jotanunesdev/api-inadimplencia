@@ -253,6 +253,40 @@ async function handleWebhookAvalistaErro(req, res, next) {
   }
 }
 
+async function handleWebhookBaixaSucesso(req, res, next) {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ error: 'Payload invalido.' });
+    }
+
+    const result = await service.handleWebhook({ eventType: 'baixa/sucesso', payload });
+    res.json({ data: result });
+  } catch (err) {
+    if (err.statusCode) {
+      return sendDomainError(res, err);
+    }
+    next(err);
+  }
+}
+
+async function handleWebhookBaixaErro(req, res, next) {
+  try {
+    const payload = req.body;
+    if (!payload || typeof payload !== 'object') {
+      return res.status(400).json({ error: 'Payload invalido.' });
+    }
+
+    const result = await service.handleWebhook({ eventType: 'baixa/erro', payload });
+    res.json({ data: result });
+  } catch (err) {
+    if (err.statusCode) {
+      return sendDomainError(res, err);
+    }
+    next(err);
+  }
+}
+
 module.exports = {
   getPreview,
   postNegativacao,
@@ -263,4 +297,6 @@ module.exports = {
   handleWebhookInclusaoErro,
   handleWebhookAvalistaSucesso,
   handleWebhookAvalistaErro,
+  handleWebhookBaixaSucesso,
+  handleWebhookBaixaErro,
 };

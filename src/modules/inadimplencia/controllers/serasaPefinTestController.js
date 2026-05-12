@@ -13,6 +13,15 @@ const TEST_DOCUMENTS = [
   { documento: '115.724.678-86', descricao: 'TST FLEX' },
 ];
 
+const WEBHOOK_TEST_EVENT_TYPES = [
+  'inclusao/sucesso',
+  'inclusao/erro',
+  'avalista/sucesso',
+  'avalista/erro',
+  'baixa/sucesso',
+  'baixa/erro',
+];
+
 function isProductionEnvironment() {
   const nodeEnv = process.env.NODE_ENV || env.NODE_ENV || 'development';
   return nodeEnv === 'production';
@@ -156,10 +165,10 @@ async function simulateWebhook(req, res, next) {
       return res.status(400).json({ error: 'TRANSACTION_ID é obrigatório.' });
     }
 
-    if (!eventType || !['inclusao/sucesso', 'inclusao/erro', 'avalista/sucesso', 'avalista/erro'].includes(eventType)) {
+    if (!eventType || !WEBHOOK_TEST_EVENT_TYPES.includes(eventType)) {
       return res.status(400).json({ 
         error: 'EVENT_TYPE invalido.',
-        allowedTypes: ['inclusao/sucesso', 'inclusao/erro', 'avalista/sucesso', 'avalista/erro'],
+        allowedTypes: WEBHOOK_TEST_EVENT_TYPES,
       });
     }
 

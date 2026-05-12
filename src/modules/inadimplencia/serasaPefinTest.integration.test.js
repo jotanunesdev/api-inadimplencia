@@ -240,5 +240,29 @@ describe('Serasa PEFIN Test Endpoints Integration', () => {
       service.handleWebhook.mockRestore();
       process.env.NODE_ENV = originalNodeEnv;
     });
+
+    it('deve processar webhook simulado de baixa', async () => {
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.NODE_ENV = 'development';
+
+      const service = require('./services/serasaPefinService');
+      jest.spyOn(service, 'handleWebhook').mockResolvedValue({ processed: true });
+
+      const response = await request(app)
+        .post('/serasa-pefin/testes/webhook/simular')
+        .send({ transactionId: 'test-uuid-baixa', eventType: 'baixa/sucesso' });
+
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({
+        data: {
+          processed: true,
+          transactionId: 'test-uuid-baixa',
+          eventType: 'baixa/sucesso',
+        },
+      });
+
+      service.handleWebhook.mockRestore();
+      process.env.NODE_ENV = originalNodeEnv;
+    });
   });
 });
