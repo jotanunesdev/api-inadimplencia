@@ -7,6 +7,20 @@ jest.mock('../models/ocorrenciasModel');
 jest.mock('../models/responsavelModel');
 jest.mock('../services/notificationService');
 
+function pad2(value) {
+  return String(value).padStart(2, '0');
+}
+
+function formatLocalDate(date) {
+  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+}
+
+function daysFromToday(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return formatLocalDate(date);
+}
+
 describe('ocorrenciasController', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -14,12 +28,14 @@ describe('ocorrenciasController', () => {
 
   describe('create', () => {
     it('should clear overdue notifications when the new proximaAcao is current or future', async () => {
+      const today = daysFromToday(0);
+      const futureDate = daysFromToday(7);
       model.validateNumVendaFk.mockResolvedValue({ exists: true });
       model.create.mockResolvedValue({
         ID: 'uuid-1',
         NUM_VENDA_FK: 12345,
         NOME_USUARIO_FK: 'joao',
-        PROXIMA_ACAO: new Date('2026-04-25T10:00:00.000Z'),
+        PROXIMA_ACAO: new Date(`${futureDate}T10:00:00.000Z`),
       });
       responsavelModel.findByNumVenda.mockResolvedValue({
         NOME_USUARIO_FK: 'joao',
@@ -32,9 +48,9 @@ describe('ocorrenciasController', () => {
           nomeUsuario: 'joao',
           descricao: 'Atendimento concluido',
           statusOcorrencia: 'finalizado',
-          dtOcorrencia: '2026-04-24',
+          dtOcorrencia: today,
           horaOcorrencia: '10:00:00',
-          proximaAcao: '2026-04-25',
+          proximaAcao: futureDate,
         },
       };
       const res = {
@@ -49,7 +65,7 @@ describe('ocorrenciasController', () => {
       expect(model.create).toHaveBeenCalledWith(expect.objectContaining({
         numVendaFk: 12345,
         nomeUsuario: 'joao',
-        proximaAcao: '2026-04-25',
+        proximaAcao: futureDate,
       }));
       expect(res.status).toHaveBeenCalledWith(201);
       expect(notificationService.clearOverdueNotificationsForSale).toHaveBeenCalledWith({
@@ -62,12 +78,14 @@ describe('ocorrenciasController', () => {
 
   describe('update', () => {
     it('should clear overdue notifications after updating to a future proximaAcao', async () => {
+      const today = daysFromToday(0);
+      const futureDate = daysFromToday(7);
       model.validateNumVendaFk.mockResolvedValue({ exists: true });
       model.update.mockResolvedValue({
         ID: 'uuid-2',
         NUM_VENDA_FK: 12345,
         NOME_USUARIO_FK: 'joao',
-        PROXIMA_ACAO: new Date('2026-04-25T10:00:00.000Z'),
+        PROXIMA_ACAO: new Date(`${futureDate}T10:00:00.000Z`),
       });
       responsavelModel.findByNumVenda.mockResolvedValue({
         NOME_USUARIO_FK: 'joao',
@@ -81,9 +99,9 @@ describe('ocorrenciasController', () => {
           nomeUsuario: 'joao',
           descricao: 'Atendimento concluido',
           statusOcorrencia: 'finalizado',
-          dtOcorrencia: '2026-04-24',
+          dtOcorrencia: today,
           horaOcorrencia: '10:00:00',
-          proximaAcao: '2026-04-25',
+          proximaAcao: futureDate,
         },
       };
       const res = {
@@ -97,7 +115,7 @@ describe('ocorrenciasController', () => {
       expect(model.update).toHaveBeenCalledWith('123e4567-e89b-12d3-a456-426614174000', expect.objectContaining({
         numVendaFk: 12345,
         nomeUsuario: 'joao',
-        proximaAcao: '2026-04-25',
+        proximaAcao: futureDate,
       }));
       expect(notificationService.clearOverdueNotificationsForSale).toHaveBeenCalledWith({
         numVenda: 12345,

@@ -7,7 +7,6 @@
     "dev": "tsx watch src/server.js",
     "start": "tsx src/server.js",
     "build": "tsc --project tsconfig.json",
-    "test": "jest",
     "dev:inadimplencia": "tsx watch src/modules/inadimplencia/server.js",
     "start:inadimplencia": "tsx src/modules/inadimplencia/server.js",
     "dev:treinamento": "tsx watch src/modules/treinamento/server.ts",
@@ -28,9 +27,11 @@
     "start:glpi": "tsx src/modules/glpi/server.js",
     "dev:auth": "ts-node-dev --respawn --transpile-only src/modules/auth/server.ts",
     "start:auth": "tsx src/modules/auth/server.ts",
-    "test": "vitest",
-    "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:jest": "jest",
+    "test:serasa": "npm run test:jest -- src/modules/inadimplencia/serasaPefin.integration.test.js --runInBand && npm run test:jest -- src/modules/inadimplencia/controllers/serasaPefinController.test.js --runInBand && npm run test:jest -- src/modules/inadimplencia/services/serasaPefinService.test.js --runInBand && npm run test:jest -- src/modules/inadimplencia/services/serasaPefinHttpClient.test.js --runInBand && npm run test:jest -- src/modules/inadimplencia/services/serasaPefinPayloadBuilder.test.js --runInBand && npm run test:jest -- src/modules/inadimplencia/models/serasaPefinModel.test.js --runInBand"
   },
   "keywords": [],
   "author": "",

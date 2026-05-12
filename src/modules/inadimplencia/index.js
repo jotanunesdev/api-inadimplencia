@@ -10,6 +10,8 @@ const kanbanStatusRoutes = require('./routes/kanbanStatusRoutes');
 const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const fiadoresRoutes = require('./routes/fiadoresRoutes');
+const serasaPefinRoutes = require('./routes/serasaPefinRoutes');
+const serasaPefinTestRoutes = require('./routes/serasaPefinTestRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const notificationsRoutes = require('./routes/notificationsRoutes');
 const openapi = require('./swagger');
@@ -48,6 +50,8 @@ function createInadimplenciaModule() {
   router.use('/relatorios', relatoriosRoutes);
   router.use('/fiadores', fiadoresRoutes);
   router.use('/notifications', notificationsRoutes);
+  router.use('/serasa-pefin', serasaPefinRoutes);
+  router.use('/serasa-pefin/testes', serasaPefinTestRoutes);
 
   router.use((_, res) => {
     res.status(404).json({ error: 'Endpoint nao encontrado' });

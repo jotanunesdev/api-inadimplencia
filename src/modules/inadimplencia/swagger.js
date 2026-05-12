@@ -26,6 +26,95 @@ const genericRequestBody = {
   },
 };
 
+const serasaPefinActionableErrorSchema = {
+  type: "object",
+  required: ["error"],
+  properties: {
+    error: {
+      type: "string",
+      example: "SERASA_PEFIN_CAMPOS_OBRIGATORIOS_FALTANTES",
+    },
+    code: {
+      type: "string",
+      example: "SERASA_PEFIN_MISSING_REQUIRED_FIELDS",
+    },
+    missingFields: {
+      type: "array",
+      items: { type: "string" },
+      example: ["debtor.address.zipCode", "debtor.address.city"],
+    },
+    blockedDocuments: {
+      type: "array",
+      description: "Documentos mascarados quando bloqueados por regra operacional, como massa UAT.",
+      items: {
+        oneOf: [
+          { type: "string", example: "123.***.01" },
+          {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              tipoRegistro: { type: "string", example: "GARANTIDOR" },
+              idAssociado: { type: "string", example: "ASSOC001" },
+              documento: { type: "string", example: "12.***.90" },
+            },
+          },
+        ],
+      },
+    },
+  },
+};
+
+const serasaPefinActionableErrorResponse = {
+  description: "Erro operacional acionavel",
+  content: {
+    "application/json": {
+      schema: serasaPefinActionableErrorSchema,
+      examples: {
+        missingFields: {
+          summary: "Campos obrigatorios ausentes",
+          value: {
+            error: "SERASA_PEFIN_CAMPOS_OBRIGATORIOS_FALTANTES",
+            code: "SERASA_PEFIN_MISSING_REQUIRED_FIELDS",
+            missingFields: ["debtor.address.zipCode", "debtor.address.city"],
+          },
+        },
+        blockedDocuments: {
+          summary: "Documento bloqueado em UAT",
+          value: {
+            error: "SERASA_PEFIN_DOCUMENTO_NAO_AUTORIZADO_UAT",
+            code: "SERASA_PEFIN_UAT_DOCUMENT_NOT_ALLOWED",
+            blockedDocuments: [
+              "123.***.01",
+              {
+                tipoRegistro: "GARANTIDOR",
+                idAssociado: "ASSOC001",
+                documento: "12.***.90",
+              },
+            ],
+          },
+        },
+      },
+    },
+  },
+};
+
+const serasaPefinResponses = {
+  ...jsonResponse,
+  400: serasaPefinActionableErrorResponse,
+  404: {
+    description: "Recurso Serasa PEFIN nao encontrado",
+    content: {
+      "application/json": {
+        schema: serasaPefinActionableErrorSchema,
+        example: {
+          error: "VENDA_NAO_ENCONTRADA_OU_NAO_INADIMPLENTE",
+          code: "SERASA_PEFIN_VENDA_NOT_FOUND",
+        },
+      },
+    },
+  },
+};
+
 // Catalogo informativo dos scripts de ocorrencia aceitos em STATUS_OCORRENCIA.
 // O backend continua aceitando qualquer string; este enum serve apenas
 // para documentar no Swagger os valores sincronizados com o frontend
@@ -185,6 +274,8 @@ const swaggerSpec = {
     { name: "Atendimentos", description: "Atendimentos" },
     { name: "Relatorios", description: "Relatórios" },
     { name: "Fiadores", description: "Fiadores/associados da venda" },
+    { name: "SerasaPefin", description: "Integração Serasa PEFIN para negativação" },
+    { name: "SerasaPefinTest", description: "Endpoints de teste para integração Serasa PEFIN (apenas desenvolvimento/homologação)" },
   ],
   paths: {
     "/health": {
@@ -657,6 +748,472 @@ const swaggerSpec = {
           ),
         ],
         responses: jsonResponse,
+      },
+    },
+    "/serasa-pefin/vendas/{numVenda}/preview": {
+      get: {
+        tags: ["SerasaPefin"],
+        summary: "Preview de dados para negativação PEFIN",
+        parameters: [
+          pathParam("numVenda", "Número da venda", "20988"),
+        ],
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/vendas/{numVenda}/negativacoes": {
+      get: {
+        tags: ["SerasaPefin"],
+        summary: "Histórico de negativações por venda",
+        parameters: [
+          pathParam("numVenda", "Número da venda", "20988"),
+        ],
+        responses: serasaPefinResponses,
+      },
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Solicitar negativação PEFIN (divida principal + garantidores)",
+        parameters: [
+          pathParam("numVenda", "Número da venda", "20988"),
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["operador"],
+                properties: {
+                  operador: {
+                    type: "string",
+                    description: "Nome do operador solicitando a negativação",
+                    example: "joao.silva",
+                  },
+                  garantidoresSelecionados: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "IDs dos associados selecionados para envio como garantidores",
+                    example: ["ASSOC-001", "ASSOC-002"],
+                  },
+                  overrides: {
+                    type: "object",
+                    description: "Overrides opcionais para categoryId e areaInformante",
+                    properties: {
+                      categoryId: { type: "string", example: "FI" },
+                      areaInformante: { type: "string", example: "1234" },
+                    },
+                  },
+                },
+              },
+              example: {
+                operador: "joao.silva",
+                garantidoresSelecionados: ["ASSOC-001", "ASSOC-002"],
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/negativacoes/{id}": {
+      get: {
+        tags: ["SerasaPefin"],
+        summary: "Detalhe técnico-operacional de uma negativação",
+        parameters: [pathParam("id", "ID da solicitação (GUID)", "123e4567-e89b-12d3-a456-426614174000")],
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/acompanhamento/{transactionId}": {
+      get: {
+        tags: ["SerasaPefin"],
+        summary: "Acompanha processamento por transactionId/uuid",
+        description:
+          "Consulta o status interno atualizado pelos webhooks da Serasa. O transactionId do envio inicial corresponde ao uuid recebido no webhook.",
+        parameters: [
+          pathParam(
+            "transactionId",
+            "Transaction ID retornado pela Serasa no envio inicial",
+            "f1d11b18-b459-4f11-97a8-8143a6c392e4"
+          ),
+        ],
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/webhooks/inclusao/sucesso": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para sucesso de inclusão de divida principal",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitação",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/webhooks/inclusao/erro": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para erro de inclusão de divida principal",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitação",
+                  },
+                  error: {
+                    type: "object",
+                    properties: {
+                      message: { type: "string" },
+                      statusCode: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/webhooks/avalista/sucesso": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para sucesso de inclusão de avalista/fiador",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitação",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/webhooks/avalista/erro": {
+      post: {
+        tags: ["SerasaPefin"],
+        summary: "Webhook Serasa para erro de inclusão de avalista/fiador",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  uuid: {
+                    type: "string",
+                    description: "Transaction ID da solicitação",
+                  },
+                  error: {
+                    type: "object",
+                    properties: {
+                      message: { type: "string" },
+                      statusCode: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: serasaPefinResponses,
+      },
+    },
+    "/serasa-pefin/testes/auth": {
+      get: {
+        tags: ["SerasaPefinTest"],
+        summary: "Testa autenticação com credenciais Serasa configuradas",
+        description: "Endpoint de teste para validar autenticação. Bloqueado em produção.",
+        responses: {
+          200: {
+            description: "Autenticação bem-sucedida",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        authenticated: { type: "boolean" },
+                        tokenPrefix: { type: "string" },
+                        expiresAt: { type: "string", format: "date-time" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          403: {
+            description: "Bloqueado em ambiente de produção",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          503: {
+            description: "Serasa PEFIN não configurado",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                    missingRequired: { type: "array", items: { type: "string" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/serasa-pefin/testes/debt": {
+      post: {
+        tags: ["SerasaPefinTest"],
+        summary: "Envia negativação de teste usando documento da massa de teste",
+        description: "Endpoint de teste para envio de negativação com documento autorizado. Bloqueado em produção.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["documento"],
+                properties: {
+                  documento: {
+                    type: "string",
+                    description: "Documento da massa de teste Serasa",
+                    example: "168.816.700-52",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          201: {
+            description: "Negativação de teste enviada",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        transactionId: { type: "string" },
+                        cadusKey: { type: "string" },
+                        cadusSerie: { type: "string" },
+                        documento: { type: "string" },
+                        descricao: { type: "string" },
+                        mensagem: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: {
+            description: "Documento inválido ou não autorizado",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                    allowedDocuments: { type: "array", items: { type: "string" } },
+                  },
+                },
+              },
+            },
+          },
+          403: {
+            description: "Bloqueado em ambiente de produção",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/serasa-pefin/testes/webhook/simular": {
+      post: {
+        tags: ["SerasaPefinTest"],
+        summary: "Simula webhook de sucesso ou erro manualmente",
+        description: "Endpoint de teste para simular webhooks e validar conciliação. Bloqueado em produção.",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                required: ["transactionId", "eventType"],
+                properties: {
+                  transactionId: {
+                    type: "string",
+                    description: "Transaction ID da solicitação",
+                  },
+                  eventType: {
+                    type: "string",
+                    enum: ["inclusao/sucesso", "inclusao/erro", "avalista/sucesso", "avalista/erro"],
+                    description: "Tipo de evento do webhook",
+                  },
+                  error: {
+                    type: "object",
+                    description: "Detalhes do erro (apenas para eventos de erro)",
+                    properties: {
+                      message: { type: "string" },
+                      statusCode: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          200: {
+            description: "Webhook simulado processado",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        processed: { type: "boolean" },
+                        transactionId: { type: "string" },
+                        eventType: { type: "string" },
+                        result: { type: "object" },
+                        mensagem: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          400: {
+            description: "Parâmetros inválidos",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                    allowedTypes: { type: "array", items: { type: "string" } },
+                  },
+                },
+              },
+            },
+          },
+          403: {
+            description: "Bloqueado em ambiente de produção",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    "/serasa-pefin/testes/documentos": {
+      get: {
+        tags: ["SerasaPefinTest"],
+        summary: "Lista documentos autorizados pela Serasa para homologação",
+        description: "Retorna a massa de teste de homologação Serasa PEFIN. Bloqueado em produção.",
+        responses: {
+          200: {
+            description: "Lista de documentos autorizados",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "object",
+                      properties: {
+                        documentos: {
+                          type: "array",
+                          items: {
+                            type: "object",
+                            properties: {
+                              documento: { type: "string" },
+                              descricao: { type: "string" },
+                            },
+                          },
+                        },
+                        total: { type: "integer" },
+                        fonte: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+          403: {
+            description: "Bloqueado em ambiente de produção",
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    error: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
   },

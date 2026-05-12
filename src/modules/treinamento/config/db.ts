@@ -71,7 +71,7 @@ export async function healthCheckPool(): Promise<{
 /**
  * Obtém o pool de conexões com retry exponencial
  */
-export async function getPool(): Promise<sql.ConnectionPool> {
+export function getPool(): Promise<sql.ConnectionPool> {
   if (!poolPromise) {
     poolPromise = (async () => {
       let lastError: Error | null = null
@@ -110,6 +110,7 @@ export async function getPool(): Promise<sql.ConnectionPool> {
         `Falha ao conectar ao banco de dados após ${MAX_RETRIES} tentativas: ${lastError?.message}`
       )
     })()
+    poolPromise.catch(() => undefined)
   }
 
   return poolPromise

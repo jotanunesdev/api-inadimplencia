@@ -65,6 +65,7 @@ describe("db.ts - Connection Pool Resilience", () => {
       const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => {})
 
       const poolPromise = getPool()
+      poolPromise.catch(() => undefined)
 
       // Avançar timers para simular os retries
       await vi.advanceTimersByTimeAsync(1000) // Primeiro retry (1s)
@@ -135,6 +136,7 @@ describe("db.ts - Connection Pool Resilience", () => {
 
       // Primeira tentativa - deve falhar
       const firstPromise = getPool()
+      firstPromise.catch(() => undefined)
       await vi.advanceTimersByTimeAsync(8000)
       await expect(firstPromise).rejects.toThrow()
 

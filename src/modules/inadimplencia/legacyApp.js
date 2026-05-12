@@ -11,6 +11,8 @@ const kanbanStatusRoutes = require('./routes/kanbanStatusRoutes');
 const atendimentosRoutes = require('./routes/atendimentosRoutes');
 const relatoriosRoutes = require('./routes/relatoriosRoutes');
 const fiadoresRoutes = require('./routes/fiadoresRoutes');
+const serasaPefinRoutes = require('./routes/serasaPefinRoutes');
+const serasaPefinTestRoutes = require('./routes/serasaPefinTestRoutes');
 const notificationsRoutes = require('./routes/notificationsRoutes');
 const errorHandler = require('./middlewares/errorHandler');
 const swaggerSpec = require('./swagger');
@@ -53,6 +55,8 @@ app.use('/atendimentos', atendimentosRoutes);
 app.use('/relatorios', relatoriosRoutes);
 app.use('/fiadores', fiadoresRoutes);
 app.use('/notifications', notificationsRoutes);
+app.use('/serasa-pefin', serasaPefinRoutes);
+app.use('/serasa-pefin/testes', serasaPefinTestRoutes);
 
 
 app.use(errorHandler);
